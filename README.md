@@ -1,6 +1,6 @@
 # 🏛️ GovGo V1 - Sistema de Análise de Contratações Públicas
 
-**Versão 1.0 - Sistema unificado e moderno com total compatibilidade V0**
+**Versão 1.0 - Sistema unificado** 
 
 ---
 
