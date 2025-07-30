@@ -1,0 +1,77 @@
+# GovGo V1 - Dependências
+
+# ===============================
+# DEPENDÊNCIAS PRINCIPAIS
+# ===============================
+
+# Banco de dados e cliente Supabase
+supabase>=2.0.0
+psycopg2-binary>=2.9.0
+pgvector>=0.2.0
+
+# OpenAI para embeddings
+openai>=1.0.0
+
+# Processamento de dados
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Validação e modelos de dados
+pydantic>=2.0.0
+
+# Interface de usuário e terminal
+rich>=13.0.0
+click>=8.0.0
+
+# Configuração e ambiente
+python-dotenv>=1.0.0
+
+# HTTP e APIs
+requests>=2.31.0
+httpx>=0.24.0
+
+# ===============================
+# PROCESSAMENTO DE TEXTO E NLP
+# ===============================
+
+# Processamento de texto
+nltk>=3.8
+unidecode>=1.3.0
+
+# ===============================
+# UTILITÁRIOS
+# ===============================
+
+# Data e tempo
+python-dateutil>=2.8.0
+
+# Logging e monitoramento
+structlog>=23.0.0
+
+# Exportação de dados
+openpyxl>=3.1.0
+reportlab>=4.0.0
+
+# ===============================
+# DESENVOLVIMENTO (OPCIONAL)
+# ===============================
+
+# Testes
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+
+# Linting e formatação
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.5.0
+
+# ===============================
+# FUTURAS IMPLEMENTAÇÕES
+# ===============================
+
+# API REST (quando implementarmos)
+fastapi>=0.100.0
+uvicorn>=0.23.0
+
+# Cache
+redis>=4.6.0
