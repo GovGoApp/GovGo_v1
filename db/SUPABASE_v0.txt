@@ -1,0 +1,56 @@
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public.categorias (
+  codcat character varying NOT NULL,
+  nomcat text NOT NULL,
+  codnv0 character varying NOT NULL,
+  nomnv0 character varying NOT NULL,
+  codnv1 integer NOT NULL,
+  nomnv1 character varying NOT NULL,
+  codnv2 integer NOT NULL,
+  nomnv2 character varying NOT NULL,
+  codnv3 integer NOT NULL,
+  nomnv3 character varying NOT NULL,
+  cat_embeddings USER-DEFINED,
+  id integer NOT NULL DEFAULT nextval('categorias_id_seq'::regclass),
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT categorias_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.contratacoes (
+  numerocontrolepncp character varying NOT NULL,
+  anocompra integer,
+  descricaocompleta text,
+  valortotalhomologado numeric,
+  dataaberturaproposta date,
+  dataencerramentoproposta date,
+  unidadeorgao_ufsigla character varying,
+  unidadeorgao_municipionome character varying,
+  unidadeorgao_nomeunidade character varying,
+  orgaoentidade_razaosocial character varying,
+  created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+  valortotalestimado numeric,
+  datainclusao timestamp with time zone,
+  linksistemaorigem character varying,
+  modalidadenome character varying,
+  modadisputanome character varying,
+  usuarionome character varying,
+  modalidadeid text,
+  modadisputaid text,
+  orgaoentidade_poderid text,
+  orgaoentidade_esferaid text,
+  CONSTRAINT contratacoes_pkey PRIMARY KEY (numerocontrolepncp)
+);
+CREATE TABLE public.contratacoes_embeddings (
+  numerocontrolepncp character varying,
+  embedding_vector USER-DEFINED,
+  modelo_embedding character varying,
+  metadata jsonb,
+  created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+  id integer NOT NULL DEFAULT nextval('contratacoes_embeddings_id_seq'::regclass),
+  confidence numeric,
+  top_categories ARRAY,
+  top_similarities ARRAY,
+  CONSTRAINT contratacoes_embeddings_pkey PRIMARY KEY (id),
+  CONSTRAINT contratacoes_embeddings_numerocontrolepncp_fkey FOREIGN KEY (numerocontrolepncp) REFERENCES public.contratacoes(numerocontrolepncp)
+);

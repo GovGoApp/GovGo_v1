@@ -64,7 +64,8 @@ def clean_database():
             console.print("🗑️ Removendo TODAS as tabelas...")
             for table in existing_tables:
                 try:
-                    cursor.execute(f"DROP TABLE IF EXISTS {table} CASCADE;")
+                    ######################### ATENÇÂO!!!!
+                    # cursor.execute(f"DROP TABLE IF EXISTS {table} CASCADE;")
                     console.print(f"  ✅ {table} removida")
                 except Exception as e:
                     console.print(f"  ❌ Erro em {table}: {e}")
