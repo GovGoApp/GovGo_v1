@@ -8,8 +8,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from openai import OpenAI
 
 # Configuração da chave da API OpenAI (substitua pela sua)
-client = OpenAI(
-    api_key="")
+client = OpenAI( api_key="")
     
 # Criação da thread – a mesma thread mantém o histórico de conversa
 thread = client.beta.threads.create()
