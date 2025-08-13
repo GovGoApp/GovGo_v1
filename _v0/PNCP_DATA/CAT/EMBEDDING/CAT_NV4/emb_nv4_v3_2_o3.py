@@ -41,7 +41,7 @@ nltk.download('wordnet', quiet=True)
 console = Console()
 
 # Configuração da OpenAI
-client = OpenAI(api_key="sk-proj-3OWO-4DE53j-....")
+client = OpenAI(api_key="")
 
 # Definir caminhos e arquivos
 BASE_PATH = "C:\\Users\\Haroldo Duraes\\Desktop\\GOvGO\\v0\\#DATA\\PNCP\\"
