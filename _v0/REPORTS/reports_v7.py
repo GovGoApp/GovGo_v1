@@ -11,7 +11,7 @@ from openai import OpenAI
 from rich.table import Table
 
 # Configuração da chave da API OpenAI (substitua pela sua)
-client = OpenAI(api_key="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")
+client = OpenAI(api_key="sk-proj-3OWO-....")
 
 # Criação da thread – o histórico é acumulado
 thread = client.beta.threads.create()

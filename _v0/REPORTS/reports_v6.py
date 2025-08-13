@@ -9,7 +9,7 @@ from openai import OpenAI
 
 # Configuração da chave da API OpenAI (substitua pela sua)
 client = OpenAI(
-    api_key="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")
+    api_key="sk-proj-3OWO-...")
     
 # Criação da thread – a mesma thread mantém o histórico de conversa
 thread = client.beta.threads.create()
