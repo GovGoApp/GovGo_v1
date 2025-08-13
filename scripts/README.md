@@ -1,201 +1,449 @@
-# GovGo V1 - Scripts de Migração
+# GovGo V1 - Pipeline de Processamento PNCP
 
-Este diretório contém todos os scripts necessários para a migração completa do sistema GovGo da versão V0 (SQLite) para V1 (Supabase).
+Este diretório contém o pipeline completo do GovGo V1 para processamento automatizado de contratos do Portal Nacional de Contratações Públicas (PNCP).
 
-## 📋 Visão Geral
+## 🎯 Visão Geral
 
-A migração é dividida em **FASE 2** (estrutura) e **FASE 3** (migração híbrida):
+O sistema GovGo V1 processa contratos públicos em 3 etapas principais integradas:
 
-### FASE 2 - Estrutura do Banco
-- ✅ Criar 7 tabelas específicas no Supabase
-- ✅ Mapear campos das ATAs e PCAs via API
+1. **📥 Download PNCP** - Coleta paralela de contratos via API oficial
+2. **🧠 Geração de Embeddings** - Vetorização semântica usando OpenAI
+3. **🎯 Categorização IA** - Classificação automática com pgvector similarity search
 
-### FASE 3 - Migração Híbrida  
-- ✅ Migrar dados do SQLite V0
-- ✅ Coletar dados faltantes via API PNCP
-- ✅ Reconciliar e unificar dados
-- ✅ Validar integridade final
+## 🚀 Execução Automática DIÁRIA
 
-## 🚀 Execução Rápida
+### Pipeline Integrado (OBRIGATÓRIO DIÁRIO)
+```bash
+# Execute o pipeline completo automaticamente - TODOS OS DIAS
+00_run_pncp_scripts.bat
+```
 
-Para executar toda a migração de uma vez:
+⚠️ **EXECUÇÃO DIÁRIA OBRIGATÓRIA**: Este `.bat` deve ser executado **TODOS OS DIAS** pela manhã (8h-9h) para:
+- Coletar contratos publicados no dia anterior
+- Manter o sistema sempre atualizado
+- Evitar acúmulo que degrada performance
+
+**Como executar**: Duplo clique no arquivo `00_run_pncp_scripts.bat`
+
+## 📝 Scripts do Pipeline
+
+### Configuração Inicial (Execute UMA ÚNICA VEZ)
+
+#### 99_reset_database_tables.py
+**🗑️ Reset Completo do Banco**
+- ⚠️ **PERIGO**: Remove TODAS as tabelas e dados
+- Use apenas para reconfiguração total do sistema
+- Perde TODO o histórico de processamento
 
 ```bash
-python run_migration.py
+python 99_reset_database_tables.py
 ```
+
+#### 01_create_database_schema.py
+**🏗️ Criação do Schema PostgreSQL**
+- Cria todas as tabelas principais: `contratacao`, `contratacao_emb`, `categoria`
+- Configura índices otimizados para performance
+- Habilita extensão `pgvector` para similarity search
+- Define estrutura fiel aos dados do PNCP
+
+```bash
+python 01_create_database_schema.py
+```
+
+#### 02_import_initial_data.py
+**📊 Migração de Dados Base**
+- Migra dados do SQLite V0 → PostgreSQL V1
+- Importa categorias de produtos/serviços (base para classificação)
+- Configura parâmetros iniciais do sistema
+- Processa ~50k+ contratações históricas
+
+```bash
+python 02_import_initial_data.py
+```
+
+### Pipeline Diário Automatizado
+
+#### 03_download_pncp_contracts.py
+**📥 Download Paralelo PNCP**
+- Conecta à API oficial do PNCP (Portal Nacional de Contratações Públicas)
+- Download paralelo com 20 workers simultâneos
+- Coleta apenas contratos novos (incremental)
+- Sistema robusto com retry automático e circuit breaker
+- Processa contratações + itens detalhados
+- **Tempo**: 2-6 horas dependendo do volume diário
+
+```bash
+python 03_download_pncp_contracts.py
+```
+
+#### 04_generate_embeddings.py
+**🧠 Geração de Embeddings OpenAI**
+- Usa modelo `text-embedding-3-large` (3072 dimensões)
+- Concatena objeto da compra + descrições de itens
+- Processamento em lotes otimizado (25 contratos/batch)
+- Pool de conexões reutilizáveis para estabilidade
+- Rate limiting inteligente para API OpenAI
+- **Tempo**: 1-3 horas dependendo do volume
+
+```bash
+python 04_generate_embeddings.py
+```
+
+#### 05_categorize_contracts.py
+**🎯 Categorização com IA + pgvector**
+- Similarity search entre embeddings de contratos e categorias
+- Processamento paralelo adaptativo (4-20 workers)
+- Rich Progress Bar em tempo real com estatísticas
+- Sistema anti-duplicação: só processa contratos não categorizados
+- Confiança calculada baseada em gaps de similaridade
+- **Tempo**: 30min-3h dependendo do volume diário
+
+```bash
+python 05_categorize_contracts.py
+```
+
+## � Estrutura do Banco PostgreSQL
+
+### Tabelas Principais
+- **`contratacao`** - Dados raw dos contratos PNCP (campos oficiais)
+- **`contratacao_emb`** - Embeddings vetoriais + resultados de categorização
+- **`categoria`** - Base de categorias com embeddings para matching
+- **`item_contratacao`** - Itens detalhados das contratações
+- **`system_config`** - Controle de processamento e configurações
+
+### Campos de Controle Críticos
+- **`last_download_date`** - Controla download incremental PNCP
+- **`last_embedding_date`** - Controla geração de embeddings
+- **`last_categorization_date`** - Controla categorização
+- **`numero_controle_pncp`** - Chave única oficial PNCP
+
+## ⚙️ Configuração Técnica
+
+### 1. Credenciais (.env)
+```env
+# Supabase PostgreSQL
+SUPABASE_HOST=seu-projeto.supabase.co
+SUPABASE_DBNAME=postgres
+SUPABASE_USER=postgres
+SUPABASE_PASSWORD=sua-senha-segura
+SUPABASE_PORT=5432
+
+# OpenAI para embeddings
+OPENAI_API_KEY=sua-chave-openai
+
+# Dados históricos (opcional)
+V0_SQLITE_PATH=../v0/database/govgo.db
+```
+
+### 2. Dependências Críticas
+```bash
+pip install psycopg2-binary pandas requests rich python-dotenv
+pip install openai numpy pgvector-python
+```
+
+### 3. Extensões PostgreSQL
+- **pgvector** - Para similarity search de embeddings
+- **uuid-ossp** - Para identificadores únicos
+
+## 📈 Performance e Monitoramento
+
+### Rich Progress em Tempo Real
+- **Download**: Progresso de contratações e itens
+- **Embeddings**: Taxa OpenAI tokens/segundo
+- **Categorização**: ✅ Categorizados | ⏭️ Pulados | ❌ Erros
+
+### Otimizações de Performance
+- **Download**: 20 workers paralelos, retry automático
+- **Embeddings**: Batch size adaptativo, pool de conexões
+- **Categorização**: Workers adaptativos 4-20 baseado no volume
+
+### Volume Diário Típico
+| Métrica | Volume Diário | Tempo Estimado |
+|---------|---------------|----------------|
+| Contratos novos | 1k-5k | Download: 30min-2h |
+| Embeddings | 1k-5k | Processamento: 20min-1h |
+| Categorização | 1k-5k | Classificação: 10min-30min |
+
+## 🔧 Resolução de Problemas
+
+### Falha no Download PNCP
+1. Verifique conectividade com API PNCP
+2. API pode estar temporariamente indisponível
+3. Logs detalhados em `../logs/03B_pncp_parallel_*.log`
+
+### Erro de Embeddings OpenAI
+1. Verifique créditos da conta OpenAI
+2. Confirme OPENAI_API_KEY válida no `.env`
+3. Rate limits da OpenAI podem estar atingidos
+
+### Performance de Categorização
+1. Monitore uso de CPU/RAM durante processamento
+2. Ajuste `MAX_WORKERS` se necessário (padrão: 20)
+3. pgvector similarity search requer RAM suficiente
+
+## 🔄 Operação Contínua
+
+### Rotina Diária Obrigatória
+1. **08:00** - Execute `00_run_pncp_scripts.bat`
+2. **Monitoramento** - Acompanhe Rich Progress de cada etapa
+3. **Verificação** - Confirme estatísticas finais
+4. **Log** - Verifique erros se houver
+
+### Manutenção Periódica
+- **Semanal**: Analisar logs de erro acumulados
+- **Mensal**: Otimizar índices PostgreSQL
+- **Trimestral**: Avaliar performance de categorização
+
+### Backup e Continuidade
+- Supabase faz backup automático
+- Processamento é incremental (retomável)
+- Sistema anti-duplicação protege integridade
+
+## 📞 Suporte Técnico
+
+### Diagnóstico de Problemas
+```bash
+# Teste cada etapa separadamente
+python 03_download_pncp_contracts.py    # Teste API PNCP
+python 04_generate_embeddings.py        # Teste OpenAI
+python 05_categorize_contracts.py       # Teste categorização
+```
+
+### Logs e Debugging
+- **Download**: `../logs/03B_pncp_parallel_*.log`
+- **Embeddings**: Output detalhado no console
+- **Categorização**: Rich Progress + estatísticas finais
+
+Para suporte, inclua sempre:
+1. Logs completos da execução com erro
+2. Arquivo `.env` (sem senhas)
+3. Estatísticas de sistema (CPU, RAM, espaço)
+4. Descrição detalhada do comportamento
+
+---
+
+**Versão**: V1.0 Production  
+**Última atualização**: Janeiro 2025  
+**Compatibilidade**: Python 3.8+, PostgreSQL 13+, pgvector, OpenAI API
 
 ## 📝 Scripts Individuais
 
-### 01_setup_database.py
-**Configurar Base Supabase**
-- Cria as 7 tabelas no Supabase
+### Setup Inicial (Execute apenas uma vez)
+
+#### 99_reset_database_tables.py
+**Reset Completo do Banco**
+- ⚠️ **CUIDADO**: Apaga todas as tabelas
+- Use apenas para reconfiguração completa
+- Perde todos os dados processados
+
+```bash
+python 99_reset_database_tables.py
+```
+
+#### 01_create_database_schema.py
+**Criação do Schema**
+- Cria todas as tabelas necessárias
 - Define índices e relacionamentos
-- Substitui a abordagem de tabela unificada
+- Configura extensões PostgreSQL/pgvector
 
 ```bash
-python 01_setup_database.py
+python 01_create_database_schema.py
 ```
 
-### 02_descobrir_campos_ata_pca.py  
-**Descobrir Campos API**
-- Mapeia campos reais das ATAs e PCAs
-- Gera estruturas SQL baseadas na API
-- Documenta campos descobertos
+#### 02_import_initial_data.py
+**Importação de Dados Iniciais**
+- Importa categorias de produtos/serviços
+- Configura parâmetros do sistema
+- Carrega dados de referência
 
 ```bash
-python 02_descobrir_campos_ata_pca.py
+python 02_import_initial_data.py
 ```
 
-### 03_migrate_from_local.py
-**Migrar Dados Locais**
-- Migra SQLite V0 → Supabase V1
-- Mantém integridade referencial
-- Marca origem dos dados
+### Pipeline de Processamento (Execute regularmente)
+
+#### 03_download_pncp_contracts.py
+**Download de Contratos PNCP**
+- Coleta contratos via API PNCP paralela
+- Download incremental (apenas novos)
+- Sistema robusto com retry automático
+- **Tempo estimado**: 2-6 horas (dependendo do volume)
 
 ```bash
-python 03_migrate_from_local.py
+python 03_download_pncp_contracts.py
 ```
 
-### 04_collect_from_api.py
-**Coletar Dados via API**
-- Busca contratos faltantes
-- Coleta ATAs dos últimos 12 meses
-- Coleta PCAs dos últimos 3 anos
+#### 04_generate_embeddings.py
+**Geração de Embeddings**
+- Cria vetores semânticos dos textos
+- Processamento otimizado em lotes
+- Suporte a múltiplos modelos de embedding
+- **Tempo estimado**: 1-3 horas (dependendo do volume)
 
 ```bash
-python 04_collect_from_api.py
+python 04_generate_embeddings.py
 ```
 
-### 05_reconcile_data.py
-**Reconciliar Dados**
-- Resolve duplicatas entre local e API
-- Unifica registros com melhores dados
-- Detecta e reporta conflitos
+#### 05_categorize_contracts.py
+**Categorização Automática**
+- Classifica contratos usando IA + pgvector
+- Processamento paralelo adaptativo (4-32 workers)
+- Rich Progress Bar em tempo real
+- Sistema anti-duplicação integrado
+- **Tempo estimado**: 15-20 horas para ~825k contratos
 
 ```bash
-python 05_reconcile_data.py
+python 05_categorize_contracts.py
 ```
 
-### 06_migration_report.py
-**Relatório Final**
-- Compara V0 vs V1
-- Valida integridade de dados
-- Testa performance
-- Gera recomendações
+## 📊 Estrutura do Banco de Dados
 
+### Tabelas Principais
+- **`contratacao`** - Dados principais dos contratos
+- **`contratacao_emb`** - Embeddings e categorizações
+- **`categoria`** - Categorias de produtos/serviços
+- **`system_config`** - Configurações do sistema
+
+### Campos Importantes
+- **`numero_controle_pncp`** - ID único do contrato
+- **`embeddings`** - Vetores semânticos (pgvector)
+- **`top_categories`** - Top 5 categorias similares
+- **`confidence`** - Confiança da categorização
+- **`last_processed_date`** - Controle de última data de processamento
+- **`last_embedding_date`** - Controle da última data de embedding 
+- **`last_categorization_date`** - Controle de última data de categorização
+
+## ⚙️ Configuração
+
+### 1. Arquivo .env
+Configure as credenciais do Supabase:
+```env
+SUPABASE_HOST=seu-projeto.supabase.co
+SUPABASE_DBNAME=postgres
+SUPABASE_USER=postgres
+SUPABASE_PASSWORD=sua-senha-super-segura
+SUPABASE_PORT=5432
+```
+
+### 2. Dependências Python
 ```bash
-python 06_migration_report.py
+pip install psycopg2-binary pandas requests rich python-dotenv pgvector
 ```
 
-## 📊 Estrutura das Tabelas V1
+### 3. Extensões PostgreSQL
+O banco deve ter as extensões:
+- `pgvector` - Para similarity search
+- `uuid-ossp` - Para UUIDs
 
-### Tabelas Principais (migradas de V0)
-1. **contratacoes** - Dados de contratações/compras
-2. **contratos** - Contratos assinados
-3. **itens_contratacao** - Itens das contratações
-4. **classificacoes_itens** - Classificações dos itens
-5. **categorias** - Categorias de produtos/serviços
+## 🔍 Monitoramento e Logs
 
-### Tabelas Novas (dados API)
-6. **atas** - Atas de Registro de Preço
-7. **pcas** - Planos de Contratações Anuais
+### Progress Bars em Tempo Real
+- **Rich Progress** com estatísticas detalhadas
+- Tempo executado / tempo restante
+- Contadores: ✅ Categorizados | ⏭️ Pulados | ❌ Erros
+- Taxa de processamento (contratos/segundo)
 
-## 🔧 Configuração Necessária
+### Sistema de Controle
+- **`last_categorization_date`** - Última data processada
+- **`last_embedding_date`** - Última data com embeddings
+- **Anti-duplicação** - Evita reprocessamento desnecessário
 
-### 1. Credenciais Supabase
-Configure as variáveis no arquivo `core/config.py`:
-```python
-SUPABASE_HOST = "seu-projeto.supabase.co"
-SUPABASE_DATABASE = "postgres"  
-SUPABASE_USER = "postgres"
-SUPABASE_PASSWORD = "sua-senha"
-SUPABASE_PORT = 5432
-```
+### Logs de Sistema
+- Output detalhado no console
+- Estatísticas finais de cada execução
+- Relatórios de performance e erros
 
-### 2. Banco SQLite V0
-O arquivo `govgo.db` deve estar em:
-```
-../v0/database/govgo.db
-```
+## 📈 Performance e Otimizações
 
-### 3. Dependências Python
-```bash
-pip install psycopg2-binary pandas requests rich
-```
+### Processamento Paralelo
+- **Workers Adaptativos**: 4-32 baseado no volume
+- **Batch Processing**: Lotes de 100 contratos
+- **ThreadPoolExecutor** para paralelização
 
-## 📈 Monitoramento
+### Otimizações de Banco
+- **Índices otimizados** para queries frequentes
+- **pgvector similarity search** para categorização
+- **Conexões pooled** para melhor performance
 
-### Logs Gerados
-- `migracao_completa_log.json` - Log master completo
-- `relatorio_migracao_completo.json` - Relatório final detalhado
-- `relatorio_migracao_resumo.txt` - Resumo em texto
-- `comparacao_dados_migracao.csv` - Comparação V0 vs V1
+### Estimativas de Tempo
+| Volume | Download | Embeddings | Categorização |
+|--------|----------|------------|---------------|
+| 1k contratos | ~5 min | ~10 min | ~30 min |
+| 10k contratos | ~30 min | ~1 hora | ~3 horas |
+| 100k contratos | ~3 horas | ~8 horas | ~24 horas |
+| 825k contratos | ~6 horas | ~20 horas | ~20 horas |
 
-### Status de Execução
-- ✅ **SUCESSO** - Script executado sem problemas
-- ⚠️ **ATENÇÃO** - Concluído com ressalvas
-- ❌ **FALHA** - Erro crítico na execução
-- ⏱️ **TIMEOUT** - Excedeu tempo limite (30min)
+## 🔧 Resolução de Problemas
 
-## 🎯 Resultados Esperados
+### Erro de Conexão
+1. Verifique credenciais no `.env`
+2. Confirme conectividade com Supabase
+3. Verifique firewall/proxy
 
-### Dados Migrados
-- **~50.000+** contratações
-- **~30.000+** contratos  
-- **~200.000+** itens
-- **~500.000+** classificações
-- **~1.000+** categorias
+### Performance Lenta
+1. Monitore uso de CPU/RAM
+2. Ajuste `MAX_WORKERS` se necessário
+3. Verifique latência da rede
 
-### Dados Novos (API)
-- **ATAs** dos últimos 12 meses
-- **PCAs** dos últimos 3 anos
-- **Contratos** faltantes
+### Erros de Categorização
+1. Verifique se embeddings foram gerados
+2. Confirme que categorias estão carregadas
+3. Monitore logs de erro detalhados
 
-### Performance V1
-- Consultas por ano: **< 1s**
-- Joins complexos: **< 2s**
-- Buscas de texto: **< 3s**
-
-## ⚠️ Resolução de Problemas
-
-### Erro de Conexão Supabase
-1. Verifique credenciais em `config.py`
-2. Confirme que o projeto Supabase está ativo
-3. Teste conectividade de rede
-
-### Erro SQLite não encontrado
-1. Verifique caminho do `govgo.db`
-2. Execute migração do V0 primeiro
-3. Confirme permissões de leitura
-
-### Timeout na API PNCP
-1. Verifique conexão com internet
-2. A API pode estar temporariamente indisponível
+### Timeout de API
+1. API PNCP pode estar temporariamente indisponível
+2. Sistema tem retry automático
 3. Execute novamente após algumas horas
 
-### Duplicatas detectadas
-1. Normal após múltiplas execuções
-2. O script 05 resolve automaticamente
-3. Verifique relatório de reconciliação
+## 🔄 Execução Contínua
 
-## 🔄 Reexecução
+### Pipeline Diário OBRIGATÓRIO
+1. **TODOS OS DIAS**: Execute `00_run_pncp_scripts.bat`
+2. **Horário recomendado**: Primeira coisa pela manhã (8h-9h)
+3. **Monitor**: Acompanhe progresso via Rich Progress
+4. **Verificação**: Confirme estatísticas finais antes de sair
 
-Os scripts são **idempotentes** - podem ser executados múltiplas vezes:
+### Por que execução diária é obrigatória?
+- **Contratos novos**: PNCP publica contratos diariamente
+- **Volume crescente**: Atraso gera acúmulo exponencial
+- **Performance**: Lotes menores são mais eficientes
+- **Disponibilidade**: Sistema sempre atualizado para consultas
 
-- **Scripts 01-02**: Recriam estruturas (safe)
-- **Scripts 03-04**: Detectam dados existentes (skip)
-- **Scripts 05-06**: Processam apenas novos conflitos
+### Manutenção Semanal
+- Verificar logs de erro acumulados
+- Analisar performance de categorização
+- Ajustar parâmetros se necessário
+- Monitorar espaço em disco
+
+### Backup e Segurança
+- Supabase faz backup automático
+- Dados são incrementais (não sobrescreve)
+- Sistema anti-duplicação protege integridade
 
 ## 📞 Suporte
 
-Para dúvidas ou problemas:
-1. Verifique os logs gerados
-2. Consulte este README
-3. Execute scripts individuais para debug
-4. Analise mensagens de erro específicas
+### Debug Individual
+Execute scripts separadamente para identificar problemas:
+```bash
+python 03_download_pncp_contracts.py    # Teste download
+python 04_generate_embeddings.py        # Teste embeddings  
+python 05_categorize_contracts.py       # Teste categorização
+```
+
+### Logs Detalhados
+- Console mostra progresso em tempo real
+- Estatísticas finais incluem rates e tempos
+- Erros são reportados com contexto específico
+
+### Contato
+Para suporte técnico, inclua:
+1. Logs completos da execução
+2. Configuração do ambiente (.env mascarado)
+3. Descrição detalhada do problema
+4. Estatísticas do sistema (RAM, CPU, rede)
 
 ---
 
 **Versão**: V1.0  
-**Última atualização**: Dezembro 2024  
-**Compatibilidade**: Python 3.8+, PostgreSQL 13+
+**Última atualização**: Janeiro 2025  
+**Compatibilidade**: Python 3.8+, PostgreSQL 13+, pgvector

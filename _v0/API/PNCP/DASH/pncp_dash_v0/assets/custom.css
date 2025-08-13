@@ -1,0 +1,49 @@
+/* assets/custom.css */
+.processo-card {
+    background-color: #f5f5f5;
+    border-radius: 6px;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+}
+
+.topicos-card {
+    background-color: #f0f7ff;
+    border-radius: 6px;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+}
+
+.keyword-chip {
+    display: inline-block;
+    background: #e0e0e0;
+    border-radius: 16px;
+    padding: 4px 10px;
+    margin: 2px;
+    font-size: 0.8rem;
+    line-height: 1;
+}
+
+.documento-item {
+    padding: 4px 0;
+    border-bottom: 1px dotted #ddd;
+}
+
+.filter-header {
+    background-color: #f7f7f7;
+    font-weight: bold;
+}
+
+.objeto-texto {
+    display: inline-block;
+    max-height: 2.4em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Estilos para rolagem infinita */
+#processos-container {
+    min-height: 200px;
+}
+
+.loading-more {
+    text-align: center;
+    padding: 20px;
+}

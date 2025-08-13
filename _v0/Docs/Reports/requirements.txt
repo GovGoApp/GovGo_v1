@@ -1,0 +1,15 @@
+# Dependências para o Analisador Financeiro Automático
+
+# OpenAI API
+openai>=1.0.0
+
+# Docling para conversão universal
+docling
+
+# Pandas para manipulação de dados
+pandas>=1.3.0
+
+# Outras dependências úteis
+pathlib2
+openpyxl  # Para Excel
+xlrd      # Para Excel legado

@@ -1,0 +1,35 @@
+{
+  "contratacoes": {},
+  "contratos": {},
+  "atas": {},
+  "pca": {
+    "pca_consolidado_orgao": {
+      "dataAtualizacao": "DATE",
+      "dataPublicacaoPncp": "DATE",
+      "cnpj": "TEXT(14)",
+      "quantidade": "INTEGER",
+      "valorTotal": "REAL",
+      "anoPca": "INTEGER",
+      "razaoSocial": "TEXT(21)",
+      "poder": "TEXT(1)",
+      "esfera": "TEXT(1)"
+    },
+    "pca_unidades_orgao": {
+      "dataPublicacaoPncp": "DATE",
+      "codigoUnidade": "TEXT(6)",
+      "nomeUnidade": "TEXT(44)",
+      "valorTotal": "REAL",
+      "cnpj": "TEXT(14)",
+      "anoPca": "INTEGER",
+      "razaoSocial": "TEXT(21)",
+      "dataAtualizacao": "DATE",
+      "dataAtualizacaoGlobalPCA": "DATE",
+      "esfera": "TEXT(1)",
+      "poder": "TEXT(1)",
+      "sequencialPca": "INTEGER",
+      "quantidade": "INTEGER",
+      "numeroControlePNCP": "TEXT(28)"
+    }
+  },
+  "itens": {}
+}

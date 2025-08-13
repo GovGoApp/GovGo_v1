@@ -1,0 +1,251 @@
+CREATE TABLE categoria (
+    CODCAT TEXT,
+    NOMCAT TEXT,
+    CODNV0 TEXT,
+    NOMNV0 TEXT,
+    CODNV1 TEXT,
+    NOMNV1 TEXT,
+    CODNV2 TEXT,
+    NOMNV2 TEXT,
+    CODNV3 TEXT,
+    NOMNV3 TEXT,
+    PRIMARY KEY (CODCAT)
+)
+CREATE TABLE contratacao (
+    ID_CONTRATACAO INTEGER PRIMARY KEY AUTOINCREMENT,
+    numeroControlePNCP TEXT,
+    modoDisputaId TEXT,
+    amparoLegal_codigo TEXT,
+    dataAberturaProposta TEXT,
+    dataEncerramentoProposta TEXT,
+    srp TEXT,
+    orgaoEntidade_cnpj TEXT,
+    orgaoEntidade_razaosocial TEXT,
+    orgaoEntidade_poderId TEXT,
+    orgaoEntidade_esferaId TEXT,
+    anoCompra TEXT,
+    sequencialCompra TEXT,
+    processo TEXT,
+    objetoCompra TEXT,
+    valorTotalHomologado REAL,
+    dataInclusao TEXT,
+    dataPublicacaoPncp TEXT,
+    dataAtualizacao TEXT,
+    numeroCompra TEXT,
+    unidadeOrgao_ufNome TEXT,
+    unidadeOrgao_ufSigla TEXT,
+    unidadeOrgao_municipioNome TEXT,
+    unidadeOrgao_codigoUnidade TEXT,
+    unidadeOrgao_nomeUnidade TEXT,
+    unidadeOrgao_codigoIbge TEXT,
+    modalidadeId TEXT,
+    dataAtualizacaoGlobal TEXT,
+    tipoInstrumentoConvocatorioCodigo TEXT,
+    valorTotalEstimado TEXT,
+    situacaoCompraId TEXT, 
+    CODCAT TEXT, 
+    SCORE REAL, 
+    informacaoComplementar TEXT, 
+    justificativaPresencial TEXT, 
+    linkSistemaOrigem TEXT, 
+    linkProcessoEletronico TEXT, 
+    amparoLegal_nome TEXT, 
+    amparoLegal_descricao TEXT, 
+    modalidadeNome TEXT, 
+    modoDisputaNome TEXT, 
+    tipoInstrumentoConvocatorioNome TEXT, 
+    situacaoCompraNome TEXT, 
+    existeResultado BOOLEAN, 
+    orcamentoSigilosoCodigo INTEGER, 
+    orcamentoSigilosoDescricao TEXT, 
+    orgaoSubRogado_cnpj TEXT, 
+    orgaoSubRogado_razaoSocial TEXT,
+    orgaoSubRogado_poderId TEXT, 
+    orgaoSubRogado_esferaId TEXT, 
+    unidadeSubRogada_ufNome TEXT, 
+    unidadeSubRogada_ufSigla TEXT,
+    unidadeSubRogada_municipioNome TEXT, 
+    unidadeSubRogada_codigoUnidade TEXT, 
+    unidadeSubRogada_nomeUnidade TEXT, 
+    unidadeSubRogada_codigoIbge TEXT, 
+    usuarioNome TEXT, 
+    fontesOrcamentarias TEXT
+    )
+
+CREATE TABLE contratacoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            
+            -- Identificação
+            numeroControlePNCP TEXT UNIQUE NOT NULL,
+            anoCompra INTEGER,
+            sequencialCompra INTEGER,
+            numeroCompra TEXT,
+            processo TEXT,
+            
+            -- Valores
+            valorTotalEstimado REAL,
+            valorTotalHomologado REAL,
+            orcamentoSigilosoCodigo TEXT,
+            orcamentoSigilosoDescricao TEXT,
+            
+            -- Modalidade e disputa
+            modalidadeId INTEGER,
+            modalidadeNome TEXT,
+            modoDisputaId INTEGER,
+            modoDisputaNome TEXT,
+            tipoInstrumentoConvocatorioCodigo TEXT,
+            tipoInstrumentoConvocatorioNome TEXT,
+            
+            -- Amparo legal
+            amparoLegal_codigo TEXT,
+            amparoLegal_nome TEXT,
+            amparoLegal_descricao TEXT,
+            
+            -- Objeto e informações
+            objetoCompra TEXT,
+            informacaoComplementar TEXT,
+            justificativaPresencial TEXT,
+            srp INTEGER,
+            
+            -- Links
+            linkSistemaOrigem TEXT,
+            linkProcessoEletronico TEXT,
+            
+            -- Situação
+            situacaoCompraId INTEGER,
+            situacaoCompraNome TEXT,
+            existeResultado INTEGER,
+            
+            -- Datas
+            dataPublicacaoPncp TEXT,
+            dataAberturaProposta TEXT,
+            dataEncerramentoProposta TEXT,
+            dataInclusao TEXT,
+            
+            -- Órgão e entidade
+            orgaoEntidade_razaoSocial TEXT,
+            orgaoEntidade_nomeFantasia TEXT,
+            orgaoEntidade_cnpj TEXT,
+            orgaoEntidade_municipio_nome TEXT,
+            orgaoEntidade_municipio_ibge TEXT,
+            orgaoEntidade_municipio_uf_sigla TEXT,
+            orgaoEntidade_municipio_uf_nome TEXT,
+            orgaoEntidade_poder_codigo INTEGER,
+            orgaoEntidade_poder_nome TEXT,
+            orgaoEntidade_esferaId INTEGER,
+            orgaoEntidade_esfera TEXT,
+            orgaoEntidade_tipoOrganizacao TEXT,
+            orgaoEntidade_endereco_logradouro TEXT,
+            orgaoEntidade_endereco_numero TEXT,
+            orgaoEntidade_endereco_bairro TEXT,
+            orgaoEntidade_endereco_cep TEXT,
+            orgaoEntidade_endereco_complemento TEXT,
+            orgaoEntidade_endereco_ddd TEXT,
+            orgaoEntidade_endereco_telefone TEXT,
+            orgaoEntidade_endereco_email TEXT,
+            orgaoEntidade_endereco_site TEXT,
+            
+            -- Unidade orgão
+            unidadeOrgao_nome TEXT,
+            unidadeOrgao_codigoUnidade TEXT,
+            unidadeOrgao_nomeUnidade TEXT,
+            unidadeOrgao_municipio_nome TEXT,
+            unidadeOrgao_municipio_ibge TEXT,
+            unidadeOrgao_municipio_uf_sigla TEXT,
+            unidadeOrgao_municipio_uf_nome TEXT,
+            
+            -- Usuário
+            usuarioNome TEXT,
+            usuarioId INTEGER,
+            
+            -- Outros campos específicos
+            tipoRecurso TEXT,
+            isSrp INTEGER,
+            isOrcamentoSigiloso INTEGER,
+            existeContratoAssociado INTEGER,
+            
+            -- Observações
+            observacoes TEXT,
+            
+            -- Descrição completa (campo derivado)
+            descricaoCompleta TEXT
+        )
+
+CREATE TABLE contrato (
+    ID_CONTRATO INTEGER PRIMARY KEY AUTOINCREMENT,
+    numeroControlePncpCompra TEXT,
+    numeroControlePNCP TEXT,
+    numeroContratoEmpenho TEXT,
+    anoContrato TEXT,
+    dataAssinatura TEXT,
+    dataVigenciaInicio TEXT,
+    dataVigenciaFim TEXT,
+    niFornecedor TEXT,
+    tipoPessoa TEXT,
+    sequencialContrato TEXT,
+    processo TEXT,
+    nomeRazaoSocialFornecedor TEXT,
+    numeroParcelas TEXT,
+    numeroRetificacao TEXT,
+    objetoContrato TEXT,
+    valorInicial REAL,
+    valorParcela REAL,
+    valorGlobal REAL,
+    dataAtualizacaoGlobal TEXT,
+    tipoContrato_id TEXT,
+    tipoContrato_nome TEXT,
+    orgaoEntidade_cnpj TEXT,
+    orgaoEntidade_razaosocial TEXT,
+    orgaoEntidade_poderId TEXT,
+    orgaoEntidade_esferaId TEXT,
+    categoriaProcesso_id TEXT,
+    categoriaProcesso_nome TEXT,
+    unidadeOrgao_ufNome TEXT,
+    unidadeOrgao_codigoUnidade TEXT,
+    unidadeOrgao_nomeUnidade TEXT,
+    unidadeOrgao_ufSigla TEXT,
+    unidadeOrgao_municipioNome TEXT,
+    unidadeOrgao_codigoIbge TEXT,
+    vigenciaAno TEXT
+)
+
+CREATE TABLE item_classificacao (
+    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    numeroControlePNCP TEXT,
+    numeroItem TEXT,
+    ID_ITEM_CONTRATACAO TEXT,
+    descrição TEXT,
+    item_type TEXT,
+    TOP_1 TEXT,
+    TOP_2 TEXT,
+    TOP_3 TEXT,
+    TOP_4 TEXT,
+    TOP_5 TEXT,
+    SCORE_1 REAL,
+    SCORE_2 REAL,
+    SCORE_3 REAL,
+    SCORE_4 REAL,
+    SCORE_5 REAL,
+    CONFIDENCE REAL
+)
+
+CREATE TABLE item_contratacao (
+    ID_ITEM_CONTRATACAO INTEGER PRIMARY KEY AUTOINCREMENT,
+    numeroControlePNCP TEXT,
+    numeroItem TEXT,
+    descricao TEXT,
+    materialOuServico TEXT,
+    valorUnitarioEstimado REAL,
+    valorTotal REAL,
+    quantidade REAL,
+    unidadeMedida TEXT,
+    itemCategoriaId TEXT,
+    itemCategoriaNome TEXT,
+    criterioJulgamentoId TEXT,
+    situacaoCompraItem TEXT,
+    tipoBeneficio TEXT,
+    dataInclusao TEXT,
+    dataAtualizacao TEXT,
+    ncmNbsCodigo TEXT,
+    catalogo TEXT
+)

@@ -1,0 +1,58 @@
+# ============================================================================
+# GvG Search Terminal v9 - Requisitos do Sistema
+# Sistema Avançado de Busca PNCP com IA e Interface Rica
+# ============================================================================
+
+# Core AI e Processamento
+openai>=1.0.0                    # OpenAI API para processamento inteligente
+numpy>=1.21.0                    # Operações numéricas e embeddings
+pandas>=1.3.0                    # Manipulação de dados
+
+# Interface Terminal Rica
+rich>=13.0.0                     # Interface terminal moderna e colorida
+
+# Banco de Dados
+sqlalchemy>=1.4.0                # ORM para PostgreSQL
+psycopg2-binary>=2.9.0           # Driver PostgreSQL nativo
+supabase>=2.0.0                  # Cliente Supabase (opcional)
+
+# Configuração e Ambiente
+python-dotenv>=0.19.0            # Gerenciamento de variáveis de ambiente
+python-dateutil>=2.8.0           # Manipulação avançada de datas
+
+# Processamento de Documentos
+docling>=1.0.0                   # Processador v3 - extração avançada de tabelas
+markitdown>=0.0.1               # Processador v2 - alternativa compatível
+PyPDF2>=3.0.0                   # Manipulação de PDFs
+python-docx>=0.8.11             # Documentos Word
+openpyxl>=3.0.9                 # Planilhas Excel
+
+# Geração de Relatórios
+reportlab>=3.6.0                # Geração de PDFs
+matplotlib>=3.5.0               # Gráficos (opcional)
+
+# Compatibilidade de Arquivos
+pypdfium2>=4.0.0                # Renderização de PDFs para Docling
+zipfile36>=0.1.3                # Arquivos ZIP (Python < 3.6)
+
+# Requisições HTTP
+requests>=2.28.0                # Requisições HTTP básicas
+httpx>=0.24.0                   # Cliente HTTP moderno assíncrono
+
+# Compatibilidade Windows
+pywin32>=304                     # APIs Windows (apenas Windows)
+
+# Desenvolvimento e Debug
+pytest>=7.0.0                   # Testes unitários (desenvolvimento)
+black>=22.0.0                   # Formatação de código (desenvolvimento)
+
+# ============================================================================
+# INSTALAÇÃO:
+# pip install -r requirements.txt
+#
+# NOTAS:
+# - pywin32 é necessário apenas no Windows
+# - docling requer pypdfium2 para funcionar corretamente
+# - markitdown é usado como fallback quando docling não está disponível
+# - rich é essencial para a interface terminal moderna
+# ============================================================================

@@ -1,0 +1,14 @@
+[
+  {
+    "id": "1",
+    "question": "SELECT c.data_publicacao_pncp::date AS data, COUNT(DISTINCT c.numero_controle_pncp) AS contagem_contratacoes, COUNT(DISTINCT e.numero_controle_pncp) AS contagem_embeddings, COUNT(DISTINCT e.numero_controle_pncp) FILTER (WHERE e.top_categories IS NOT NULL) AS contagem_top_categories FROM contratacao AS c LEFT JOIN contratacao_emb AS e ON c.numero_controle_pncp = e.numero_controle_pncp GROUP BY c.data_publicacao_pncp::date ORDER BY c.data_publicacao_pncp::date DESC LIMIT 1000;",
+    "sql": "SELECT c.data_publicacao_pncp::date AS data, COUNT(DISTINCT c.numero_controle_pncp) AS contagem_contratacoes, COUNT(DISTINCT e.numero_controle_pncp) AS contagem_embeddings, COUNT(DISTINCT e.numero_controle_pncp) FILTER (WHERE e.top_categories IS NOT NULL) AS contagem_top_categories FROM contratacao AS c LEFT JOIN contratacao_emb AS e ON c.numero_controle_pncp = e.numero_controle_pncp GROUP BY c.data_publicacao_pncp::date ORDER BY c.data_publicacao_pncp::date DESC LIMIT 1000;",
+    "timestamp": "11/08/2025 18:13:11"
+  },
+  {
+    "id": "4",
+    "question": "SELECT c.data_publicacao_pncp::date AS data, COUNT(DISTINCT c.numero_controle_pncp) AS contagem_contratacoes, COUNT(DISTINCT e.numero_controle_pncp) AS contagem_embeddings, COUNT(DISTINCT e.numero_controle_pncp) FILTER (WHERE e.top_categories IS NOT NULL) AS contagem_top_categories FROM contratacao AS c LEFT JOIN contratacao_emb AS e ON c.numero_controle_pncp = e.numero_controle_pncp GROUP BY c.data_publicacao_pncp::date ORDER BY c.data_publicacao_pncp::date DESC LIMIT 1000;",
+    "sql": "SELECT c.data_publicacao_pncp::date AS data, COUNT(DISTINCT c.numero_controle_pncp) AS contagem_contratacoes, COUNT(DISTINCT e.numero_controle_pncp) AS contagem_embeddings, COUNT(DISTINCT e.numero_controle_pncp) FILTER (WHERE e.top_categories IS NOT NULL) AS contagem_top_categories FROM contratacao AS c LEFT JOIN contratacao_emb AS e ON c.numero_controle_pncp = e.numero_controle_pncp GROUP BY c.data_publicacao_pncp::date ORDER BY c.data_publicacao_pncp::date DESC LIMIT 1000;",
+    "timestamp": "11/08/2025 18:15:30"
+  }
+]
