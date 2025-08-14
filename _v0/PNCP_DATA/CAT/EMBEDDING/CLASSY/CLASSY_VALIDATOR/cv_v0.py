@@ -1,0 +1,448 @@
+import os
+import pandas as pd
+import sqlite3
+import dash
+from dash import html, dcc, Input, Output, State, ctx, no_update
+import dash_bootstrap_components as dbc
+from dash.exceptions import PreventUpdate
+from datetime import datetime
+import json
+
+# Definindo os caminhos
+BASE_PATH = "C:\\Users\\Haroldo Duraes\\Desktop\\GOvGO\\v0\\#DATA\\PNCP\\"
+DB_PATH = BASE_PATH + "DB\\"
+DB_FILE = DB_PATH + "pncp_v2.db"
+VALIDATION_PATH = BASE_PATH + "CLASSY\\CLASSY_ITENS\\VALIDATION\\"
+os.makedirs(VALIDATION_PATH, exist_ok=True)
+
+# Criar arquivo de resultados de validação com timestamp
+TIMESTAMP = datetime.now().strftime('%Y%m%d_%H%M')
+VALIDATION_FILE = VALIDATION_PATH + f"validation_results_{TIMESTAMP}.xlsx"
+
+# Cores para seleção
+BORDER_COLORS = ['#28a745', '#ffc107', '#fd7e14', '#dc3545', '#8b0000']
+COLOR_NAMES = ['Verde', 'Amarelo', 'Laranja', 'Vermelho', 'Bordô']
+
+# Estilos para os componentes
+DESCRIPTION_STYLE = {
+    'height': '300px',
+    'overflow-y': 'auto',
+    'padding': '15px',
+    'margin-bottom': '10px',
+    'border': '1px solid #ddd',
+    'border-radius': '5px',
+    'background-color': '#f9f9f9'
+}
+
+TOP_BOX_STYLE = {
+    'height': '200px',
+    'overflow-y': 'auto',
+    'padding': '10px',
+    'margin': '5px',
+    'border': '1px solid #ddd',
+    'border-radius': '5px',
+    'cursor': 'pointer',
+    'background-color': '#f9f9f9',
+    'position': 'relative',
+}
+
+CONFIDENCE_STYLE = {
+    'margin-top': '10px',
+    'font-weight': 'bold',
+    'font-size': '18px'
+}
+
+SCORE_STYLE = {
+    'margin-top': '10px',
+    'font-weight': 'normal',
+    'font-size': '14px'
+}
+
+ORDER_LABEL_STYLE = {
+    'position': 'absolute',
+    'top': '5px',
+    'right': '5px',
+    'font-weight': 'bold',
+    'font-size': '18px',
+    'width': '30px',
+    'height': '30px',
+    'text-align': 'center',
+    'line-height': '30px',
+    'border-radius': '50%',
+    'color': 'white'
+}
+
+# Inicializar app
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+app.title = "CLASSY VALIDATOR - Validação de Classificações"
+
+# Estado global para controle de navegação
+app.validation_results = []
+app.current_item_index = 0
+app.total_items = 0
+app.items_df = None
+app.current_selections = []
+
+def load_data():
+    """Carrega dados do banco SQLite"""
+    conn = sqlite3.connect(DB_FILE)
+    query = """
+    SELECT ID, numeroControlePNCP, numeroItem, ID_ITEM_CONTRATACAO, descrição, 
+           item_type, TOP_1, TOP_2, TOP_3, TOP_4, TOP_5, 
+           SCORE_1, SCORE_2, SCORE_3, SCORE_4, SCORE_5, CONFIDENCE
+    FROM item_classificacao
+    """
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    
+    # Verificar se há dados
+    if len(df) == 0:
+        return pd.DataFrame()
+    
+    return df
+
+def save_validation_results():
+    """Salva os resultados da validação em um arquivo Excel"""
+    if not app.validation_results:
+        return False
+    
+    results_df = pd.DataFrame(app.validation_results)
+    results_df.to_excel(VALIDATION_FILE, index=False)
+    
+    # Também salvar uma cópia JSON para backup
+    json_file = VALIDATION_FILE.replace('.xlsx', '.json')
+    with open(json_file, 'w') as f:
+        json.dump(app.validation_results, f, indent=2)
+    
+    return True
+
+# Layout da aplicação
+app.layout = dbc.Container([
+    dbc.Row([
+        dbc.Col([
+            html.H1("CLASSY VALIDATOR", className="text-center mb-4 mt-3"),
+            html.Div(id="navigation-info", className="text-center mb-3"),
+            
+            # Armazenamento oculto de estado
+            dcc.Store(id='item-data-store'),
+            dcc.Store(id='selections-store', data=[]),
+            
+            # Keybard eventos
+            dcc.Input(id='key-capture', type='text', style={'opacity': 0, 'position': 'fixed'}),
+            
+            # Container para o modal de conclusão
+            dbc.Modal(
+                [
+                    dbc.ModalHeader("Validação Concluída"),
+                    dbc.ModalBody([
+                        html.P("Todos os itens foram validados!"),
+                        html.P(id="modal-result-info")
+                    ]),
+                    dbc.ModalFooter(
+                        dbc.Button("Fechar", id="close-modal", className="ms-auto")
+                    ),
+                ],
+                id="completion-modal",
+                centered=True,
+            ),
+        ], width=12)
+    ]),
+    
+    dbc.Row([
+        # Coluna da esquerda - Descrição e Confiança
+        dbc.Col([
+            html.H4("Descrição do Item"),
+            html.Div(id="item-description", style=DESCRIPTION_STYLE),
+            html.Div([
+                html.Span("Confiança: "),
+                html.Span(id="item-confidence", style={"font-weight": "bold"})
+            ], style=CONFIDENCE_STYLE)
+        ], md=3),
+        
+        # Coluna da direita - 5 quadros TOP
+        dbc.Col([
+            html.H4("Categorias Sugeridas (Duplo Clique para Selecionar)"),
+            dbc.Row([
+                # Criar 5 colunas para os boxes TOP_1 a TOP_5
+                dbc.Col([
+                    html.Div([
+                        html.Div(id=f'order-label-{i+1}', className='order-label'),
+                        html.Div(id=f'top-{i+1}-content', className='top-content'),
+                        html.Div(id=f'score-{i+1}', style=SCORE_STYLE)
+                    ], 
+                    id=f'top-box-{i+1}',
+                    className='top-box',
+                    n_clicks=0,
+                    style=TOP_BOX_STYLE)
+                ], width=2) for i in range(5)
+            ], className="g-0"),
+            
+            # Botões de navegação
+            dbc.Row([
+                dbc.Col([
+                    dbc.Button("< Anterior", id="prev-button", color="secondary", className="me-2"),
+                    dbc.Button("Próximo >", id="next-button", color="primary"),
+                ], width=12, className="text-center mt-4")
+            ]),
+            
+            # Instruções
+            dbc.Row([
+                dbc.Col([
+                    html.Div([
+                        html.H5("Instruções:"),
+                        html.Ul([
+                            html.Li("Duplo clique para selecionar/desmarcar categoria"),
+                            html.Li("Clique direito em qualquer lugar para confirmar e ir para o próximo item"),
+                            html.Li("Setas ← → para navegar entre categorias"),
+                            html.Li("Espaço para selecionar/desmarcar a categoria atual"),
+                            html.Li("Enter para confirmar e ir para o próximo item")
+                        ])
+                    ], className="mt-4 p-3 bg-light")
+                ], width=12)
+            ])
+        ], md=9)
+    ]),
+])
+
+# Callback para inicializar e navegar pelos itens
+@app.callback(
+    [Output('item-data-store', 'data'),
+     Output('navigation-info', 'children'),
+     Output('item-description', 'children'),
+     Output('item-confidence', 'children'),
+     Output('top-1-content', 'children'),
+     Output('top-2-content', 'children'),
+     Output('top-3-content', 'children'),
+     Output('top-4-content', 'children'),
+     Output('top-5-content', 'children'),
+     Output('score-1', 'children'),
+     Output('score-2', 'children'),
+     Output('score-3', 'children'),
+     Output('score-4', 'children'),
+     Output('score-5', 'children'),
+     Output('selections-store', 'data'),
+     Output('completion-modal', 'is_open'),
+     Output('modal-result-info', 'children')],
+    [Input('prev-button', 'n_clicks'),
+     Input('next-button', 'n_clicks'),
+     Input('key-capture', 'n_submit'),
+     Input('close-modal', 'n_clicks')],
+    [State('item-data-store', 'data'),
+     State('selections-store', 'data'),
+     State('completion-modal', 'is_open')]
+)
+def update_item_display(prev_clicks, next_clicks, key_submit, close_modal,
+                        current_data, current_selections, modal_open):
+    """Atualiza o display do item atual"""
+    trigger = ctx.triggered_id if ctx.triggered_id else None
+    
+    # Inicialização - primeira vez que o callback é executado
+    if not current_data:
+        # Carregar dados se for a primeira execução
+        if app.items_df is None:
+            app.items_df = load_data()
+            app.total_items = len(app.items_df)
+            app.current_item_index = 0
+        
+        if app.total_items == 0:
+            return no_update, "Nenhum item encontrado na base de dados!", no_update, no_update, \
+                   no_update, no_update, no_update, no_update, no_update, \
+                   no_update, no_update, no_update, no_update, no_update, \
+                   no_update, True, "Nenhum item para validação. Verifique o banco de dados."
+        
+        # Reset das seleções
+        app.current_selections = []
+        
+        # Obter o item atual
+        current_item = app.items_df.iloc[app.current_item_index].to_dict()
+        
+        # Retornar os dados para exibição
+        return current_item, \
+               f"Item {app.current_item_index + 1} de {app.total_items}", \
+               current_item['descrição'], \
+               f"{current_item['CONFIDENCE']:.2f}%", \
+               current_item['TOP_1'], \
+               current_item['TOP_2'], \
+               current_item['TOP_3'], \
+               current_item['TOP_4'], \
+               current_item['TOP_5'], \
+               f"Score: {current_item['SCORE_1']:.4f}", \
+               f"Score: {current_item['SCORE_2']:.4f}", \
+               f"Score: {current_item['SCORE_3']:.4f}", \
+               f"Score: {current_item['SCORE_4']:.4f}", \
+               f"Score: {current_item['SCORE_5']:.4f}", \
+               [], False, no_update
+    
+    # Fechar modal
+    if trigger == 'close-modal':
+        return current_data, no_update, no_update, no_update, \
+               no_update, no_update, no_update, no_update, no_update, \
+               no_update, no_update, no_update, no_update, no_update, \
+               current_selections, False, no_update
+    
+    # Navegar para o próximo item ou anterior
+    move_next = False
+    if trigger in ['next-button', 'key-capture']:
+        # Salvar a validação atual antes de avançar
+        if current_data and current_selections:
+            # Adicionar seleções ao registro de validação
+            validation_item = {
+                'ID': current_data['ID'],
+                'numeroControlePNCP': current_data['numeroControlePNCP'],
+                'descrição': current_data['descrição'],
+                'original_top_1': current_data['TOP_1'],
+                'original_top_2': current_data['TOP_2'],
+                'original_top_3': current_data['TOP_3'],
+                'original_top_4': current_data['TOP_4'],
+                'original_top_5': current_data['TOP_5'],
+                'validated_choices': current_selections,
+                'validation_timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            app.validation_results.append(validation_item)
+        
+        move_next = True
+    
+    elif trigger == 'prev-button':
+        app.current_item_index = max(0, app.current_item_index - 1)
+    
+    # Se precisamos avançar para o próximo item
+    if move_next:
+        app.current_item_index += 1
+        
+        # Se chegamos ao fim de todos os itens
+        if app.current_item_index >= app.total_items:
+            # Salvar resultados e mostrar mensagem de conclusão
+            success = save_validation_results()
+            modal_msg = f"Resultados salvos em:\n{VALIDATION_FILE}" if success else "Falha ao salvar resultados."
+            return no_update, no_update, no_update, no_update, \
+                   no_update, no_update, no_update, no_update, no_update, \
+                   no_update, no_update, no_update, no_update, no_update, \
+                   current_selections, True, modal_msg
+    
+    # Carregar o próximo/anterior item
+    current_item = app.items_df.iloc[app.current_item_index].to_dict()
+    
+    # Reset das seleções ao mudar de item
+    app.current_selections = []
+    
+    # Retornar os dados para exibição
+    return current_item, \
+           f"Item {app.current_item_index + 1} de {app.total_items}", \
+           current_item['descrição'], \
+           f"{current_item['CONFIDENCE']:.2f}%", \
+           current_item['TOP_1'], \
+           current_item['TOP_2'], \
+           current_item['TOP_3'], \
+           current_item['TOP_4'], \
+           current_item['TOP_5'], \
+           f"Score: {current_item['SCORE_1']:.4f}", \
+           f"Score: {current_item['SCORE_2']:.4f}", \
+           f"Score: {current_item['SCORE_3']:.4f}", \
+           f"Score: {current_item['SCORE_4']:.4f}", \
+           f"Score: {current_item['SCORE_5']:.4f}", \
+           [], False, no_update
+
+# Callbacks para gerenciar seleção de boxes (um para cada box)
+for i in range(5):
+    @app.callback(
+        [Output(f'top-box-{i+1}', 'style'),
+         Output(f'order-label-{i+1}', 'children'),
+         Output(f'order-label-{i+1}', 'style'),
+         Output('selections-store', 'data', allow_duplicate=True)],
+        [Input(f'top-box-{i+1}', 'n_clicks'),
+         Input('key-capture', 'value')],
+        [State('selections-store', 'data'),
+         State(f'top-box-{i+1}', 'style')],
+        prevent_initial_call=True
+    )
+    def toggle_selection(n_clicks, key_value, current_selections, current_style):
+        # Determinar se este callback foi disparado por um clique ou tecla
+        box_index = int(ctx.outputs_list[0]['id'].split('-')[2]) - 1
+        
+        # Verificar se foi uma interação por teclado para este box específico
+        keyboard_selection = False
+        if ctx.triggered_id == 'key-capture' and key_value:
+            # Processar teclas (seriam setas, espaço, etc.)
+            # Por ora, vamos simplificar assumindo que números de 1 a 5 selecionam os boxes
+            if key_value.isdigit() and 1 <= int(key_value) <= 5:
+                if int(key_value) - 1 != box_index:  # Se não for este box, não faz nada
+                    raise PreventUpdate
+                keyboard_selection = True
+        
+        # Se não for um duplo clique (ou tecla para este box), não faz nada
+        # O critério para duplo clique é verificar se n_clicks é par
+        if ctx.triggered_id == f'top-box-{box_index+1}' and n_clicks % 2 != 0:
+            raise PreventUpdate
+            
+        new_style = dict(current_style)
+        new_selections = list(current_selections)
+        
+        # Verificar se este box já está na lista de seleções
+        if box_index in new_selections:
+            # Se estiver, remover e resetar o estilo
+            new_selections.remove(box_index)
+            new_style.pop('border', None)
+            return new_style, "", {}, new_selections
+        else:
+            # Se não estiver, adicionar à lista e definir o estilo
+            new_selections.append(box_index)
+            order = new_selections.index(box_index)
+            
+            if order < len(BORDER_COLORS):
+                border_color = BORDER_COLORS[order]
+                new_style['border'] = f'4px solid {border_color}'
+                
+                # Estilo para o label de ordem
+                order_label_style = {
+                    'position': 'absolute',
+                    'top': '5px',
+                    'right': '5px',
+                    'font-weight': 'bold',
+                    'font-size': '18px',
+                    'width': '30px',
+                    'height': '30px',
+                    'text-align': 'center',
+                    'line-height': '30px',
+                    'border-radius': '50%',
+                    'background-color': border_color,
+                    'color': 'white'
+                }
+                
+                return new_style, str(order + 1), order_label_style, new_selections
+            
+            return new_style, "", {}, new_selections
+
+# Captura de teclas para navegação
+@app.callback(
+    Output('key-capture', 'value'),
+    [Input('key-capture', 'value')],
+    prevent_initial_call=True
+)
+def process_keyboard_input(value):
+    if not value:
+        return ""
+    
+    # Seria necessário aqui implementar o processamento completo dos comandos de teclado
+    # Reset do valor para evitar processamentos duplicados
+    return ""
+
+# Captura de clique direito para avançar para o próximo item
+app.clientside_callback(
+    """
+    function(n_clicks) {
+        document.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            // Simular clique no botão Next
+            document.getElementById('next-button').click();
+            return false;
+        });
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output('item-description', 'n_clicks'),
+    Input('item-description', 'n_clicks'),
+    prevent_initial_call=True
+)
+
+if __name__ == '__main__':
+    app.run_server(debug=True)

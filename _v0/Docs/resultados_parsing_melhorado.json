@@ -1,0 +1,494 @@
+{
+  "file_path": "C:\\Users\\Haroldo Duraes\\Desktop\\Firmesa\\Comparativo ERP.xlsx",
+  "text_content": "| Sistema        | Faixa de Preço                                                                                                                                  | Link Oficial                        | Especialização                                                                           | Integração                                                                                    | Usabilidade                                                               | Suporte                                                                           | Custo                                                                          | Escalabilidade\nADVTEC | Start: R$ 499/mês (1 usuário); Pro: R$ 599/mês (5 usuários); Platinum: R$ 999/mês (10 usuários) | advtec.com.br | 🟢 Otimizado p/ hortifrúti (apps para pedidos, separação, etc) | 🟢 Módulos e apps integrados (vendas, estoque, compras) | 🟢 Foco em simplicidade e rápida implantação (treinamentos em vídeo) | 🟢 Suporte imediato (WhatsApp, remoto) | 🟡 Moderado (plano Pro equivale ~R$120/usuário/mês) | 🟡 Escala até médio porte (20+ usuários; cloud)\nMercatus | Sob consulta (plano personalizado via fornecedor; preço não divulgado publicamente) | mercatustecnologia.com.br | 🟢 Especializado em distribuidores de alimentos (30+ anos no setor hortifrúti) | 🟢 ERP integrado “APP Ceasa” (módulos compras, estoque, vendas integrados) | 🟡 Interface tradicional; possui apps móveis complementares | 🟢 Suporte próximo e especializado no segmento (equipe com experiência em Ceasas) | 🟡 Médio/Alto (solução robusta e consolidada – investimento maior) | 🟡 Escala de médio porte (foca em atacadistas regionais; há casos de sucesso no setor)\nWebMais | Planos a partir de ~R$ 250/mês (Planos Ouro, Platina, Diamante; valor varia conforme usuários e módulos) | webmaissistemas.com.br | 🟢 Focado em indústrias e distribuidoras (versão para hortifrúti disponível) | 🟡 ERP 100% online, integra setores básicos (financeiro, vendas, etc.) | 🟢 Sistema online de fácil acesso (interface web moderna) | 🟢 Suporte via web/portal (empresa voltada a PMEs) | 🟢 Baixo custo (modelo SaaS acessível para pequenos e médios) | 🟡 Escalabilidade limitada a portes médios (expansão conforme planos)\nNeXT Software | Profissional: R$ 79/mês (ERP local c/ PDV, 1 usuário); Enterprise: R$ 99/mês (ERP completo c/ Web, 1 usuário) – +R$ 15-20 por usuário adicional | nextsoftware.com.br (Hortifruti) | 🟢 Versão ERP Hortifruti dedicada (10+ anos no setor) | 🟡 Integração básica; inclui PDV, NF-e/NFC-e e até marketplace (Mercado Livre) | 🟢 Interface simples com atalhos (voltada a pequenas empresas) | 🟢 Suporte via helpdesk, chat e tutoriais online (focado em PME) | 🟢 Muito baixo (planos sem fidelidade e baixo custo de entrada) | 🔴 Baixa – ideal para pequeno porte; pode não suportar expansão grande (limitações de arquitetura e base local nos planos básicos)\nLimber | Sob consulta (ERP modular, planos conforme segmento e porte da empresa) | limbersoftware.com.br | 🟡 ERP agro e varejo com módulo hortifrúti (Limber Agro) | 🟢 Integração de processos operacionais e mobile (vendas, coleta, etc) | 🟡 Interface corporativa (ERP amplo para diversos segmentos) | 🟡 Suporte dedicado por segmento (atua com consultoria em agronegócio) | 🟡 Custo médio (solução enterprise adaptada a PME e grandes) | 🟡 Alta escalabilidade (foco em eficiência para empresas de vários portes)\nWLE Solutio | Sob consulta (licenciamento conforme módulos e usuários) | wlesoft.com.br – Solutio Hortifruti | 🟢 ERP Solutio Hortifruti especializado (frutas, verduras, FLV) | 🟢 Integração de processos do fornecedor à distribuição; integra balanças e conversão unidade | 🟡 Sistema desktop com módulos ricos (possui app móvel para pedidos) | 🟢 Suporte regional especializado (foco no sul; atendimento telefônico e in loco) | 🟡 Custo médio (solução nichada, personalizável) | 🟡 Escala para médio porte (atende frutarias e distribuidoras regionais)\nTOTVS Consinco | Sob consulta (licença e serviços customizados – solução enterprise) | consinco.com.br | 🟡 ERP de varejo/distribuição amplo (linha Consinco, supermercados e atacado) | 🟢 Altíssima integração (ERP + WMS + PDV; múltiplos módulos e apps TOTVS) | 🔴 Complexidade elevada (muitas funcionalidades; exige treinamento) | 🟡 Suporte TOTVS (rede nacional, porém menos ágil para PME) | 🔴 Alto custo (solução robusta para grandes redes; investimento significativo) | 🟢 Altíssima – atende grandes atacadistas e redes varejistas (escalável para qualquer porte)\nBluesoft | A partir de ~US$ 5.000/mês (≈R$ 25 mil) segundo Capterra (modelo 100% SaaS na nuvem) | bluesoft.com.br | 🟡 ERP cloud para varejo e atacado (supermercados, distribuidoras de médio-grande porte) | 🟢 Forte integração (API aberta; módulos financeiros, logística, fiscal integrados) | 🟡 Interface web moderna, porém abrangente (pode ser complexa pelo porte) | 🟡 Suporte dedicado a clientes enterprise (equipe especializada, TOTVS SA) | 🔴 Elevado (focado em médio/grande – investimento alto mensal) | 🟢 Alta – solução escalável para grandes volumes (SaaS em nuvem elástica)\n| Sistema ERP            | Especialização no Setor                                                                                                                                                                                                         | Automação & Integração                                                                                                                                                                                                                                                                                      | Facilidade de Uso / Implantação                                                                                                                                                                                               | Suporte Técnico                                                                                                                                                                                                                       | Custo (Mensal)                                                                                                                                                                                           | Escalabilidade\nADVTEC Hortifruti | 100% focado em distribuidoras de hortifrúti (FLV). Módulos de vendas, compras, estoque, NF-e etc. já adaptados ao ramo. | Altamente automatizado, com múltiplos apps móveis integrados (pedido de cliente, vendas, compras, picking, inventário). Módulos totalmente integrados (do pedido ao financeiro). | Interface intuitiva, com fluxos pensados para FLV. Implantação rápida via SaaS; fornecedor fornece vídeos de treinamento e ajuda na parametrização inicial. | Suporte imediato e humanizado – contato direto via WhatsApp, acesso remoto e telefone. Atendimento ágil focado nos horários críticos do setor. | Assinatura mensal (valores sob consulta). Custo acessível para PME; personalizações adicionais pagas à parte. ROI alto com ganhos de eficiência. | Escala para pequeno e médio porte. Suporta operações fracionadas e atacado de FLV. Pode atender múltiplos CDs regionais; para grandes redes, avaliar capacidade.\nMercatus APP Ceasa | Totalmente especializado em atacadistas/distribuidores de FLV, nasceu dentro da CEASA. Focado em vendas no atacado, boxes e distribuição hortifrúti. | Automação elevada: apps móveis para força de vendas (clientes fazem pedidos online) e contagem de estoque. Integração nativa com sistema Paripassu para rastreabilidade ANVISA. Módulos de estoque, vendas, financeiro integrados. | Sistema em nuvem de fácil acesso. Aplicativos amigáveis para usuários e clientes. Implantação guiada pelo fornecedor; interface moderna e simplificada. | Suporte diferenciado, com horários estendidos incluindo madrugadas, fins de semana – alinhado à rotina de CEASA. Atendimento via telefone, WhatsApp, chat e ticket. | Assinatura mensal conforme módulos. Investimento médio; justificado pelas funcionalidades (BI, mobile) e suporte estendido. Sem custos de infraestrutura (100% cloud). | Altamente escalável: atende empresas em todo Brasil. Suporta crescimento de volume sem degradação (infra AWS). Adequado a distribuidores regionais e nacionais de médio a grande porte.\nWebMais ERP | ERP nacional para Distribuidoras, com versão focada em alimentos/hortifrúti. Inclui módulos de estoque, expedição, vendas, compras e financeiro ajustados para perecíveis. | Boa integração entre setores, eliminando retrabalho. Controle de lote/validade integrado ao estoque/vendas. Possui app de vendas e relatórios de rotatividade, mas automação de picking/logística é básica. | Interface web simples e em português. Implementação rápida, com trial gratuito e suporte na migração. Curva de aprendizado curta – voltado a usuários de PME sem TI dedicada. | Suporte em horário comercial via telefone/chat. Equipe acessível e prestativa, porém sem suporte 24h. Documentação e vídeos tutoriais disponíveis. | Planos mensais acessíveis (há opção de teste grátis). Preço varia por nº de usuários/módulos, porém competitivo para pequenas e médias empresas. | Escalabilidade moderada: ideal para pequenas e médias distribuidoras. Suporta multi-filial e volumes razoáveis. Para expansão muito grande (vários depósitos, milhares de notas/dia), talvez demandaria upgrade para um ERP mais robusto.\nNeXT ERP Hortifruti | Desenvolvido especialmente para hortifrúti, com 10+ anos de melhorias no setor. Atende tanto lojas de hortifrúti quanto distribuidoras, com módulos específicos (cadastro de FLV, etc.). | Integra todos os módulos básicos (compras-estoque-vendas-financeiro). Emissão ilimitada de NF-e/NFS-e. Automação razoável: gera duplicatas automaticamente, atualiza estoque em tempo real, etc., porém não possui apps especializados (usa interface principal). | Sistema ágil e estável. Implantação guiada com suporte da equipe NeXT; disponibiliza demo online para facilidade. UI tradicional, mas simples. Usuários aprendem rápido tarefas comuns (venda, pedido, entrada). | Suporte por telefone e chat em horário comercial. Equipe conhecedora do produto e do ramo, suporte personalizado para dúvidas fiscais/operacionais. Atualizações frequentes para atender legislação. | Mensalidade com ótimo custo-benefício segundo o fornecedor. Faixas de preço para micro, pequena e média empresa, tornando viável a adesão de negócios familiares. | Escala para pequeno/médio porte. Suporta vários usuários e filiais, mas é limitado para operações de grande porte. Permite crescimento orgânico e aceita customizações sob demanda se o cliente ampliar operações.\nWLE Solutio Hortifruti | ERP verticalizado para hortifrúti, parte da suíte Solutio. Atende do varejo ao atacado de FLV, contemplando peculiaridades (un. medida, balanças, perecíveis). | Altamente integrado: módulos de compras, WMS/estoque, vendas PDV ou pedidos, financeiro e fiscal num só sistema. Rastreamento de lotes embutido; integração com balanças e coletores de dados; emissão de CT-e, MDF-e para logística. Automação de processos avançada (OC automática, atualizações online). | Sistema robusto, requer configuração detalhada. Implementação mais longa, personalizada conforme o cliente (muitos parâmetros). Interface rica em funções – exige treinamento, porém fornece grande poder de gestão. | Suporte dedicado, com consultores especializados no segmento. Atendimento humanizado, via telefone/e-mail, com direito a melhorias contínuas e backups cloud. Rede de parceiros para suporte local. | Modelo de licença ou assinatura modular. Custo médio/alto, proporcional à abrangência da solução. Recomendado para quem busca investimento em controle total (ROI via redução de perdas e eficiência). | Altíssima escalabilidade: versões para vários portes (Basic até Enterprise). Suporta múltiplos CDs, centenas de usuários e grande volume de dados. Preparado para operações complexas e em expansão, com atualizações constantes para longevidade.\nLimber ERP (Agro) | ERP nacional focado em eficiência para agronegócio e varejo. Versão hortifruti com funcionalidades dedicadas (estoque de perecíveis, multi-estoques, etc.). Menos conhecido, mas especializado em melhorar gestão de FLV. | Boa integração intersetorial: controle online de validade/lotes no estoque; módulos de compras, estoque, vendas e financeiro unificados. Oferece requisção de compra automatizada, transferência entre estoques e inventário móvel. | Interface moderna e limpa, com menus por segmento. Implantação assistida – consultoria inicial para configurar conforme necessidades. Uso intuitivo após setup; foco em simplicidade para o usuário final. | Suporte via canais digitais e telefone. Empresa orientada a resultados do cliente – acompanhamento próximo. Atualizações inclusas e infraestrutura cloud gerida pela Limber (menos preocupação para TI do cliente). | Assinatura SaaS flexível conforme módulos e tamanho da empresa. Custo na faixa de ERPs cloud para PMEs; investimento se paga com ganho de controle (evitar perdas, otimizar estoque). | Escalável para vários portes: atende pequenos negócios até cooperativas e cerealistas, logo comporta distribuidoras médias. Infraestrutura cloud ajusta recursos conforme crescimento. Pode integrar filiais e atender expansão regional sem troca de sistema.\nTOTVS (Consinco) | ERP consolidado para varejo/atacado alimentar. Módulos abrangentes que cobrem hortifrúti (compras especializadas, gestão de fornecedores agrícolas, app de compras FLV). Não exclusivo de FLV, mas altamente aderente ao setor. | Integração completa e personalizável: todos os processos de negócio em uma plataforma única. Elevada automação: abastecimento automático de estoque, geração nativa de indicadores, integração com PDVs, logística (rota, CT-e) e sistemas externos via API. | Sistema robusto e flexível, mas complexo – implementação exige projeto estruturado e tempo. Interface profissional, requer treinamento intensivo de usuários-chave. Muito configurável às regras específicas de cada empresa. | Suporte estruturado (TOTVS e parceiros). Atendimento via portal com SLAs; possibilidade de suporte dedicado (AMS). Atualizações frequentes garantem compliance legal. Comunidade grande de usuários TOTVS para troca de conhecimento. | Assinatura enterprise (pode rodar on-premise ou cloud). Custo elevado, adequando-se melhor a médias/grandes empresas. Inclui acesso a todo ecossistema TOTVS (updates, suporte, evoluções tecnológicas). | Escalabilidade máxima: atende redes de qualquer porte sem perda de performance. Projetado para crescer junto com a empresa – multi-filial, alta volumetria, ambientes complexos. Investimento de longo prazo, evitando futuras migrações.\n| Sistema                  | Faixa de Preço                                                                                        | Link Oficial                        | Especialização                                                                               | Integração                                                                                             | Usabilidade                                                                   | Suporte                                                                                   | Custo                                                                          | Escalabilidade\nADVTEC | Start: R$ 499/mês (1 usuário)Pro: R$ 599/mês (5 usuários)Platinum: R$ 999/mês (10 usuários) | advtec.com.br | ⭐⭐⭐⭐⭐ Otimizado p/ hortifrúti (apps para pedidos, separação, etc) | ⭐⭐⭐⭐⭐ Módulos e apps integrados (vendas, estoque, compras) | ⭐⭐⭐⭐⭐ Foco em simplicidade e rápida implantação (treinamentos em vídeo) | ⭐⭐⭐⭐⭐ Suporte imediato (WhatsApp, remoto) | ⭐⭐⭐ Moderado (plano Pro equivale ~R$120/usuário/mês) | ⭐⭐⭐ Escala até médio porte (20+ usuários; cloud)\nMercatus (APP Ceasa) | Sob consulta (plano personalizado; preço não divulgado) | mercatustecnologia.com.br | ⭐⭐⭐⭐⭐ Especializado em distribuidores de alimentos (30+ anos no setor hortifrúti) | ⭐⭐⭐⭐⭐ ERP integrado “APP Ceasa” (módulos compras, estoque, vendas integrados) | ⭐⭐⭐⭐ Interface tradicional; possui apps móveis complementares | ⭐⭐⭐⭐⭐ Suporte próximo e especializado no segmento (equipe com experiência em CEASA) | ⭐⭐⭐ Médio/Alto (solução robusta e consolidada – investimento maior) | ⭐⭐⭐ Escala de médio porte (foca em atacadistas regionais; há casos de sucesso no setor)\nWebMais | A partir de ~R$ 250/mês (planos Ouro, Platina, Diamante) | webmaissistemas.com.br | ⭐⭐⭐⭐⭐ Focado em indústrias e distribuidoras (versão para hortifrúti disponível) | ⭐⭐⭐ ERP 100% online, integra setores básicos (financeiro, vendas, etc.) | ⭐⭐⭐⭐⭐ Sistema online de fácil acesso (interface web moderna) | ⭐⭐⭐⭐⭐ Suporte via web/portal (empresa voltada a PMEs) | ⭐⭐⭐⭐⭐ Baixo custo (modelo SaaS acessível para pequenos e médios) | ⭐⭐⭐ Escalabilidade limitada a portes médios (expansão conforme planos)\nNeXT Software | Profissional: R$ 79/mês (1 usuário)Enterprise: R$ 99/mês (1 usuário) + R$ 15–20 por usuário adicional | nextsoftware.com.br | ⭐⭐⭐⭐⭐ Versão ERP Hortifruti dedicada (10+ anos no setor) | ⭐⭐⭐ Integração básica; inclui PDV, NF-e/NFC-e e até marketplace (Mercado Livre) | ⭐⭐⭐⭐⭐ Interface simples com atalhos (voltada a pequenas empresas) | ⭐⭐⭐⭐⭐ Suporte via helpdesk, chat e tutoriais online (focado em PME) | ⭐⭐⭐⭐⭐ Muito baixo (planos sem fidelidade e baixo custo de entrada) | ⭐ Baixa – ideal para pequeno porte; pode não suportar expansão grande (limitações de arquitetura e base local nos planos básicos)\nLimber ERP | Sob consulta (planos modulares conforme porte/segmento) | limbersoftware.com.br | ⭐⭐⭐ ERP agro e varejo com módulo hortifrúti (Limber Agro) | ⭐⭐⭐⭐⭐ Integração de processos operacionais e mobile (vendas, coleta, etc) | ⭐⭐⭐ Interface corporativa (ERP amplo para diversos segmentos) | ⭐⭐⭐ Suporte dedicado por segmento (atua com consultoria em agronegócio) | ⭐⭐⭐ Custo médio (solução enterprise adaptada a PME e grandes) | ⭐⭐⭐ Alta escalabilidade (foco em eficiência para empresas de vários portes)\nWLE Solutio (Hortifruti) | Sob consulta (licenciamento modular conforme usuários/módulos) | wlesoft.com.br – Solutio Hortifruti | ⭐⭐⭐⭐⭐ ERP Solutio Hortifruti especializado (frutas, verduras, FLV) | ⭐⭐⭐⭐⭐ Integração de processos do fornecedor à distribuição ; integra balanças e conversão unidade | ⭐⭐⭐ Sistema desktop com módulos ricos (possui app móvel para pedidos) | ⭐⭐⭐⭐⭐ Suporte regional especializado (foco no Sul; atendimento telefônico e in loco) | ⭐⭐⭐ Custo médio (solução nichada, personalizável) | ⭐⭐⭐ Escala para médio porte (atende frutarias e distribuidoras regionais)\nTOTVS (Consinco) | Sob consulta (licença e serviços customizados; solução enterprise) | consinco.com.br | ⭐⭐⭐ ERP de varejo/distribuição amplo (linha Consinco, supermercados e atacado) | ⭐⭐⭐⭐⭐ Altíssima integração (ERP + WMS + PDV; múltiplos módulos e apps TOTVS) | ⭐ Complexidade elevada (muitas funcionalidades; exige treinamento) | ⭐⭐⭐ Suporte TOTVS (rede nacional, porém menos ágil para PME) | ⭐ Alto custo (solução robusta para grandes redes; investimento significativo) | ⭐⭐⭐⭐⭐ Altíssima – atende grandes atacadistas e redes varejistas (escalável para qualquer porte)\nBluesoft | A partir de ~US$ 5.000/mês (~R$ 25 000/mês) | bluesoft.com.br | ⭐⭐⭐ ERP cloud para varejo e atacado (supermercados, distribuidoras de médio-grande porte) | ⭐⭐⭐⭐⭐ Forte integração (API aberta; módulos financeiros, logística, fiscal integrados) | ⭐⭐⭐ Interface web moderna, porém abrangente (pode ser complexa pelo porte) | ⭐⭐⭐ Suporte dedicado a clientes enterprise (equipe especializada TOTVS SA) | ⭐ Elevado (focado em médio/grande – investimento alto mensal) | ⭐⭐⭐⭐⭐ Alta – solução escalável para grandes volumes (SaaS em nuvem elástica)\n| Sistema                | Link Oficial              | Faixa de Preço                                       | Especialização                                    | Integração                                      | Usabilidade                           | Suporte                                        | Custo                                  | Escalabilidade                         | Inovação Tecnológica\nADVTEC | advtec.com.br | Start: R$ 399/mêsPro: R$ 599/mêsPlatinum: R$ 999/mês | ★★★★★ (Foco 100 % em hortifrúti, apps exclusivos) | ★★★★☆ (NF-e, balanças, integrações padrões) | ★★★★★ (Muito intuitivo, mobile-first) | ★★★★★ (Suporte imediato via WhatsApp) | ★★★★☆ (Preço acessível) | ★★★★☆ (Cresce bem para PMEs, cloud) | ★★★★★ (IA em pedidos, suite mobile completa)\nMercatus (APP Ceasa) | mercatustecnologia.com.br | Sob consulta (plano personalizado) | ★★★★★ (30 anos no setor FLV, recursos Ceasa) | ★★★★★ (Módulos integrados, Paripassu, bancária) | ★★★★☆ (Sistema robusto, apps ajudam) | ★★★★★ (Suporte estendido em horários críticos) | ★★★☆☆ (Investimento médio/alto) | ★★★★☆ (Escala para médias, cloud) | ★★★★☆ (BI, mobile, rastreabilidade)\nHortiGestão | hortigestao.com.br | Planos a partir de ~R$ 299/mês | ★★★★★ (Nativo de CEASA, rotina FLV) | ★★★★☆ (NF-e, boletos, básico contábil) | ★★★★★ (Fluxo otimizado, app fácil) | ★★★★★ (Suporte 24 h, proximidade) | ★★★★☆ (SaaS, bom custo-benefício) | ★★★★☆ (Cloud puro, multiusuário) | ★★★★☆ (App móvel, relatórios inteligentes)\nPOST Sistemas | postsistemas.com.br | Sob consulta (modular) | ★★★★☆ (ERP multi-segmento com módulo FLV) | ★★★★★ (Paripassu, TEF, NF-e, contábil) | ★★★★☆ (Interface tradicional + apps) | ★★★★★ (Suporte dedicado, melhorias) | ★★★☆☆ (Modular, varia conforme extras) | ★★★★★ (Altamente escalável) | ★★★★☆ (Força de vendas/compras mobile, rastreabilidade)\nWLE Solutio Hortifruti | wlesoft.com.br | Sob consulta (licenciamento modular) | ★★★★☆ (ERP moldável para FLV e varejo) | ★★★★★ (Integr. balanças, SAT, NF-e, contábil) | ★★★★☆ (Uso simples, PDV integrado) | ★★★★☆ (Suporte regional, parceiros locais) | ★★★★☆ (Modular, custo médio) | ★★★★☆ (Bom para pequenas e médias) | ★★★★☆ (Etiquetagem, mobile inventory)\nLimber Agro | limbersoftware.com.br | Sob consulta (plano modular) | ★★★★☆ (Agronegócio + módulo FLV) | ★★★★★ (Cadeias agrícolas, BI, IoT) | ★★★☆☆ (Exige capacitação) | ★★★★☆ (Suporte completo, consultoria) | ★★☆☆☆ (Custo elevado, foco enterprise) | ★★★★★ (Nuvem escalável, grande volume) | ★★★★★ (Roteirização automática, IA)",
+  "sheets_data": {
+    "Comparativo 1": [
+      {
+        "sheet_name": "Comparativo 1",
+        "rows": 10,
+        "columns": 9,
+        "column_names": [
+          "Sistema",
+          "Faixa de Preço",
+          "Link Oficial",
+          "Especialização",
+          "Integração",
+          "Usabilidade",
+          "Suporte",
+          "Custo",
+          "Escalabilidade"
+        ],
+        "data": [
+          {
+            "Sistema": "ADVTEC",
+            "Faixa de Preço": "Start: R$ 499/mês (1 usuário); Pro: R$ 599/mês (5 usuários); Platinum: R$ 999/mês (10 usuários)",
+            "Link Oficial": "advtec.com.br",
+            "Especialização": "🟢 Otimizado p/ hortifrúti (apps para pedidos, separação, etc)",
+            "Integração": "🟢 Módulos e apps integrados (vendas, estoque, compras)",
+            "Usabilidade": "🟢 Foco em simplicidade e rápida implantação (treinamentos em vídeo)",
+            "Suporte": "🟢 Suporte imediato (WhatsApp, remoto)",
+            "Custo": "🟡 Moderado (plano Pro equivale ~R$120/usuário/mês)",
+            "Escalabilidade": "🟡 Escala até médio porte (20+ usuários; cloud)"
+          },
+          {
+            "Sistema": "Mercatus",
+            "Faixa de Preço": "Sob consulta (plano personalizado via fornecedor; preço não divulgado publicamente)",
+            "Link Oficial": "mercatustecnologia.com.br",
+            "Especialização": "🟢 Especializado em distribuidores de alimentos (30+ anos no setor hortifrúti)",
+            "Integração": "🟢 ERP integrado “APP Ceasa” (módulos compras, estoque, vendas integrados)",
+            "Usabilidade": "🟡 Interface tradicional; possui apps móveis complementares",
+            "Suporte": "🟢 Suporte próximo e especializado no segmento (equipe com experiência em Ceasas)",
+            "Custo": "🟡 Médio/Alto (solução robusta e consolidada – investimento maior)",
+            "Escalabilidade": "🟡 Escala de médio porte (foca em atacadistas regionais; há casos de sucesso no setor)"
+          },
+          {
+            "Sistema": "WebMais",
+            "Faixa de Preço": "Planos a partir de ~R$ 250/mês (Planos Ouro, Platina, Diamante; valor varia conforme usuários e módulos)",
+            "Link Oficial": "webmaissistemas.com.br",
+            "Especialização": "🟢 Focado em indústrias e distribuidoras (versão para hortifrúti disponível)",
+            "Integração": "🟡 ERP 100% online, integra setores básicos (financeiro, vendas, etc.)",
+            "Usabilidade": "🟢 Sistema online de fácil acesso (interface web moderna)",
+            "Suporte": "🟢 Suporte via web/portal (empresa voltada a PMEs)",
+            "Custo": "🟢 Baixo custo (modelo SaaS acessível para pequenos e médios)",
+            "Escalabilidade": "🟡 Escalabilidade limitada a portes médios (expansão conforme planos)"
+          },
+          {
+            "Sistema": "NeXT Software",
+            "Faixa de Preço": "Profissional: R$ 79/mês (ERP local c/ PDV, 1 usuário); Enterprise: R$ 99/mês (ERP completo c/ Web, 1 usuário) – +R$ 15-20 por usuário adicional",
+            "Link Oficial": "nextsoftware.com.br (Hortifruti)",
+            "Especialização": "🟢 Versão ERP Hortifruti dedicada (10+ anos no setor)",
+            "Integração": "🟡 Integração básica; inclui PDV, NF-e/NFC-e e até marketplace (Mercado Livre)",
+            "Usabilidade": "🟢 Interface simples com atalhos (voltada a pequenas empresas)",
+            "Suporte": "🟢 Suporte via helpdesk, chat e tutoriais online (focado em PME)",
+            "Custo": "🟢 Muito baixo (planos sem fidelidade e baixo custo de entrada)",
+            "Escalabilidade": "🔴 Baixa – ideal para pequeno porte; pode não suportar expansão grande (limitações de arquitetura e base local nos planos básicos)"
+          },
+          {
+            "Sistema": "Limber",
+            "Faixa de Preço": "Sob consulta (ERP modular, planos conforme segmento e porte da empresa)",
+            "Link Oficial": "limbersoftware.com.br",
+            "Especialização": "🟡 ERP agro e varejo com módulo hortifrúti (Limber Agro)",
+            "Integração": "🟢 Integração de processos operacionais e mobile (vendas, coleta, etc)",
+            "Usabilidade": "🟡 Interface corporativa (ERP amplo para diversos segmentos)",
+            "Suporte": "🟡 Suporte dedicado por segmento (atua com consultoria em agronegócio)",
+            "Custo": "🟡 Custo médio (solução enterprise adaptada a PME e grandes)",
+            "Escalabilidade": "🟡 Alta escalabilidade (foco em eficiência para empresas de vários portes)"
+          },
+          {
+            "Sistema": "WLE Solutio",
+            "Faixa de Preço": "Sob consulta (licenciamento conforme módulos e usuários)",
+            "Link Oficial": "wlesoft.com.br – Solutio Hortifruti",
+            "Especialização": "🟢 ERP Solutio Hortifruti especializado (frutas, verduras, FLV)",
+            "Integração": "🟢 Integração de processos do fornecedor à distribuição; integra balanças e conversão unidade",
+            "Usabilidade": "🟡 Sistema desktop com módulos ricos (possui app móvel para pedidos)",
+            "Suporte": "🟢 Suporte regional especializado (foco no sul; atendimento telefônico e in loco)",
+            "Custo": "🟡 Custo médio (solução nichada, personalizável)",
+            "Escalabilidade": "🟡 Escala para médio porte (atende frutarias e distribuidoras regionais)"
+          },
+          {
+            "Sistema": "TOTVS Consinco",
+            "Faixa de Preço": "Sob consulta (licença e serviços customizados – solução enterprise)",
+            "Link Oficial": "consinco.com.br",
+            "Especialização": "🟡 ERP de varejo/distribuição amplo (linha Consinco, supermercados e atacado)",
+            "Integração": "🟢 Altíssima integração (ERP + WMS + PDV; múltiplos módulos e apps TOTVS)",
+            "Usabilidade": "🔴 Complexidade elevada (muitas funcionalidades; exige treinamento)",
+            "Suporte": "🟡 Suporte TOTVS (rede nacional, porém menos ágil para PME)",
+            "Custo": "🔴 Alto custo (solução robusta para grandes redes; investimento significativo)",
+            "Escalabilidade": "🟢 Altíssima – atende grandes atacadistas e redes varejistas (escalável para qualquer porte)"
+          },
+          {
+            "Sistema": "Bluesoft",
+            "Faixa de Preço": "A partir de ~US$ 5.000/mês (≈R$ 25 mil) segundo Capterra (modelo 100% SaaS na nuvem)",
+            "Link Oficial": "bluesoft.com.br",
+            "Especialização": "🟡 ERP cloud para varejo e atacado (supermercados, distribuidoras de médio-grande porte)",
+            "Integração": "🟢 Forte integração (API aberta; módulos financeiros, logística, fiscal integrados)",
+            "Usabilidade": "🟡 Interface web moderna, porém abrangente (pode ser complexa pelo porte)",
+            "Suporte": "🟡 Suporte dedicado a clientes enterprise (equipe especializada, TOTVS SA)",
+            "Custo": "🔴 Elevado (focado em médio/grande – investimento alto mensal)",
+            "Escalabilidade": "🟢 Alta – solução escalável para grandes volumes (SaaS em nuvem elástica)"
+          },
+          {
+            "Sistema": "",
+            "Faixa de Preço": "",
+            "Link Oficial": "",
+            "Especialização": "",
+            "Integração": "",
+            "Usabilidade": "",
+            "Suporte": "",
+            "Custo": "",
+            "Escalabilidade": ""
+          },
+          {
+            "Sistema": "Legenda: 🟢 = ótimo, 🟡 = adequado/mediano, 🔴 = fraco/limitado.",
+            "Faixa de Preço": "",
+            "Link Oficial": "",
+            "Especialização": "",
+            "Integração": "",
+            "Usabilidade": "",
+            "Suporte": "",
+            "Custo": "",
+            "Escalabilidade": ""
+          }
+        ]
+      }
+    ],
+    "Comparativo 2": [
+      {
+        "sheet_name": "Comparativo 2",
+        "rows": 7,
+        "columns": 7,
+        "column_names": [
+          "Sistema ERP",
+          "Especialização no Setor",
+          "Automação & Integração",
+          "Facilidade de Uso / Implantação",
+          "Suporte Técnico",
+          "Custo (Mensal)",
+          "Escalabilidade"
+        ],
+        "data": [
+          {
+            "Sistema ERP": "ADVTEC Hortifruti",
+            "Especialização no Setor": "100% focado em distribuidoras de hortifrúti (FLV). Módulos de vendas, compras, estoque, NF-e etc. já adaptados ao ramo.",
+            "Automação & Integração": "Altamente automatizado, com múltiplos apps móveis integrados (pedido de cliente, vendas, compras, picking, inventário). Módulos totalmente integrados (do pedido ao financeiro).",
+            "Facilidade de Uso / Implantação": "Interface intuitiva, com fluxos pensados para FLV. Implantação rápida via SaaS; fornecedor fornece vídeos de treinamento e ajuda na parametrização inicial.",
+            "Suporte Técnico": "Suporte imediato e humanizado – contato direto via WhatsApp, acesso remoto e telefone. Atendimento ágil focado nos horários críticos do setor.",
+            "Custo (Mensal)": "Assinatura mensal (valores sob consulta). Custo acessível para PME; personalizações adicionais pagas à parte. ROI alto com ganhos de eficiência.",
+            "Escalabilidade": "Escala para pequeno e médio porte. Suporta operações fracionadas e atacado de FLV. Pode atender múltiplos CDs regionais; para grandes redes, avaliar capacidade."
+          },
+          {
+            "Sistema ERP": "Mercatus APP Ceasa",
+            "Especialização no Setor": "Totalmente especializado em atacadistas/distribuidores de FLV, nasceu dentro da CEASA. Focado em vendas no atacado, boxes e distribuição hortifrúti.",
+            "Automação & Integração": "Automação elevada: apps móveis para força de vendas (clientes fazem pedidos online) e contagem de estoque. Integração nativa com sistema Paripassu para rastreabilidade ANVISA. Módulos de estoque, vendas, financeiro integrados.",
+            "Facilidade de Uso / Implantação": "Sistema em nuvem de fácil acesso. Aplicativos amigáveis para usuários e clientes. Implantação guiada pelo fornecedor; interface moderna e simplificada.",
+            "Suporte Técnico": "Suporte diferenciado, com horários estendidos incluindo madrugadas, fins de semana – alinhado à rotina de CEASA. Atendimento via telefone, WhatsApp, chat e ticket.",
+            "Custo (Mensal)": "Assinatura mensal conforme módulos. Investimento médio; justificado pelas funcionalidades (BI, mobile) e suporte estendido. Sem custos de infraestrutura (100% cloud).",
+            "Escalabilidade": "Altamente escalável: atende empresas em todo Brasil. Suporta crescimento de volume sem degradação (infra AWS). Adequado a distribuidores regionais e nacionais de médio a grande porte."
+          },
+          {
+            "Sistema ERP": "WebMais ERP",
+            "Especialização no Setor": "ERP nacional para Distribuidoras, com versão focada em alimentos/hortifrúti. Inclui módulos de estoque, expedição, vendas, compras e financeiro ajustados para perecíveis.",
+            "Automação & Integração": "Boa integração entre setores, eliminando retrabalho. Controle de lote/validade integrado ao estoque/vendas. Possui app de vendas e relatórios de rotatividade, mas automação de picking/logística é básica.",
+            "Facilidade de Uso / Implantação": "Interface web simples e em português. Implementação rápida, com trial gratuito e suporte na migração. Curva de aprendizado curta – voltado a usuários de PME sem TI dedicada.",
+            "Suporte Técnico": "Suporte em horário comercial via telefone/chat. Equipe acessível e prestativa, porém sem suporte 24h. Documentação e vídeos tutoriais disponíveis.",
+            "Custo (Mensal)": "Planos mensais acessíveis (há opção de teste grátis). Preço varia por nº de usuários/módulos, porém competitivo para pequenas e médias empresas.",
+            "Escalabilidade": "Escalabilidade moderada: ideal para pequenas e médias distribuidoras. Suporta multi-filial e volumes razoáveis. Para expansão muito grande (vários depósitos, milhares de notas/dia), talvez demandaria upgrade para um ERP mais robusto."
+          },
+          {
+            "Sistema ERP": "NeXT ERP Hortifruti",
+            "Especialização no Setor": "Desenvolvido especialmente para hortifrúti, com 10+ anos de melhorias no setor. Atende tanto lojas de hortifrúti quanto distribuidoras, com módulos específicos (cadastro de FLV, etc.).",
+            "Automação & Integração": "Integra todos os módulos básicos (compras-estoque-vendas-financeiro). Emissão ilimitada de NF-e/NFS-e. Automação razoável: gera duplicatas automaticamente, atualiza estoque em tempo real, etc., porém não possui apps especializados (usa interface principal).",
+            "Facilidade de Uso / Implantação": "Sistema ágil e estável. Implantação guiada com suporte da equipe NeXT; disponibiliza demo online para facilidade. UI tradicional, mas simples. Usuários aprendem rápido tarefas comuns (venda, pedido, entrada).",
+            "Suporte Técnico": "Suporte por telefone e chat em horário comercial. Equipe conhecedora do produto e do ramo, suporte personalizado para dúvidas fiscais/operacionais. Atualizações frequentes para atender legislação.",
+            "Custo (Mensal)": "Mensalidade com ótimo custo-benefício segundo o fornecedor. Faixas de preço para micro, pequena e média empresa, tornando viável a adesão de negócios familiares.",
+            "Escalabilidade": "Escala para pequeno/médio porte. Suporta vários usuários e filiais, mas é limitado para operações de grande porte. Permite crescimento orgânico e aceita customizações sob demanda se o cliente ampliar operações."
+          },
+          {
+            "Sistema ERP": "WLE Solutio Hortifruti",
+            "Especialização no Setor": "ERP verticalizado para hortifrúti, parte da suíte Solutio. Atende do varejo ao atacado de FLV, contemplando peculiaridades (un. medida, balanças, perecíveis).",
+            "Automação & Integração": "Altamente integrado: módulos de compras, WMS/estoque, vendas PDV ou pedidos, financeiro e fiscal num só sistema. Rastreamento de lotes embutido; integração com balanças e coletores de dados; emissão de CT-e, MDF-e para logística. Automação de processos avançada (OC automática, atualizações online).",
+            "Facilidade de Uso / Implantação": "Sistema robusto, requer configuração detalhada. Implementação mais longa, personalizada conforme o cliente (muitos parâmetros). Interface rica em funções – exige treinamento, porém fornece grande poder de gestão.",
+            "Suporte Técnico": "Suporte dedicado, com consultores especializados no segmento. Atendimento humanizado, via telefone/e-mail, com direito a melhorias contínuas e backups cloud. Rede de parceiros para suporte local.",
+            "Custo (Mensal)": "Modelo de licença ou assinatura modular. Custo médio/alto, proporcional à abrangência da solução. Recomendado para quem busca investimento em controle total (ROI via redução de perdas e eficiência).",
+            "Escalabilidade": "Altíssima escalabilidade: versões para vários portes (Basic até Enterprise). Suporta múltiplos CDs, centenas de usuários e grande volume de dados. Preparado para operações complexas e em expansão, com atualizações constantes para longevidade."
+          },
+          {
+            "Sistema ERP": "Limber ERP (Agro)",
+            "Especialização no Setor": "ERP nacional focado em eficiência para agronegócio e varejo. Versão hortifruti com funcionalidades dedicadas (estoque de perecíveis, multi-estoques, etc.). Menos conhecido, mas especializado em melhorar gestão de FLV.",
+            "Automação & Integração": "Boa integração intersetorial: controle online de validade/lotes no estoque; módulos de compras, estoque, vendas e financeiro unificados. Oferece requisção de compra automatizada, transferência entre estoques e inventário móvel.",
+            "Facilidade de Uso / Implantação": "Interface moderna e limpa, com menus por segmento. Implantação assistida – consultoria inicial para configurar conforme necessidades. Uso intuitivo após setup; foco em simplicidade para o usuário final.",
+            "Suporte Técnico": "Suporte via canais digitais e telefone. Empresa orientada a resultados do cliente – acompanhamento próximo. Atualizações inclusas e infraestrutura cloud gerida pela Limber (menos preocupação para TI do cliente).",
+            "Custo (Mensal)": "Assinatura SaaS flexível conforme módulos e tamanho da empresa. Custo na faixa de ERPs cloud para PMEs; investimento se paga com ganho de controle (evitar perdas, otimizar estoque).",
+            "Escalabilidade": "Escalável para vários portes: atende pequenos negócios até cooperativas e cerealistas, logo comporta distribuidoras médias. Infraestrutura cloud ajusta recursos conforme crescimento. Pode integrar filiais e atender expansão regional sem troca de sistema."
+          },
+          {
+            "Sistema ERP": "TOTVS (Consinco)",
+            "Especialização no Setor": "ERP consolidado para varejo/atacado alimentar. Módulos abrangentes que cobrem hortifrúti (compras especializadas, gestão de fornecedores agrícolas, app de compras FLV). Não exclusivo de FLV, mas altamente aderente ao setor.",
+            "Automação & Integração": "Integração completa e personalizável: todos os processos de negócio em uma plataforma única. Elevada automação: abastecimento automático de estoque, geração nativa de indicadores, integração com PDVs, logística (rota, CT-e) e sistemas externos via API.",
+            "Facilidade de Uso / Implantação": "Sistema robusto e flexível, mas complexo – implementação exige projeto estruturado e tempo. Interface profissional, requer treinamento intensivo de usuários-chave. Muito configurável às regras específicas de cada empresa.",
+            "Suporte Técnico": "Suporte estruturado (TOTVS e parceiros). Atendimento via portal com SLAs; possibilidade de suporte dedicado (AMS). Atualizações frequentes garantem compliance legal. Comunidade grande de usuários TOTVS para troca de conhecimento.",
+            "Custo (Mensal)": "Assinatura enterprise (pode rodar on-premise ou cloud). Custo elevado, adequando-se melhor a médias/grandes empresas. Inclui acesso a todo ecossistema TOTVS (updates, suporte, evoluções tecnológicas).",
+            "Escalabilidade": "Escalabilidade máxima: atende redes de qualquer porte sem perda de performance. Projetado para crescer junto com a empresa – multi-filial, alta volumetria, ambientes complexos. Investimento de longo prazo, evitando futuras migrações."
+          }
+        ]
+      }
+    ],
+    "Comparativo 3": [
+      {
+        "sheet_name": "Comparativo 3",
+        "rows": 8,
+        "columns": 9,
+        "column_names": [
+          "Sistema",
+          "Faixa de Preço",
+          "Link Oficial",
+          "Especialização",
+          "Integração",
+          "Usabilidade",
+          "Suporte",
+          "Custo",
+          "Escalabilidade"
+        ],
+        "data": [
+          {
+            "Sistema": "ADVTEC",
+            "Faixa de Preço": "Start: R$ 499/mês (1 usuário)Pro: R$ 599/mês (5 usuários)Platinum: R$ 999/mês (10 usuários)",
+            "Link Oficial": "advtec.com.br",
+            "Especialização": "⭐⭐⭐⭐⭐ Otimizado p/ hortifrúti (apps para pedidos, separação, etc)",
+            "Integração": "⭐⭐⭐⭐⭐ Módulos e apps integrados (vendas, estoque, compras)",
+            "Usabilidade": "⭐⭐⭐⭐⭐ Foco em simplicidade e rápida implantação (treinamentos em vídeo)",
+            "Suporte": "⭐⭐⭐⭐⭐ Suporte imediato (WhatsApp, remoto)",
+            "Custo": "⭐⭐⭐ Moderado (plano Pro equivale ~R$120/usuário/mês)",
+            "Escalabilidade": "⭐⭐⭐ Escala até médio porte (20+ usuários; cloud)"
+          },
+          {
+            "Sistema": "Mercatus (APP Ceasa)",
+            "Faixa de Preço": "Sob consulta (plano personalizado; preço não divulgado)",
+            "Link Oficial": "mercatustecnologia.com.br",
+            "Especialização": "⭐⭐⭐⭐⭐ Especializado em distribuidores de alimentos (30+ anos no setor hortifrúti)",
+            "Integração": "⭐⭐⭐⭐⭐ ERP integrado “APP Ceasa” (módulos compras, estoque, vendas integrados)",
+            "Usabilidade": "⭐⭐⭐⭐ Interface tradicional; possui apps móveis complementares",
+            "Suporte": "⭐⭐⭐⭐⭐ Suporte próximo e especializado no segmento (equipe com experiência em CEASA)",
+            "Custo": "⭐⭐⭐ Médio/Alto (solução robusta e consolidada – investimento maior)",
+            "Escalabilidade": "⭐⭐⭐ Escala de médio porte (foca em atacadistas regionais; há casos de sucesso no setor)"
+          },
+          {
+            "Sistema": "WebMais",
+            "Faixa de Preço": "A partir de ~R$ 250/mês (planos Ouro, Platina, Diamante)",
+            "Link Oficial": "webmaissistemas.com.br",
+            "Especialização": "⭐⭐⭐⭐⭐ Focado em indústrias e distribuidoras (versão para hortifrúti disponível)",
+            "Integração": "⭐⭐⭐ ERP 100% online, integra setores básicos (financeiro, vendas, etc.)",
+            "Usabilidade": "⭐⭐⭐⭐⭐ Sistema online de fácil acesso (interface web moderna)",
+            "Suporte": "⭐⭐⭐⭐⭐ Suporte via web/portal (empresa voltada a PMEs)",
+            "Custo": "⭐⭐⭐⭐⭐ Baixo custo (modelo SaaS acessível para pequenos e médios)",
+            "Escalabilidade": "⭐⭐⭐ Escalabilidade limitada a portes médios (expansão conforme planos)"
+          },
+          {
+            "Sistema": "NeXT Software",
+            "Faixa de Preço": "Profissional: R$ 79/mês (1 usuário)Enterprise: R$ 99/mês (1 usuário) + R$ 15–20 por usuário adicional",
+            "Link Oficial": "nextsoftware.com.br",
+            "Especialização": "⭐⭐⭐⭐⭐ Versão ERP Hortifruti dedicada (10+ anos no setor)",
+            "Integração": "⭐⭐⭐ Integração básica; inclui PDV, NF-e/NFC-e e até marketplace (Mercado Livre)",
+            "Usabilidade": "⭐⭐⭐⭐⭐ Interface simples com atalhos (voltada a pequenas empresas)",
+            "Suporte": "⭐⭐⭐⭐⭐ Suporte via helpdesk, chat e tutoriais online (focado em PME)",
+            "Custo": "⭐⭐⭐⭐⭐ Muito baixo (planos sem fidelidade e baixo custo de entrada)",
+            "Escalabilidade": "⭐ Baixa – ideal para pequeno porte; pode não suportar expansão grande (limitações de arquitetura e base local nos planos básicos)"
+          },
+          {
+            "Sistema": "Limber ERP",
+            "Faixa de Preço": "Sob consulta (planos modulares conforme porte/segmento)",
+            "Link Oficial": "limbersoftware.com.br",
+            "Especialização": "⭐⭐⭐ ERP agro e varejo com módulo hortifrúti (Limber Agro)",
+            "Integração": "⭐⭐⭐⭐⭐ Integração de processos operacionais e mobile (vendas, coleta, etc)",
+            "Usabilidade": "⭐⭐⭐ Interface corporativa (ERP amplo para diversos segmentos)",
+            "Suporte": "⭐⭐⭐ Suporte dedicado por segmento (atua com consultoria em agronegócio)",
+            "Custo": "⭐⭐⭐ Custo médio (solução enterprise adaptada a PME e grandes)",
+            "Escalabilidade": "⭐⭐⭐ Alta escalabilidade (foco em eficiência para empresas de vários portes)"
+          },
+          {
+            "Sistema": "WLE Solutio (Hortifruti)",
+            "Faixa de Preço": "Sob consulta (licenciamento modular conforme usuários/módulos)",
+            "Link Oficial": "wlesoft.com.br – Solutio Hortifruti",
+            "Especialização": "⭐⭐⭐⭐⭐ ERP Solutio Hortifruti especializado (frutas, verduras, FLV)",
+            "Integração": "⭐⭐⭐⭐⭐ Integração de processos do fornecedor à distribuição ; integra balanças e conversão unidade",
+            "Usabilidade": "⭐⭐⭐ Sistema desktop com módulos ricos (possui app móvel para pedidos)",
+            "Suporte": "⭐⭐⭐⭐⭐ Suporte regional especializado (foco no Sul; atendimento telefônico e in loco)",
+            "Custo": "⭐⭐⭐ Custo médio (solução nichada, personalizável)",
+            "Escalabilidade": "⭐⭐⭐ Escala para médio porte (atende frutarias e distribuidoras regionais)"
+          },
+          {
+            "Sistema": "TOTVS (Consinco)",
+            "Faixa de Preço": "Sob consulta (licença e serviços customizados; solução enterprise)",
+            "Link Oficial": "consinco.com.br",
+            "Especialização": "⭐⭐⭐ ERP de varejo/distribuição amplo (linha Consinco, supermercados e atacado)",
+            "Integração": "⭐⭐⭐⭐⭐ Altíssima integração (ERP + WMS + PDV; múltiplos módulos e apps TOTVS)",
+            "Usabilidade": "⭐ Complexidade elevada (muitas funcionalidades; exige treinamento)",
+            "Suporte": "⭐⭐⭐ Suporte TOTVS (rede nacional, porém menos ágil para PME)",
+            "Custo": "⭐ Alto custo (solução robusta para grandes redes; investimento significativo)",
+            "Escalabilidade": "⭐⭐⭐⭐⭐ Altíssima – atende grandes atacadistas e redes varejistas (escalável para qualquer porte)"
+          },
+          {
+            "Sistema": "Bluesoft",
+            "Faixa de Preço": "A partir de ~US$ 5.000/mês (~R$ 25 000/mês)",
+            "Link Oficial": "bluesoft.com.br",
+            "Especialização": "⭐⭐⭐ ERP cloud para varejo e atacado (supermercados, distribuidoras de médio-grande porte)",
+            "Integração": "⭐⭐⭐⭐⭐ Forte integração (API aberta; módulos financeiros, logística, fiscal integrados)",
+            "Usabilidade": "⭐⭐⭐ Interface web moderna, porém abrangente (pode ser complexa pelo porte)",
+            "Suporte": "⭐⭐⭐ Suporte dedicado a clientes enterprise (equipe especializada TOTVS SA)",
+            "Custo": "⭐ Elevado (focado em médio/grande – investimento alto mensal)",
+            "Escalabilidade": "⭐⭐⭐⭐⭐ Alta – solução escalável para grandes volumes (SaaS em nuvem elástica)"
+          }
+        ]
+      }
+    ],
+    "Comparativo 4": [
+      {
+        "sheet_name": "Comparativo 4",
+        "rows": 6,
+        "columns": 10,
+        "column_names": [
+          "Sistema",
+          "Link Oficial",
+          "Faixa de Preço",
+          "Especialização",
+          "Integração",
+          "Usabilidade",
+          "Suporte",
+          "Custo",
+          "Escalabilidade",
+          "Inovação Tecnológica"
+        ],
+        "data": [
+          {
+            "Sistema": "ADVTEC",
+            "Link Oficial": "advtec.com.br",
+            "Faixa de Preço": "Start: R$ 399/mêsPro: R$ 599/mêsPlatinum: R$ 999/mês",
+            "Especialização": "★★★★★ (Foco 100 % em hortifrúti, apps exclusivos)",
+            "Integração": "★★★★☆ (NF-e, balanças, integrações padrões)",
+            "Usabilidade": "★★★★★ (Muito intuitivo, mobile-first)",
+            "Suporte": "★★★★★ (Suporte imediato via WhatsApp)",
+            "Custo": "★★★★☆ (Preço acessível)",
+            "Escalabilidade": "★★★★☆ (Cresce bem para PMEs, cloud)",
+            "Inovação Tecnológica": "★★★★★ (IA em pedidos, suite mobile completa)"
+          },
+          {
+            "Sistema": "Mercatus (APP Ceasa)",
+            "Link Oficial": "mercatustecnologia.com.br",
+            "Faixa de Preço": "Sob consulta (plano personalizado)",
+            "Especialização": "★★★★★ (30 anos no setor FLV, recursos Ceasa)",
+            "Integração": "★★★★★ (Módulos integrados, Paripassu, bancária)",
+            "Usabilidade": "★★★★☆ (Sistema robusto, apps ajudam)",
+            "Suporte": "★★★★★ (Suporte estendido em horários críticos)",
+            "Custo": "★★★☆☆ (Investimento médio/alto)",
+            "Escalabilidade": "★★★★☆ (Escala para médias, cloud)",
+            "Inovação Tecnológica": "★★★★☆ (BI, mobile, rastreabilidade)"
+          },
+          {
+            "Sistema": "HortiGestão",
+            "Link Oficial": "hortigestao.com.br",
+            "Faixa de Preço": "Planos a partir de ~R$ 299/mês",
+            "Especialização": "★★★★★ (Nativo de CEASA, rotina FLV)",
+            "Integração": "★★★★☆ (NF-e, boletos, básico contábil)",
+            "Usabilidade": "★★★★★ (Fluxo otimizado, app fácil)",
+            "Suporte": "★★★★★ (Suporte 24 h, proximidade)",
+            "Custo": "★★★★☆ (SaaS, bom custo-benefício)",
+            "Escalabilidade": "★★★★☆ (Cloud puro, multiusuário)",
+            "Inovação Tecnológica": "★★★★☆ (App móvel, relatórios inteligentes)"
+          },
+          {
+            "Sistema": "POST Sistemas",
+            "Link Oficial": "postsistemas.com.br",
+            "Faixa de Preço": "Sob consulta (modular)",
+            "Especialização": "★★★★☆ (ERP multi-segmento com módulo FLV)",
+            "Integração": "★★★★★ (Paripassu, TEF, NF-e, contábil)",
+            "Usabilidade": "★★★★☆ (Interface tradicional + apps)",
+            "Suporte": "★★★★★ (Suporte dedicado, melhorias)",
+            "Custo": "★★★☆☆ (Modular, varia conforme extras)",
+            "Escalabilidade": "★★★★★ (Altamente escalável)",
+            "Inovação Tecnológica": "★★★★☆ (Força de vendas/compras mobile, rastreabilidade)"
+          },
+          {
+            "Sistema": "WLE Solutio Hortifruti",
+            "Link Oficial": "wlesoft.com.br",
+            "Faixa de Preço": "Sob consulta (licenciamento modular)",
+            "Especialização": "★★★★☆ (ERP moldável para FLV e varejo)",
+            "Integração": "★★★★★ (Integr. balanças, SAT, NF-e, contábil)",
+            "Usabilidade": "★★★★☆ (Uso simples, PDV integrado)",
+            "Suporte": "★★★★☆ (Suporte regional, parceiros locais)",
+            "Custo": "★★★★☆ (Modular, custo médio)",
+            "Escalabilidade": "★★★★☆ (Bom para pequenas e médias)",
+            "Inovação Tecnológica": "★★★★☆ (Etiquetagem, mobile inventory)"
+          },
+          {
+            "Sistema": "Limber Agro",
+            "Link Oficial": "limbersoftware.com.br",
+            "Faixa de Preço": "Sob consulta (plano modular)",
+            "Especialização": "★★★★☆ (Agronegócio + módulo FLV)",
+            "Integração": "★★★★★ (Cadeias agrícolas, BI, IoT)",
+            "Usabilidade": "★★★☆☆ (Exige capacitação)",
+            "Suporte": "★★★★☆ (Suporte completo, consultoria)",
+            "Custo": "★★☆☆☆ (Custo elevado, foco enterprise)",
+            "Escalabilidade": "★★★★★ (Nuvem escalável, grande volume)",
+            "Inovação Tecnológica": "★★★★★ (Roteirização automática, IA)"
+          }
+        ]
+      }
+    ]
+  },
+  "docling_tables": [],
+  "metadata": {
+    "num_sheets": 4,
+    "sheet_names": [
+      "Comparativo 1",
+      "Comparativo 2",
+      "Comparativo 3",
+      "Comparativo 4"
+    ],
+    "sheets_info": {
+      "Comparativo 1": {
+        "rows": 10,
+        "columns": 9,
+        "column_names": [
+          "Sistema",
+          "Faixa de Preço",
+          "Link Oficial",
+          "Especialização",
+          "Integração",
+          "Usabilidade",
+          "Suporte",
+          "Custo",
+          "Escalabilidade"
+        ],
+        "has_data": true
+      },
+      "Comparativo 2": {
+        "rows": 7,
+        "columns": 7,
+        "column_names": [
+          "Sistema ERP",
+          "Especialização no Setor",
+          "Automação & Integração",
+          "Facilidade de Uso / Implantação",
+          "Suporte Técnico",
+          "Custo (Mensal)",
+          "Escalabilidade"
+        ],
+        "has_data": true
+      },
+      "Comparativo 3": {
+        "rows": 8,
+        "columns": 9,
+        "column_names": [
+          "Sistema",
+          "Faixa de Preço",
+          "Link Oficial",
+          "Especialização",
+          "Integração",
+          "Usabilidade",
+          "Suporte",
+          "Custo",
+          "Escalabilidade"
+        ],
+        "has_data": true
+      },
+      "Comparativo 4": {
+        "rows": 6,
+        "columns": 10,
+        "column_names": [
+          "Sistema",
+          "Link Oficial",
+          "Faixa de Preço",
+          "Especialização",
+          "Integração",
+          "Usabilidade",
+          "Suporte",
+          "Custo",
+          "Escalabilidade",
+          "Inovação Tecnológica"
+        ],
+        "has_data": true
+      }
+    },
+    "num_pages": 4
+  }
+}

@@ -1,0 +1,30 @@
+CREATE VIEW vw_contratacoes AS
+SELECT
+    c.numeroControlePNCP,
+    c.anoCompra,
+    c.objetoCompra
+        || ' :: '
+        || GROUP_CONCAT(ic.descricao, ' :: ')
+        AS descricaoCompleta,
+    c.valorTotalHomologado,
+    c.valorTotalEstimado, 
+    c.dataAberturaProposta,
+    c.dataEncerramentoProposta,
+    c.dataInclusao,                    -- NOVO CAMPO
+    c.linkSistemaOrigem,               -- NOVO CAMPO
+    c.modalidadeId,                    -- NOVO CAMPO
+    c.modalidadeNome,                  -- NOVO CAMPO
+    c.modoDisputaId,                   -- NOVO CAMPO
+    c.modoDisputaNome,                 -- NOVO CAMPO
+    c.usuarioNome,                     -- NOVO CAMPO
+    c.orgaoEntidade_poderId,           -- NOVO CAMPO
+    c.orgaoEntidade_esferaId,          -- NOVO CAMPO
+    c.unidadeOrgao_ufSigla,
+    c.unidadeOrgao_municipioNome,
+    c.unidadeOrgao_nomeUnidade,
+    c.orgaoEntidade_razaosocial
+FROM contratacao AS c
+JOIN item_contratacao AS ic
+    ON c.numeroControlePNCP = ic.numeroControlePNCP
+WHERE c.dataEncerramentoProposta >= date('now')
+GROUP BY c.numeroControlePNCP

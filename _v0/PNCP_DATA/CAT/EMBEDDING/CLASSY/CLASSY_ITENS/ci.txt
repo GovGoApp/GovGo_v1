@@ -1,0 +1,115 @@
+A seguir, uma visão geral estruturada do **ci_v0_1.py**, explicando os principais módulos e fluxos de execução para um desenvolvedor:
+
+---
+
+## 1. Propósito Geral  
+Este script faz a **classificação de itens de compras** (da base PNCP) em categorias hierárquicas, combinando duas abordagens:  
+- **Direta**: comparação de embedding do item com embeddings “NV4” (categoria completa) via FAISS.  
+- **Hierárquica**: busca em níveis (NV1→NV2→NV3→NV4) usando beam search, ponderando similaridades em cada nível.  
+
+Ele lê planilhas Excel, gera (ou carrega) embeddings com a API da OpenAI, monta índices FAISS, processa paralelamente e salva os resultados em novos arquivos Excel .
+
+---
+
+## 2. Principais Seções do Código
+
+### 2.1 Imports e Setup Inicial  
+- **Bibliotecas**: `pandas`, `numpy`, `faiss`, `openai`, `nltk`, `rich` (console/progress), `concurrent.futures`, `pickle`, etc.  
+- **NLTK**: faz download de `stopwords` e `wordnet`.  
+- **Console**: instância Rich para logs coloridos.  
+- **Configurações**:  
+  - Paths (entrada/saída, catálogo, embeddings)  
+  - Parâmetros de paralelismo (`MAX_WORKERS`, `BATCH_SIZE`)  
+  - Modelo de embedding (`text-embedding-3-large`)  
+  - Pesos de combinação direta vs. hierárquica (`WEIGHT_DIRECT`, `WEIGHT_HIERARCHICAL`)  
+  - Top-N a considerar em cada nível (`TOP_N`, `TOP_NV1`, etc.) .
+
+### 2.2 Pré-processamento de Texto  
+- **`preprocess_text`**:  
+  1. Transforma em ASCII (remove acentos).  
+  2. Minúsculas.  
+  3. Remove caracteres não-letra.  
+  4. Remove stopwords em português.  
+  5. Lemmatização com WordNet.  
+- **`extract_item_type`**: detecta se a descrição começa com “MATERIAL” ou “SERVIÇO” para filtrar categorias compatíveis.
+
+### 2.3 Gerenciamento de Embeddings  
+- **Salvar/Carregar**: funções com `pickle` e lock para concorrência (`save_embeddings`, `load_embeddings`).  
+- **Geração**:  
+  - **`get_embeddings`**: paraleliza requisições à API OpenAI em threads, com retry/backoff.  
+  - **`process_batch`**: envia batch de textos, retorna lista de vetores NumPy.
+
+### 2.4 Preparação do Catálogo  
+- **`load_data`**: carrega planilha de itens (renomeia “descrição” → `objetoCompra`) e o catálogo unificado (`NOVA CAT.xlsx`).  
+- **`prepare_catalog_entries`**: para cada nível NV1→NV4:  
+  1. Remove duplicatas no código de categoria.  
+  2. Concatena nomes (`NOMNV0; NOMNV1; …`) e chama `preprocess_text`.  
+  3. Armazena metadados (códigos e nomes originais) para cada nível.  
+  4. Mostra progresso com barras Rich.
+
+### 2.5 Criação de Índices FAISS  
+- **`create_hierarchical_indices`**:  
+  1. Gera embeddings para cada nível.  
+  2. Salva embeddings em disco.  
+  3. Cria `IndexFlatIP` normalizado L2 e grava índice em arquivo.
+
+### 2.6 Cálculo de Similaridade  
+- **Direto**:  
+  - **`calculate_direct_similarity`** (produto escalar puro)  
+  - **`calculate_direct_similarity_with_faiss`** (usa índice FAISS, com filtro por tipo M/S)  
+- **Hierárquico**:  
+  - **`fast_hierarchical_beam_search`**:  
+    1. Calcula similaridade em NV1; pega top NV1 compatíveis.  
+    2. Para cada NV1, busca NV2, depois NV3; computa score composto com pesos `WEIGHT_NV1`, `WEIGHT_NV2`, `WEIGHT_NV3`.  
+    3. Retorna top NV3 ou NV2 se não houver descendentes.  
+  - Usa pré-cálculo de relações (`precompute_hierarchical_relationships`) para mapear NV1→NV2 e NV2→NV3.
+
+### 2.7 Combinação de Resultados  
+- **`combine_results`** (padrão): mantém score puro se só um método existir, ou pondera ambos.  
+- **Variante “exclusive”**: só retorna códigos presentes em ambos os métodos.  
+- **Versões antigas** mostradas para referência (`combine_results_old`).
+
+### 2.8 Funções de Classificação  
+- **`classify_items_beam_search`**:  
+  - Recebe DataFrame, índices e funções de embedding.  
+  - Pré-aloca colunas `TOP_i`, `SCORE_i`;  
+  - Gera embeddings dos itens;  
+  - Paraleliza beam search e preenche DataFrame.  
+- **`classify_items_combined`**:  
+  - Similar, mas inclui:  
+    - Tipo de item (`item_type`)  
+    - Colunas de confiança (via `calculate_confidence`)  
+    - Colunas de scores hierárquicos e diretos individuais.
+
+### 2.9 Loop Principal & Processamento de Arquivos  
+- **`process_input_file(i)`**:  
+  1. Define `INPUT_ITEM_{i}.xlsx` e seus paths de embeddings/saída.  
+  2. Carrega (ou gera) embeddings dos itens.  
+  3. Chama `classify_items_combined` com paralelismo.  
+  4. Salva resultado em Excel.  
+- **`main()`**:  
+  1. Verifica existência de índices/embeddings NV1–NV4;  
+  2. Se faltar, lê catálogo e chama `prepare_catalog_entries` + `create_hierarchical_indices`;  
+  3. Itera de `PAGE_BEGIN` a `PAGE_END`, processando cada arquivo via `process_input_file`;  
+  4. Exibe tempos e logs finais.
+
+---
+
+## 3. Pontos de Atenção / Sugestões  
+1. **Chave da API hard-coded**: mover para variável de ambiente.  
+2. **Tratamento de erro**: já robusto (retry/backoff), mas poderia centralizar logs.  
+3. **ThreadPoolExecutor** e locks: garante concorrência segura em I/O de pickle.  
+4. **Debug mode (`OUTPUT_DEBUG`)** ativa colunas extras e cálculos detalhados — útil para análise mas deve ficar desativado em produção.  
+5. **Peso de combinação** e **TOP_N** são parâmetros globais fáceis de ajustar.  
+6. **Uso de FAISS**: `IndexFlatIP` é rápido mas sem compressão; para bases muito grandes, avaliar índices invertidos ou quantizados.
+
+---
+
+**Resumo**:  
+O script implementa um pipeline completo de classificação não-supervisionada de itens de compras, unindo NLP básico (preprocessamento), embeddings de linguagem (OpenAI), similaridade vetorial (FAISS) e estratégia hierárquica (beam search). Ele é altamente configurável (pesos, top-N, paralelismo) e modular, separado em funções bem demarcadas para:
+1. leitura e pré-processamento,  
+2. geração/carregamento de embeddings,  
+3. criação de índices FAISS,  
+4. cálculo de similaridade direta/hierárquica,  
+5. combinação de scores e  
+6. orquestração de arquivos de entrada/saída.

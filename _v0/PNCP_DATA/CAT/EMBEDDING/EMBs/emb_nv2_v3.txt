@@ -1,0 +1,89 @@
+# Explicação do Código de Classificação por Embeddings
+
+Este código implementa um sistema de classificação de itens de compras governamentais usando embeddings da OpenAI. Vou explicar passo a passo cada função:
+
+## 1. Configuração Inicial
+```python
+import os, json, numpy as np, pandas as pd, ...
+```
+- Importa bibliotecas necessárias
+- Configura cliente OpenAI e console de visualização
+- Define caminhos de arquivos e constantes
+- Configura controle de threads (MAX_WORKERS=100)
+
+## 2. `load_data()`
+- **Propósito**: Carrega dados de entrada e verifica checkpoints
+- **Processo**:
+  1. Verifica se existe um checkpoint para continuar processamento anterior
+  2. Se sim, carrega apenas as linhas restantes (não processadas)
+  3. Carrega catálogos CATMAT e CATSER (categorias governamentais)
+  4. Carrega resultados anteriores se existirem
+- **Retorno**: DataFrame de itens, catálogos e resultados anteriores
+
+## 3. `save_checkpoint()` e `load_checkpoint()`
+- **Propósito**: Sistema de recuperação para processamento interrompido
+- **Funcionalidade**:
+  - Salva progresso atual (linha processada e arquivo intermediário)
+  - Permite retomar processamento do ponto onde parou
+
+## 4. `prepare_catalog_entries()`
+- **Propósito**: Prepara dados de catálogo para embeddings
+- **Processo**:
+  1. Extrai grupos e classes dos catálogos CATMAT e CATSER
+  2. Cria textos combinados (ex: "Nome do Grupo - Nome da Classe")
+  3. Armazena metadados para cada categoria
+- **Retorno**: Listas de textos e metadados para materiais e serviços
+
+## 5. `get_embeddings()`
+- **Propósito**: Converte textos em vetores de embedding
+- **Processo**:
+  1. Processa textos em lotes para evitar limites da API
+  2. Mostra progresso visual durante processamento
+  3. Gerencia chamadas à API com controle de erros
+- **Retorno**: Lista de vetores de embedding
+
+## 6. `process_batch()`
+- **Propósito**: Função auxiliar para processar um lote de textos
+- **Processo**:
+  1. Chama API da OpenAI para gerar embeddings
+  2. Implementa retry com backoff exponencial (até 5 tentativas)
+  3. Trata erros de rate limit e outros problemas
+
+## 7. `classify_items_batched()` - Função principal
+- **Propósito**: Classificar todos os itens de forma eficiente
+- **Processo**:
+  1. Prepara matrizes numpy para cálculos vetoriais eficientes
+  2. Para cada batch de 1000 itens:
+     - Extrai descrições de todos os itens do batch
+     - **Obtém embeddings em massa** (uma única operação de API)
+     - Distribui o trabalho de classificação para threads paralelas
+     - Salva resultados intermediários após cada batch
+  3. Finaliza salvando arquivo completo com todos os resultados
+- **Inovação**: Separa obtenção de embeddings (API) da classificação (local)
+
+## 8. `classify_item_local()`
+- **Propósito**: Classifica um item individual já com embedding
+- **Processo**:
+  1. Calcula similaridade com todas as categorias CATMAT e CATSER
+  2. Determina se o item é material ou serviço
+  3. Encontra as 5 categorias mais similares
+  4. Formata o resultado com scores de similaridade
+- **Eficiência**: Opera localmente, sem chamar APIs externas
+
+## 9. `main()`
+- **Propósito**: Orquestra o fluxo de processamento completo
+- **Processo**:
+  1. Carrega dados e verifica checkpoints
+  2. Prepara textos de catálogo
+  3. Gera embeddings para as categorias
+  4. Inicia classificação em batches
+  5. Exibe estatísticas de tempo e performance
+
+## Pontos-Chave do Design:
+1. **Processamento em batches**: Lida com grandes volumes de dados
+2. **Paralelismo inteligente**: Separa operações de API (serial) das operações locais (paralelas)
+3. **Checkpointing**: Garante que falhas não causem perda de trabalho
+4. **Visualização rica**: Fornece feedback visual durante todo processo
+5. **Alta performance**: Usa numpy para cálculos vetoriais rápidos
+
+O código foi desenhado para processar eficientemente até 1 milhão de itens, mantendo robustez e fornecendo feedback claro durante a execução.

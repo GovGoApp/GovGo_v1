@@ -1,0 +1,49 @@
+Aqui está uma versão **ajustada** do que você precisa fazer, sem o item de agregação e com os pontos 1 e 2 totalmente reescritos de forma clara:
+
+---
+
+### 1. Índices FAISS por profundidade da hierarquia  
+Hoje o seu script usa **um único índice** contendo todos os `CODCAT` (o que equivale ao nível mais específico, NV4). Para suportar “caída” automática a níveis mais genéricos, você deve:
+
+- **Criar quatro índices FAISS separados**, um para cada profundidade da tabela CAT: NV4 (item), NV3 (grupo), NV2 (subfamília) e NV1 (família).  
+- Para cada índice, **use exatamente os embeddings** que você já gera de `NOMCAT`, mas filtrados por `CODNVx` (por exemplo, no índice NV3 inclua um vetor por cada código único em `CODNV3`).  
+- No código, isso significa ler suas embeddings de catálogo e, antes de adicionar ao FAISS, particioná-las em quatro grupos conforme a coluna `CODNVx`, gerando um `.index` distinto para cada nível.
+
+---
+
+### 2. Busca dinâmica com “fallback” hierárquico  
+Em vez de buscar sempre no índice flat NV4 e entregar Top-N:
+
+1. **Para cada objetoCompra**:
+   - Gere o embedding como hoje.
+2. **Comece pelo índice NV4**:
+   - Busque **só os 2 vizinhos mais próximos** para esse vetor.
+   - Calcule uma **medida de confiança** (por exemplo, `z_gap = (score1 – score2)/std([score1, score2, …])`).
+   - Se esse `z_gap` for suficientemente alto (ou outro critério adaptativo), **aceite** o primeiro `CODCAT` desse índice e pare.  
+3. **Caso contrário**, repita exatamente o mesmo processo **no índice NV3**, depois em NV2 e, por fim, em NV1, parando assim que encontrar um match confiável.
+
+Dessa forma você **não força** uma correspondência muito específica quando a descrição é genérica — o sistema “cai” automaticamente para um nível de hierarquia que faça mais sentido.
+
+---
+
+### 3. Extração do nível efetivo de correspondência  
+Assim que você aceitar um match num dado índice (NV4, NV3, NV2 ou NV1):
+
+- Recupere do seu metadado (DataFrame `faiss_meta_NVx`) **o `CODCAT` e os campos `CODNV0…CODNV3`** daquele registro.  
+- Armazene, no resultado, qual foi o **nível** (`NVx`) usado e o **código**/descrição correspondentes.
+
+Isso traz para cada `objetoCompra` não só o código mais próximo, mas também **em que profundidade da hierarquia** ele se encaixou.
+
+---
+
+### 4. Thresholds 100% adaptativos  
+Não use valores fixos de gap ou score mínimo! Em vez disso:
+
+- Calcule a **média** e **desvio-padrão** dos scores retornados no Top-K e derive um **threshold relativo** (por exemplo, `mean + α·std`).  
+- Ou use diretamente o **z_gap** (conforme descrito no item 2), que já normaliza a diferença entre os dois melhores scores.  
+
+Assim, cada objetoCompra define seu próprio critério de confiança, baseado na dispersão dos vizinhos no espaço de embedding.
+
+---
+
+Com essas mudanças, o script evolui de uma busca plana em NV4 para um **sistema hierárquico**, **dinâmico** e **robusto**, respeitando a estrutura de níveis do seu catálogo CAT sem gerar código novo nesta etapa.

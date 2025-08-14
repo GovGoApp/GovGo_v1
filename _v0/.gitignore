@@ -1,0 +1,8 @@
+# Environment files
+.env*
+*.env
+env/
+venv/
+__pycache__/
+*.pyc
+*.pyo
