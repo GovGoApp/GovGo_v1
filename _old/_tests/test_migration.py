@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 import time
 # Garante que o diretório pai (v1) está no sys.path para importar db corretamente
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from db.de_para_v0_v1 import DE_PARA
+from db.DEPARA_BDS0_BDS1 import DE_PARA
 
 load_dotenv()
 console = Console()

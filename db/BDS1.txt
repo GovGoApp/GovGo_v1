@@ -83,7 +83,7 @@ CREATE TABLE public.contratacao (
 );
 CREATE TABLE public.contratacao_emb (
   id_contratacao_emb bigint NOT NULL DEFAULT nextval('contratacao_emb_id_contratacao_emb_seq'::regclass),
-  numero_controle_pncp text,
+  numero_controle_pncp text UNIQUE,
   modelo_embedding text,
   confidence numeric,
   metadata jsonb,
@@ -177,14 +177,34 @@ CREATE TABLE public.item_contratacao (
   CONSTRAINT item_contratacao_pkey PRIMARY KEY (id_item),
   CONSTRAINT item_contratacao_numero_controle_pncp_fkey FOREIGN KEY (numero_controle_pncp) REFERENCES public.contratacao(numero_controle_pncp)
 );
-create table public.system_config (
-  key character varying(100) not null,
-  value text not null,
-  description text null,
-  updated_at timestamp without time zone null default CURRENT_TIMESTAMP,
-  created_at timestamp without time zone null default CURRENT_TIMESTAMP,
-  constraint system_config_pkey primary key (key)
-) TABLESPACE pg_default;
+CREATE TABLE public.system_config (
+  key character varying NOT NULL,
+  value text NOT NULL,
+  description text,
+  updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT system_config_pkey PRIMARY KEY (key)
+);
+CREATE TABLE public.user_prompts (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  user_id uuid DEFAULT gen_random_uuid(),
+  title text,
+  text text,
+  embedding USER-DEFINED,
+  CONSTRAINT user_prompts_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.user_settings (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  name text,
+  CONSTRAINT user_settings_pkey PRIMARY KEY (id)
+);
 
-INSERT INTO "public"."system_config" ("key", "value", "description", "updated_at", "created_at") 
-VALUES ('last_processed_date', '20250202', 'Última data processada pelo script de download PNCP', '', '');
+
+TABLE public.system_config (key -> value)
+| key                      | value    | description                                          |
+| ------------------------ | -------- | ---------------------------------------------------- | 
+| last_processed_date      | 20250815 | Última data processada pelo script de download PNCP  | 
+| last_embedding_date      | 20250815 | Última data processada para geração de embeddings    | 
+| last_categorization_date | 20250815 | Última data processada para categorização automática | 

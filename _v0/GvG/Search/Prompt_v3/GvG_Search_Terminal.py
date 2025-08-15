@@ -53,11 +53,13 @@ from reportlab.lib.units import inch
 
 try:
     # Importações seletivas dos módulos especializados
-    from gvg_formatters import (
+    from gvg_preprocessing import (
         format_currency,
-        format_date, 
+        format_date,
         decode_poder,
-        decode_esfera
+        decode_esfera,
+        SearchQueryProcessor,
+        process_search_query
     )
 
     from gvg_ai_utils import (
@@ -86,23 +88,22 @@ try:
             # Filtro de relevância real
             set_relevance_filter_level,
             get_relevance_filter_status,
-            toggle_relevance_filter_debug
-        )
-
-    # Novo módulo de categorias (replica lógica avançada v9)
-    from gvg_categories import (
-        get_top_categories_for_query,
-        correspondence_search as categories_correspondence_search,
-        category_filtered_search as categories_category_filtered_search
+            toggle_relevance_filter_debug,
+            get_top_categories_for_query,
+            correspondence_search as categories_correspondence_search,
+            category_filtered_search as categories_category_filtered_search
     )
 
-    from gvg_preprocessing import (
-        SearchQueryProcessor,
-        process_search_query
-    )
+ 
 
     # Importar preprocessor para compatibilidade
     import gvg_preprocessing as preprocessor
+    from gvg_exporters import (
+        generate_export_filename,
+        export_results_json,
+        export_results_excel,
+        export_results_pdf
+    )
     
     UTILS_AVAILABLE = True
     print("✅ Módulos carregados com importações diretas")
@@ -973,266 +974,32 @@ def export_results():
     console.print("[bold]3[/bold] - JSON (.json) - Dados estruturados")
     
     choice = Prompt.ask("Escolha o formato (1-3)", choices=["1", "2", "3"], default="1")
-    
-    if choice == "1":
-        export_results_to_excel()
-    elif choice == "2":
-        export_results_to_pdf()
-    elif choice == "3":
-        export_results_to_json()
 
-def export_results_to_excel():
-    """Exporta resultados (layout e lógica v9)."""
-    results = last_results
-    query = last_query
-    if not results:
-        console.print("[yellow]Nenhum resultado para exportar.[/yellow]")
-        return
-    try:
-        data = []
-        for result in results:
-            details = result.get('details', {})
-            if not details:
-                continue
-            row = {
-                'Rank': result.get('rank'),
-                'ID': result.get('id'),
-                'Similaridade': result.get('similarity'),
-                'Órgão': details.get('orgaoentidade_razaosocial','N/A'),
-                'Unidade': details.get('unidadeorgao_nomeunidade','N/A'),
-                'Município': details.get('unidadeorgao_municipionome','N/A'),
-                'UF': details.get('unidadeorgao_ufsigla','N/A'),
-                'Valor': details.get('valortotalestimado',0),
-                'Data Inclusão': format_date(details.get('datainclusao','N/A')),
-                'Data Abertura': format_date(details.get('dataaberturaproposta','N/A')),
-                'Data Encerramento': format_date(details.get('dataencerramentoproposta','N/A')),
-                'Modalidade ID': details.get('modalidadeid','N/A'),
-                'Modalidade Nome': details.get('modalidadenome','N/A'),
-                'Disputa ID': details.get('modadisputaid','N/A'),
-                'Disputa Nome': details.get('modadisputanome','N/A'),
-                'Usuário': details.get('usuarionome','N/A'),
-                'Poder': decode_poder(details.get('orgaoentidade_poderid','N/A')),
-                'Esfera': decode_esfera(details.get('orgaoentidade_esferaid','N/A')),
-                'Link Sistema': details.get('linksistemaorigem','N/A'),
-                'Descrição': details.get('descricaocompleta','N/A')
-            }
-            if current_search_approach == 2 and 'correspondence_similarity' in result:
-                row['Score_Correspondencia'] = result['correspondence_similarity']
-            if 'top_category_info' in result and result['top_category_info']:
-                cat = result['top_category_info']
-                row['Categoria_TOP'] = f"{cat['codigo']} - {cat['descricao']} (Score: {cat['correspondence_score']:.3f})"
-            if 'semantic_score' in result and 'keyword_score' in result:
-                row['Score Semântico'] = result['semantic_score']
-                row['Score Palavra-chave'] = result['keyword_score']
-            data.append(row)
-        df = pd.DataFrame(data)
-        os.makedirs(RESULTS_PATH, exist_ok=True)
-        filename = generate_export_filename("xlsx")
-        filepath = os.path.join(RESULTS_PATH, filename)
-        df.to_excel(filepath, index=False, engine='openpyxl')
-        console.print(f"[green]Resultados exportados para: {filepath}[/green]")
-    except Exception as e:
-        console.print(f"[bold red]Erro ao exportar resultados: {e}[/bold red]")
-
-def export_results_to_pdf():
-    """Exporta resultados para PDF replicando layout v9."""
-    results = last_results
-    query = last_query
-    if not results:
-        console.print("[yellow]Nenhum resultado para exportar.[/yellow]")
-        return
-    try:
-        os.makedirs(RESULTS_PATH, exist_ok=True)
-        filename = generate_export_filename("pdf")
-        filepath = os.path.join(RESULTS_PATH, filename)
-        doc = SimpleDocTemplate(filepath, pagesize=A4, rightMargin=45,leftMargin=45,topMargin=54,bottomMargin=54)
-        styles = getSampleStyleSheet()
-        title_style = ParagraphStyle('CustomTitle', parent=styles['Title'], alignment=1, fontSize=16, spaceAfter=20)
-        heading_style = styles['Heading1']
-        normal_style = styles['Normal']
-        desc_style = ParagraphStyle('Description', parent=normal_style, fontSize=11, leading=13, spaceAfter=6)
-        elements = []
-        try:
-            if use_negation_embeddings and current_search_type in [1,3]:
-                pos_terms,_ = extract_pos_neg_terms(query)
-                search_display = pos_terms.strip() if pos_terms.strip() else query
-            else:
-                search_display = query
-        except:
-            search_display = query
-        elements.append(Paragraph(f'BUSCA: "{search_display.upper()}"', title_style))
-        elements.append(Paragraph(f'Tipo de busca: {SEARCH_TYPES[current_search_type]["name"]}', normal_style))
-        elements.append(Paragraph(f'Abordagem: {SEARCH_APPROACHES[current_search_approach]["name"]}', normal_style))
-        elements.append(Paragraph(f'Ordenação: {SORT_MODES[current_sort_mode]["name"]}', normal_style))
-        elements.append(Paragraph(f'Data da pesquisa: {datetime.now().strftime("%d/%m/%Y %H:%M")}', normal_style))
-        elements.append(Spacer(1,0.2*inch))
-        table_data = [["Rank","Unidade","Local","Similaridade","Valor (R$)","Data Proposta"]]
-        sorted_results = sorted(results, key=lambda x: x.get('rank',999))
-        for r in sorted_results:
-            details = r.get('details',{})
-            if not details: continue
-            valor = format_currency(details.get('valortotalestimado',0))
-            data_prop = format_date(details.get('dataencerramentoproposta','N/A'))
-            unidade = details.get('unidadeorgao_nomeunidade','N/A')
-            unidade = f"{unidade[:30]}..." if len(unidade)>30 else unidade
-            municipio = details.get('unidadeorgao_municipionome','N/A')
-            uf = details.get('unidadeorgao_ufsigla','')
-            local = f"{municipio}/{uf}" if uf else municipio
-            table_data.append([
-                str(r.get('rank')),unidade,local,f"{r.get('similarity',0):.4f}",valor,str(data_prop)
-            ])
-        pdf_table = PDFTable(table_data, repeatRows=1)
-        pdf_table.setStyle(TableStyle([
-            ('BACKGROUND',(0,0),(-1,0),colors.navy),
-            ('TEXTCOLOR',(0,0),(-1,0),colors.white),
-            ('ALIGN',(0,0),(-1,0),'CENTER'),
-            ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
-            ('FONTSIZE',(0,0),(-1,0),9),
-            ('BOTTOMPADDING',(0,0),(-1,0),8),
-            ('TOPPADDING',(0,0),(-1,0),8),
-            ('BACKGROUND',(0,1),(-1,-1),colors.white),
-            ('GRID',(0,0),(-1,-1),1,colors.black),
-            ('ALIGN',(0,0),(0,-1),'CENTER'),
-            ('ALIGN',(3,0),(3,-1),'RIGHT'),
-            ('ALIGN',(4,0),(4,-1),'RIGHT'),
-            ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
-            ('FONTSIZE',(0,1),(-1,-1),8)
-        ]))
-        elements.append(Spacer(1,0.1*inch))
-        elements.append(pdf_table)
-        elements.append(Spacer(1,0.3*inch))
-        elements.append(Paragraph('Detalhes dos Resultados', heading_style))
-        elements.append(Spacer(1,0.1*inch))
-        card_style = ParagraphStyle('CardStyle', parent=normal_style, fontSize=10, leading=12, leftIndent=10,rightIndent=10,spaceAfter=3,spaceBefore=3)
-        card_title_style = ParagraphStyle('CardTitleStyle', parent=styles['Heading2'], fontSize=14, spaceAfter=5, textColor=colors.navy, alignment=0)
-        card_subtitle_style = ParagraphStyle('CardSubtitleStyle', parent=styles['Heading3'], fontSize=11, spaceAfter=8, textColor=colors.darkblue)
-        desc_label_style = ParagraphStyle('DescLabelStyle', parent=card_style, fontSize=10, fontName='Helvetica-Bold', spaceAfter=3)
-        desc_card_style = ParagraphStyle('DescCardStyle', parent=card_style, fontSize=10, leading=11, leftIndent=15, rightIndent=15)
-        def escape_html_for_pdf(text:str)->str:
-            if not text: return ''
-            return (text.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;'))
-        for r in sorted_results:
-            details = r.get('details', {})
-            if not details: continue
-            orgao_raw = details.get('orgaoentidade_razaosocial','Órgão não informado')
-            orgao = escape_html_for_pdf(orgao_raw.title() if orgao_raw else 'Órgão não informado')
-            elements.append(Paragraph(f"#{r.get('rank')} - {orgao}", card_title_style))
-            info_data = [
-                ["Unidade:", escape_html_for_pdf(details.get('unidadeorgao_nomeunidade','N/A'))],
-                ["Local:", f"{escape_html_for_pdf(details.get('unidadeorgao_municipionome','N/A'))}/{escape_html_for_pdf(details.get('unidadeorgao_ufsigla','N/A'))}"],
-                ["Valor:", escape_html_for_pdf(format_currency(details.get('valortotalestimado',0)))]
-            ]
-            datas_text = f"Inclusão: {escape_html_for_pdf(format_date(details.get('datainclusao','N/A')))} | Abertura: {escape_html_for_pdf(format_date(details.get('dataaberturaproposta','N/A')))} | Encerramento: {escape_html_for_pdf(format_date(details.get('dataencerramentoproposta','N/A')))}"
-            info_data.append(["Datas:", datas_text])
-            modalidade_text = f"{escape_html_for_pdf(details.get('modalidadeid','N/A'))} - {escape_html_for_pdf(details.get('modalidadenome','N/A'))}"
-            disputa_text = f"{escape_html_for_pdf(details.get('modadisputaid','N/A'))} - {escape_html_for_pdf(details.get('modadisputanome','N/A'))}"
-            info_data.append(["Modalidade:", modalidade_text])
-            info_data.append(["Disputa:", disputa_text])
-            info_table = PDFTable(info_data, colWidths=[2*inch, 4.5*inch])
-            info_table.setStyle(TableStyle([
-                ('VALIGN',(0,0),(-1,-1),'TOP'),
-                ('FONTNAME',(0,0),(0,-1),'Helvetica-Bold'),
-                ('FONTNAME',(1,0),(1,-1),'Helvetica'),
-                ('FONTSIZE',(0,0),(-1,-1),9),
-                ('LEFTPADDING',(0,0),(-1,-1),10),
-                ('RIGHTPADDING',(0,0),(-1,-1),5),
-                ('TOPPADDING',(0,0),(-1,-1),3),
-                ('BOTTOMPADDING',(0,0),(-1,-1),3),
-                ('BACKGROUND',(0,0),(-1,-1),colors.lightgrey),
-                ('GRID',(0,0),(-1,-1),0.5,colors.gray)
-            ]))
-            elements.append(info_table)
-            elements.append(Spacer(1,0.1*inch))
-            elements.append(Paragraph('Descrição:', desc_label_style))
-            descricao = details.get('descricaocompleta','N/A')
-            descricao = descricao.replace(' :: ','\n• ')
-            if not descricao.startswith('•'):
-                descricao = '• ' + descricao
-            descricao = escape_html_for_pdf(descricao)
-            elements.append(Paragraph(descricao, desc_card_style))
-            elements.append(Spacer(1,0.2*inch))
-            line_data = [["" for _ in range(10)]]
-            line_table = PDFTable(line_data, colWidths=[0.65*inch]*10)
-            line_table.setStyle(TableStyle([
-                ('LINEBELOW',(0,0),(-1,-1),2,colors.navy),
-                ('TOPPADDING',(0,0),(-1,-1),0),
-                ('BOTTOMPADDING',(0,0),(-1,-1),0)
-            ]))
-            elements.append(line_table)
-            elements.append(Spacer(1,0.3*inch))
-        doc.build(elements)
-        console.print(f"[green]Resultados exportados para PDF: {filepath}[/green]")
-    except Exception as e:
-        console.print(f"[bold red]Erro ao exportar resultados para PDF: {e}[/bold red]")
-
-def export_results_to_json():
-    """Exporta resultados para JSON"""
-    try:
-        filename = generate_export_filename("json")
-        filepath = os.path.join(RESULTS_PATH, filename)
-        
-        # Preparar dados para JSON
-        export_data = {
-            'metadata': {
-                'query': last_query,
-                'timestamp': datetime.now().isoformat(),
-                'total_results': len(last_results),
-                'search_type': SEARCH_TYPES[current_search_type]['name'],
-                'search_approach': SEARCH_APPROACHES[current_search_approach]['name'],
-                'system_version': 'GvG_v2_optimized'
-            },
-            'results': []
-        }
-        
-        for i, result in enumerate(last_results, 1):
-            result_data = {
-                'position': i,
-                'similarity': result.get('similarity', 0),
-                'numero_controle': result.get('numero_controle', ''),
-                'details': result.get('details', {})
-            }
-            export_data['results'].append(result_data)
-        
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            transient=True,
-        ) as progress:
-            task = progress.add_task("Exportando para JSON...", total=None)
-            
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(export_data, f, indent=2, ensure_ascii=False, default=str)
-            
-            progress.remove_task(task)
-        
-        console.print(f"✅ Arquivo JSON criado: [green]{filename}[/green]")
-        console.print(f"📁 Local: {filepath}")
-        
-    except Exception as e:
-        console.print(f"❌ Erro ao exportar JSON: {e}")
-
-def generate_export_filename(extension):
-    """Gera nome de arquivo para exportação"""
-    query = last_query or "BUSCA"
-    # Extrair apenas termos positivos se negation embeddings ativo (igual v9)
-    try:
-        if use_negation_embeddings and current_search_type in (1,3):
-            pos_terms, _neg_terms = extract_pos_neg_terms(query)
-            if pos_terms and pos_terms.strip():
-                query = pos_terms.strip()
-    except Exception:
-        pass
-    clean_query = re.sub(r'[^\w\s-]', '', query)
-    clean_query = re.sub(r'\s+', '_', clean_query).upper()[:30]
-    search_type = current_search_type
-    approach = current_search_approach
+    # Montar objeto de parâmetros compatível com gvg_exporters
+    from types import SimpleNamespace
     relevance_level = get_relevance_filter_status()['level']
-    sort_mode = current_sort_mode
-    intelligent_status = 'I' if get_intelligent_status()['intelligent_processing'] else 'N'
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    # Novo padrão: Busca_{QUERY}_Sx_Ax_Rx_Ox_I{I|N}_YYYYMMDD_HHMMSS.ext
-    filename = f"Busca_{clean_query}_S{search_type}_A{approach}_R{relevance_level}_O{sort_mode}_I{intelligent_status}_{timestamp}.{extension}"
-    return filename
+    params = SimpleNamespace(
+        search=current_search_type,
+        approach=current_search_approach,
+        relevance=relevance_level,
+        order=current_sort_mode
+    )
+    query = last_query or ""
+    try:
+        if choice == "1":
+            filepath = export_results_excel(last_results, query, params, RESULTS_PATH)
+            console.print(f"[green]Resultados exportados para: {filepath}[/green]")
+        elif choice == "2":
+            filepath = export_results_pdf(last_results, query, params, RESULTS_PATH)
+            if filepath:
+                console.print(f"[green]Resultados exportados para: {filepath}[/green]")
+            else:
+                console.print("[yellow]Biblioteca reportlab não disponível; PDF não gerado.[/yellow]")
+        elif choice == "3":
+            filepath = export_results_json(last_results, query, params, RESULTS_PATH)
+            console.print(f"[green]Resultados exportados para: {filepath}[/green]")
+    except Exception as e:
+        console.print(f"[bold red]Erro ao exportar: {e}[/bold red]")
 
 # ========================================================================================
 # LOOP PRINCIPAL OTIMIZADO
@@ -1245,17 +1012,20 @@ def main():
     
     # Verificar status inicial dos módulos
     console.print("\n[bold cyan]🔧 STATUS DOS MÓDULOS:[/bold cyan]")
-    console.print(f"• gvg_utils: ✅ Carregado")
+    console.print(f"• utils consolidados: ok")
     console.print(f"• gvg_documents: {'✅ Carregado' if DOCUMENTS_AVAILABLE else '❌ Indisponível'}")
     
     # Informações sobre otimização
-    try:
-        from gvg_utils import get_module_info
-        module_info = get_module_info()
-        console.print(f"• Funções otimizadas: {module_info['total_functions']} (seletivas)")
-        console.print(f"• Versão: {module_info['version']}")
-    except:
-        pass
+    # Info de funções consolidadas (contagem aproximada manual das principais exportações)
+    consolidated_functions = [
+        'semantic_search','keyword_search','hybrid_search',
+        'get_top_categories_for_query','correspondence_search','category_filtered_search',
+        'format_currency','format_date','decode_poder','decode_esfera',
+        'get_embedding','get_negation_embedding','extract_pos_neg_terms','generate_keywords','calculate_confidence',
+        'process_search_query','summarize_document','process_pncp_document'
+    ]
+    console.print(f"• Funções consolidadas: {len(consolidated_functions)} (núcleo)")
+    console.print(f"• Versão consolidação: 3.0")
     
     while True:
         try:

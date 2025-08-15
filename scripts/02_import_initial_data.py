@@ -18,7 +18,7 @@ from typing import List, Dict, Any
 # Garante que o diretório pai (v1) está no sys.path para importar db corretamente
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from db.de_para_v0_v1 import DE_PARA, TRANSFORMATIONS
+from db.DEPARA_BDS0_BDS1 import DE_PARA, TRANSFORMATIONS
 
 load_dotenv()
 console = Console()
