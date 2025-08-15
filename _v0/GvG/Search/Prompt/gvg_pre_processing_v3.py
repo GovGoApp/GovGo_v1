@@ -17,7 +17,8 @@ from openai import OpenAI
 from dotenv import load_dotenv
 
 # Cliente OpenAI
-client = OpenAI(api_key="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")
+load_dotenv()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Configurações do Assistant
 ASSISTANT_ID = "asst_argxuo1SK6KE3HS5RGo4VRBV"  # Assistant criado com SUPABASE_SEARCH_v0.txt

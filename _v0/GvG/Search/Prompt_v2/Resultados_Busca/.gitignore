@@ -1,0 +1,14 @@
+# Environment files
+.env*
+*.env
+env/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.json
+*.xls*
+*.pdf
+*.csv
+*.docx
+*.log

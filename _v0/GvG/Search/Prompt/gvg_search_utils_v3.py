@@ -14,6 +14,8 @@ import json
 import time
 import gvg_pre_processing_v3 as preprocessor
 from openai import OpenAI
+import os
+load_dotenv()
 
 # Configurações específicas para v3
 ENABLE_INTELLIGENT_PROCESSING = True  # Flag para ativar/desativar processamento inteligente
@@ -30,7 +32,7 @@ RELEVANCE_ASSISTANT_RESTRICTIVE = "asst_XmsefQEKbuVWu51uNST7kpYT"    # Nível 3 
 
 # Cliente OpenAI global
 try:
-    openai_client = OpenAI(api_key="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")
+    openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     # Thread será criada quando necessário
     relevance_thread = None
     RELEVANCE_FILTER_AVAILABLE = True

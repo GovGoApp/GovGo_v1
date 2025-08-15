@@ -41,8 +41,8 @@ PORT = config.get("port")  # Usar port direto do arquivo
 DBNAME = config.get("dbname")
 
 # Cliente OpenAI
-client = OpenAI(api_key="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")
-
+load_dotenv()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # Configurações
 EMBEDDING_MODEL = "text-embedding-3-large"
 MIN_RESULTS = 5
