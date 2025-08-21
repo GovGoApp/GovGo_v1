@@ -65,7 +65,6 @@ try:
     from gvg_ai_utils import (
         get_embedding,
         get_negation_embedding,
-        extract_pos_neg_terms,
         generate_keywords,
         calculate_confidence
     )
@@ -148,8 +147,8 @@ except locale.Error:
 console = Console(width=120)
 
 # Configurações de busca (estado global)
-current_search_type = 1        # 1=Semântica, 2=Palavras-chave, 3=Híbrida
-current_search_approach = 1    # 1=Direta, 2=Correspondência, 3=Filtro  
+current_search_type = 1        # 1=Semântica, 2=Palavras-chave, 3=Híbrida (padrão solicitado: Semântica)
+current_search_approach = 3    # 1=Direta, 2=Correspondência, 3=Filtro  (ajustado para Filtro por padrão)
 current_sort_mode = 1          # 1=Similaridade, 2=Data, 3=Valor
 max_results = MAX_RESULTS
 num_top_categories = 10
@@ -175,6 +174,13 @@ last_query_categories = []  # Armazena dicionários completos das categorias
 ## corretamente DEBUG_INTELLIGENT_QUERIES em gvg_search_core.
 
 # Removidas versões locais de set/get relevance filter (usar importadas)
+# Garantir nível de relevância flexível (2) no início
+try:
+    _relevance_status_start = get_relevance_filter_status()
+    if _relevance_status_start.get('level') != 2:
+        set_relevance_filter_level(2)
+except Exception:
+    pass
 
 # Dicionários de configuração
 SEARCH_TYPES = {
@@ -391,22 +397,15 @@ def perform_search(query: str):
     start_time = time.time()
 
     try:
-        # Pré-processamento inteligente já ocorre nas funções core; aqui apenas fluxo de categorias
-        # 1. Extrair termos positivos/negativos iniciais
-        pos_terms, neg_terms = extract_pos_neg_terms(query) if use_negation_embeddings else (query, "")
-
-        # 2. Usar processador inteligente (se ativo) para obter termos-base sem condicionantes (regionais, valores, etc.)
-        base_category_terms = pos_terms
+        # Pré-processamento inteligente já ocorre no core; aqui apenas derivamos termos-base para categorias
+        base_category_terms = query
         if intelligent_processing and 'SearchQueryProcessor' in globals():
             try:
                 processor = SearchQueryProcessor()
                 processed = processor.process_query(query)
-                processed_terms = processed.get('search_terms') or ''
+                processed_terms = (processed.get('search_terms') or '').strip()
                 if processed_terms:
-                    # Reaplicar extração de positivos sobre os termos processados (removendo negativos/condicionantes restantes)
-                    cat_pos, _cat_neg = extract_pos_neg_terms(processed_terms) if use_negation_embeddings else (processed_terms, '')
-                    if cat_pos and cat_pos.strip():
-                        base_category_terms = cat_pos.strip()
+                    base_category_terms = processed_terms
             except Exception:
                 pass  # fallback silencioso
 
@@ -575,15 +574,9 @@ def display_results(results, query):
         pass
 
     # Prompt negativo (negation embeddings)
+    # Exibição simplificada: termos negativos já tratados internamente; aqui apenas indicador
     if globals().get('use_negation_embeddings') and search_type in [1, 3]:
-        try:
-            pos_terms, neg_terms = extract_pos_neg_terms(query)
-            if neg_terms.strip():
-                console.print(f"[cyan]🎯 Prompt Negativo ativo: [bold green]↗[/bold green]'" + pos_terms + "'  [bold red]↘[/bold red]'" + neg_terms + "' [/cyan]")
-            else:
-                console.print(f"[cyan]🎯 Prompt Negativo ativo (sem termos negativos detectados)[/cyan]")
-        except Exception:
-            console.print(f"[cyan]🎯 Prompt Negativo ativo[/cyan]")
+        console.print(f"[cyan]🎯 Negation embeddings ativos[/cyan]")
 
     # Informações específicas por abordagem
     if search_approach == 2 and globals().get('last_query_categories'):

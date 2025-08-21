@@ -40,7 +40,6 @@ except Exception:  # pragma: no cover
 
 # Importar formatters (após fusão solicitada devem residir em gvg_preprocessing)
 from gvg_preprocessing import format_currency, format_date, decode_poder, decode_esfera
-from gvg_ai_utils import extract_pos_neg_terms
 from gvg_search_core import get_intelligent_status
 
 # Mapas reutilizados (evita import circular com scripts)
@@ -61,12 +60,7 @@ def generate_export_filename(query: str, search_type: int, approach: int, releva
                               intelligent_enabled: bool, output_dir: str, extension: str) -> str:
     """Gera nome padronizado (compatível com padrão v2/v9)."""
     try:
-        try:
-            pos, _ = extract_pos_neg_terms(query)
-            base_query = pos.strip() if pos.strip() else query
-        except Exception:
-            base_query = query
-        clean = re.sub(r'[^\w\s-]', '', base_query).strip().upper()
+        clean = re.sub(r'[^\w\s-]', '', query).strip().upper()
         clean = re.sub(r'\s+', '_', clean)[:30]
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
         flag = 'I' if intelligent_enabled else 'N'
@@ -109,20 +103,20 @@ def export_results_json(results: List[dict], query: str, params, output_dir: str
             'rank': r.get('rank'),
             'id': r.get('id'),
             'similarity': r.get('similarity'),
-            'orgao': d.get('orgaoentidade_razaosocial') or d.get('orgaoEntidade_razaosocial'),
-            'unidade': d.get('unidadeorgao_nomeunidade') or d.get('unidadeOrgao_nomeUnidade'),
-            'municipio': d.get('unidadeorgao_municipionome') or d.get('unidadeOrgao_municipioNome'),
-            'uf': d.get('unidadeorgao_ufsigla') or d.get('unidadeOrgao_ufSigla'),
-            'valor_estimado': d.get('valortotalestimado') or d.get('valorTotalEstimado'),
-            'valor_homologado': d.get('valortotalhomologado') or d.get('valorTotalHomologado'),
-            'data_inclusao': d.get('datainclusao') or d.get('dataInclusao'),
-            'data_abertura': d.get('dataaberturaproposta') or d.get('dataAberturaProposta'),
-            'data_encerramento': d.get('dataencerramentoproposta') or d.get('dataEncerramentoProposta'),
-            'modalidade_id': d.get('modalidadeid') or d.get('modalidadeId'),
-            'modalidade_nome': d.get('modalidadenome') or d.get('modalidadeNome'),
-            'disputa_id': d.get('modadisputaid') or d.get('modaDisputaId'),
-            'disputa_nome': d.get('modadisputanome') or d.get('modaDisputaNome'),
-            'descricao': d.get('descricaocompleta') or d.get('descricaoCompleta') or d.get('objeto')
+            'orgao': d.get('orgao_entidade_razao_social'),
+            'unidade': d.get('unidade_orgao_nome_unidade'),
+            'municipio': d.get('unidade_orgao_municipio_nome'),
+            'uf': d.get('unidade_orgao_uf_sigla'),
+            'valor_estimado': d.get('valor_total_estimado'),
+            'valor_homologado': d.get('valor_total_homologado'),
+            'data_inclusao': d.get('data_inclusao'),
+            'data_abertura': d.get('data_abertura_proposta'),
+            'data_encerramento': d.get('data_encerramento_proposta'),
+            'modalidade_id': d.get('modalidade_id'),
+            'modalidade_nome': d.get('modalidade_nome'),
+            'disputa_id': d.get('modo_disputa_id'),
+            'disputa_nome': d.get('modo_disputa_nome'),
+            'descricao': d.get('objeto_compra')
         })
     payload = {'metadata': _collect_metadata(results, query, params), 'results': rows}
     with open(filename, 'w', encoding='utf-8') as f:
@@ -148,12 +142,12 @@ def export_results_excel(results: List[dict], query: str, params, output_dir: st
             'Rank': r.get('rank'),
             'ID': r.get('id'),
             'Similaridade': r.get('similarity'),
-            'Órgão': d.get('orgaoentidade_razaosocial') or d.get('orgaoEntidade_razaosocial'),
-            'Unidade': d.get('unidadeorgao_nomeunidade') or d.get('unidadeOrgao_nomeUnidade'),
-            'Município': d.get('unidadeorgao_municipionome') or d.get('unidadeOrgao_municipioNome'),
-            'UF': d.get('unidadeorgao_ufsigla') or d.get('unidadeOrgao_ufSigla'),
-            'Valor Estimado': d.get('valortotalestimado') or d.get('valorTotalEstimado'),
-            'Data Encerramento': d.get('dataencerramentoproposta') or d.get('dataEncerramentoProposta')
+            'Órgão': d.get('orgao_entidade_razao_social'),
+            'Unidade': d.get('unidade_orgao_nome_unidade'),
+            'Município': d.get('unidade_orgao_municipio_nome'),
+            'UF': d.get('unidade_orgao_uf_sigla'),
+            'Valor Estimado': d.get('valor_total_estimado'),
+            'Data Encerramento': d.get('data_encerramento_proposta')
         })
     pd.DataFrame(rows).to_excel(filename, index=False, engine='openpyxl')
     return filename
@@ -177,12 +171,7 @@ def export_results_pdf(results: List[dict], query: str, params, output_dir: str)
     title_style = ParagraphStyle('TitleX', parent=styles['Title'], alignment=1, fontSize=16)
     normal = styles['Normal']
     elements = []
-    try:
-        pos, _ = extract_pos_neg_terms(query)
-        display_q = pos.strip() if pos.strip() else query
-    except Exception:
-        display_q = query
-    elements.append(Paragraph(f'BUSCA: "{display_q.upper()}"', title_style))
+    elements.append(Paragraph(f'BUSCA: "{query.upper()}"', title_style))
     elements.append(Paragraph(
         f"Tipo: {SEARCH_TYPES.get(_get_attr(params,'search'),{}).get('name')} | Abordagem: {SEARCH_APPROACHES.get(_get_attr(params,'approach'),{}).get('name')} | Relevância: {RELEVANCE_LEVELS.get(_get_attr(params,'relevance'),{}).get('name')}",
         normal
@@ -192,12 +181,12 @@ def export_results_pdf(results: List[dict], query: str, params, output_dir: str)
     table_data = [["Rank","Unidade","Local","Similaridade","Valor (R$)","Data Enc."]]
     for r in results:
         d = r.get('details', {})
-        unidade = (d.get('unidadeorgao_nomeunidade') or d.get('unidadeOrgao_nomeUnidade') or 'N/A')
-        municipio = (d.get('unidadeorgao_municipionome') or d.get('unidadeOrgao_municipioNome') or 'N/A')
-        uf = d.get('unidadeorgao_ufsigla') or d.get('unidadeOrgao_ufSigla') or ''
+        unidade = d.get('unidade_orgao_nome_unidade') or 'N/A'
+        municipio = d.get('unidade_orgao_municipio_nome') or 'N/A'
+        uf = d.get('unidade_orgao_uf_sigla') or ''
         local = f"{municipio}/{uf}" if uf else municipio
-        valor = format_currency(d.get('valortotalestimado') or d.get('valorTotalEstimado') or 0)
-        data_enc = format_date(d.get('dataencerramentoproposta') or d.get('dataEncerramentoProposta') or 'N/A')
+        valor = format_currency(d.get('valor_total_estimado') or 0)
+        data_enc = format_date(d.get('data_encerramento_proposta') or 'N/A')
         table_data.append([str(r.get('rank')), unidade[:30], local[:25], f"{r.get('similarity',0):.4f}", valor, str(data_enc)])
     pdf_table = PDFTable(table_data, repeatRows=1)
     pdf_table.setStyle(TableStyle([

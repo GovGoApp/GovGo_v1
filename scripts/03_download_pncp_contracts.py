@@ -141,7 +141,7 @@ sys.path.insert(0, db_dir)
 load_dotenv(os.path.join(v1_root, ".env"))
 
 # Importar mapeamento PNCP
-from de_para_pncp_v1 import DE_PARA_PNCP, apply_field_transformation, get_table_fields
+from DEPARA_BDL0_BDS1 import DE_PARA, apply_field_transformation, get_table_fields #de_para_pncp_v1
 
 # Configurações do banco PostgreSQL V1 (Supabase)
 DB_CONFIG = {

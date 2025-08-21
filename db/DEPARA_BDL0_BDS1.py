@@ -60,7 +60,7 @@ TRANSFORMATIONS = {
 # MAPEAMENTOS API PNCP → V1
 # ============================
 
-DE_PARA_PNCP = {
+DE_PARA = {
     'contratacao': {
         'fonte': 'API_PNCP',
         'origem': 'contratacoes/publicacao',
@@ -189,10 +189,10 @@ def apply_field_transformation(api_data, table_key, numero_controle_pncp=None):
     Returns:
         dict: Dados transformados prontos para inserção no banco V1
     """
-    if table_key not in DE_PARA_PNCP:
+    if table_key not in DE_PARA:
         raise ValueError(f"Tabela '{table_key}' não encontrada no mapeamento PNCP")
     
-    config = DE_PARA_PNCP[table_key]
+    config = DE_PARA[table_key]
     transformed_data = {}
     
     # Para itens, adicionar o campo de referência
@@ -222,10 +222,10 @@ def apply_field_transformation(api_data, table_key, numero_controle_pncp=None):
 
 def get_table_fields(table_key):
     """Retorna a lista de campos de destino para uma tabela"""
-    if table_key not in DE_PARA_PNCP:
+    if table_key not in DE_PARA:
         return []
     
-    config = DE_PARA_PNCP[table_key]
+    config = DE_PARA[table_key]
     fields = []
     
     # Para itens, adicionar campo de referência
@@ -241,12 +241,17 @@ def get_table_fields(table_key):
 
 def get_api_endpoint_info(table_key):
     """Retorna informações sobre o endpoint da API para uma tabela"""
-    if table_key not in DE_PARA_PNCP:
+    if table_key not in DE_PARA:
         return None
     
-    config = DE_PARA_PNCP[table_key]
+    config = DE_PARA[table_key]
     return {
         'fonte': config['fonte'],
         'origem': config['origem'],
         'destino': config['destino']
     }
+
+__all__ = [
+    'DE_PARA','apply_field_transformation','get_table_fields',
+    'get_api_endpoint_info','TRANSFORMATIONS'
+]

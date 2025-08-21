@@ -99,9 +99,7 @@ from gvg_preprocessing import (
     decode_esfera,
     SearchQueryProcessor
 )
-from gvg_ai_utils import (
-    extract_pos_neg_terms,
-)
+# Removido extract_pos_neg_terms: novo assistant já fornece negative_terms
 from gvg_search_core import (
     semantic_search,
     keyword_search,
@@ -171,9 +169,9 @@ def _sort_results(results: List[dict], order_mode: int):
                 try: return _dt.strptime(s, fmt)
                 except Exception: continue
             return _dt(9999,12,31)
-        return sorted(results, key=lambda x: parse_date(x.get('details', {}).get('dataencerramentoproposta') or x.get('details', {}).get('dataEncerramentoProposta')))
+        return sorted(results, key=lambda x: parse_date(x.get('details', {}).get('data_encerramento_proposta')))
     elif order_mode == 3:
-        return sorted(results, key=lambda x: (x.get('details', {}).get('valortotalestimado') or x.get('details', {}).get('valorTotalEstimado') or 0), reverse=True)
+        return sorted(results, key=lambda x: (x.get('details', {}).get('valor_total_estimado') or 0), reverse=True)
     return results
 
 
@@ -278,20 +276,17 @@ def gvg_search(
         except Exception as e:
             logger.info(f"[WARN] Falha toggle inteligente: {e}")
 
-    # Pos/neg extraction e processamento inteligente para categorias
-    try:
-        pos_terms, neg_terms = extract_pos_neg_terms(prompt) if negation_emb and search in (1,3) else (prompt, "")
-    except Exception:
-        pos_terms, neg_terms = prompt, ""
-    base_category_terms = pos_terms
+    # Processamento inteligente para derivar termos de categoria (usa apenas search_terms do assistant)
+    base_category_terms = prompt
+    processed_terms = ''
+    negative_terms = ''
     try:
         processor = SearchQueryProcessor()
         processed = processor.process_query(prompt)
-        processed_terms = processed.get('search_terms') or ''
+        processed_terms = (processed.get('search_terms') or '').strip()
+        negative_terms = (processed.get('negative_terms') or '').strip()
         if processed_terms:
-            cat_pos, _ = extract_pos_neg_terms(processed_terms) if negation_emb and search in (1,3) else (processed_terms, "")
-            if cat_pos.strip():
-                base_category_terms = cat_pos.strip()
+            base_category_terms = processed_terms
     except Exception as e:
         logger.info(f"[WARN] Inteligente categorias: {e}")
 
@@ -389,7 +384,7 @@ def gvg_search(
 
     # Exibição resumida se debug e não raw
     if debug and console and not return_raw:
-        _print_summary(console, results, categories, params, confidence, elapsed, prompt, export_map, log_path)
+        _print_summary(console, results, categories, params, confidence, elapsed, prompt, export_map, log_path, negative_terms)
 
     return {
         'results': results,
@@ -402,16 +397,12 @@ def gvg_search(
     }
 
 
-def _print_summary(console, results, categories, params, confidence, elapsed, prompt, export_map, log_path):  # pragma: no cover (visual)
+def _print_summary(console, results, categories, params, confidence, elapsed, prompt, export_map, log_path, negative_terms: str = ""):  # pragma: no cover (visual)
     console.print(Panel.fit(
         f"✅ Busca concluída\nResultados: {len(results)} | Tempo: {elapsed:.2f}s | Confiança: {confidence:.2f}", title="Resumo", border_style="green"))
-    if params['negation_emb'] and params['search'] in (1,3):
-        try:
-            pos, neg = extract_pos_neg_terms(prompt)
-            if neg.strip():
-                console.print(f"[cyan]🎯 Negativo: [green]{pos}[/green]  --  [red]{neg}[/red][/cyan]")
-        except Exception:
-            pass
+    # Exibição de termos negativos (se assistente forneceu)
+    if params['negation_emb'] and params['search'] in (1,3) and negative_terms:
+        console.print(f"[cyan]🎯 Termos negativos: [red]{negative_terms}[/red][/cyan]")
     if params['approach'] in (2,3) and categories:
         table = Table(title="TOP Categorias", show_header=True, header_style="bold magenta")
         table.add_column("Rank", width=5)
@@ -430,12 +421,12 @@ def _print_summary(console, results, categories, params, confidence, elapsed, pr
     rtable.add_column("Encerramento", width=12)
     for r in results[:100]:  # limitar visual
         d = r.get('details', {})
-        unidade = d.get('unidadeorgao_nomeunidade') or d.get('unidadeOrgao_nomeUnidade') or d.get('orgaoentidade_razaosocial') or 'N/A'
-        municipio = d.get('unidadeorgao_municipionome') or d.get('unidadeOrgao_municipioNome') or 'N/A'
-        uf = d.get('unidadeorgao_ufsigla') or d.get('unidadeOrgao_ufSigla') or ''
+        unidade = d.get('unidade_orgao_nome_unidade') or d.get('orgao_entidade_razao_social') or 'N/A'
+        municipio = d.get('unidade_orgao_municipio_nome') or 'N/A'
+        uf = d.get('unidade_orgao_uf_sigla') or ''
         local = f"{municipio}/{uf}" if uf else municipio
-        valor = format_currency(d.get('valortotalestimado') or d.get('valorTotalEstimado') or 0)
-        data_enc = format_date(d.get('dataencerramentoproposta') or d.get('dataEncerramentoProposta') or 'N/A')
+        valor = format_currency(d.get('valor_total_estimado') or 0)
+        data_enc = format_date(d.get('data_encerramento_proposta') or 'N/A')
         rtable.add_row(str(r.get('rank')), unidade[:38], local[:28], f"{r.get('similarity',0):.4f}", valor, str(data_enc))
     console.print(rtable)
     if export_map:

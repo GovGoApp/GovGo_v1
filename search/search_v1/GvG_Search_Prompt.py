@@ -90,7 +90,6 @@ from gvg_preprocessing import (
     SearchQueryProcessor
 )
 from gvg_ai_utils import (
-    extract_pos_neg_terms,
     generate_keywords,  # mantida para potencial uso futuro
 )
 from gvg_search_core import (
@@ -194,26 +193,13 @@ def perform_search(params, logger, console=None):
 
     # Dados base
     original_query = params.prompt
-    pos_terms, neg_terms = ("", "")
-    if params.negation_emb and params.search in (1,3):
-        try:
-            pos_terms, neg_terms = extract_pos_neg_terms(original_query)
-        except Exception:
-            pos_terms = original_query
-    else:
-        pos_terms = original_query
-
-    # Processamento inteligente para base de categorias
-    base_category_terms = pos_terms
-    processed_info = None
+    base_category_terms = original_query
     try:
         processor = SearchQueryProcessor()
         processed_info = processor.process_query(original_query)
-        processed_terms = processed_info.get('search_terms') or ''
+        processed_terms = (processed_info.get('search_terms') or '').strip()
         if processed_terms:
-            cat_pos, _ = extract_pos_neg_terms(processed_terms) if (params.negation_emb and params.search in (1,3)) else (processed_terms, "")
-            if cat_pos.strip():
-                base_category_terms = cat_pos.strip()
+            base_category_terms = processed_terms
     except Exception as e:
         logger.info(f"[WARN] Falha processamento inteligente: {e}")
 
@@ -385,13 +371,7 @@ def _print_summary(console, results: List[dict], categories: List[dict], params,
         f"✅ Busca concluída\nResultados: {len(results)} | Tempo: {elapsed:.2f}s | Confiança: {confidence:.2f}",
         title="Resumo", border_style="green"))
     # Prompt negativo
-    if params.negation_emb and params.search in (1,3):
-        try:
-            pos, neg = extract_pos_neg_terms(query)
-            if neg.strip():
-                console.print(f"[cyan]🎯 Negativo: [green]{pos}[/green]  --  [red]{neg}[/red][/cyan]")
-        except Exception:
-            pass
+        # Exibição simplificada de termos negativos agora poderia usar dados dos resultados (não implementado aqui)
     if params.approach in (2,3) and categories:
         table = Table(title="TOP Categorias", show_header=True, header_style="bold magenta")
         table.add_column("Rank", width=5)

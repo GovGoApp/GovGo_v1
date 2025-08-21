@@ -16,8 +16,8 @@ from dotenv import load_dotenv
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Assistant ID específico para preprocessamento
-ASSISTANT_ID = "asst_argxuo1SK6KE3HS5RGo4VRBV"
+# Assistant ID (V1) carregado via variável cujo nome = arquivo
+ASSISTANT_ID = os.getenv("GVG_PREPROCESSING_QUERY_v1", "asst_5g1S4zRk5IOjBuZIPCBxnmVo")
 MAX_RETRIES = 3
 
 # Thread global para reutilização
@@ -66,20 +66,9 @@ class SearchQueryProcessor:
         for attempt in range(max_retries):
             try:
                 # Preparar prompt para o Assistant
-                prompt = f"""
-                Analise a seguinte consulta de busca e separe em:
-                1. TERMOS DE BUSCA: palavras-chave para busca semântica/textual
-                2. CONDIÇÕES SQL: filtros específicos (valores, datas, regiões, etc.)
-
-                CONSULTA: {user_query}
-
-                Retorne apenas um JSON válido com esta estrutura:
-                {{
-                    "search_terms": "termos principais para busca",
-                    "sql_conditions": ["condição1", "condição2"],
-                    "explanation": "breve explicação da separação"
-                }}
-                """
+                # Prompt mínimo – a lógica principal está no arquivo de especificação do Assistant (GVG_PREPROCESSING_QUERY_v1)
+                # O assistant já sabe retornar: search_terms, negative_terms, sql_conditions, explanation, requires_join_embeddings
+                prompt = f"Consulta: {user_query}"
                 
                 # Enviar mensagem
                 client.beta.threads.messages.create(
@@ -177,28 +166,34 @@ class SearchQueryProcessor:
                 
                 # Validar estrutura
                 if 'search_terms' in data and 'sql_conditions' in data:
-                    # Garantir que sql_conditions é uma lista
                     if not isinstance(data['sql_conditions'], list):
                         data['sql_conditions'] = []
-                    
+                    negative_terms = data.get('negative_terms', '') or ''
+                    requires_join_embeddings = bool(data.get('requires_join_embeddings'))
                     return {
-                        'search_terms': data.get('search_terms', original_query).strip(),
+                        'search_terms': (data.get('search_terms') or original_query).strip(),
+                        'negative_terms': negative_terms.strip(),
                         'sql_conditions': data.get('sql_conditions', []),
-                        'explanation': data.get('explanation', 'Processamento concluído')
+                        'explanation': data.get('explanation', 'Processamento concluído'),
+                        'requires_join_embeddings': requires_join_embeddings
                     }
             
             # Se não conseguiu extrair JSON válido
             return {
                 'search_terms': original_query,
+                'negative_terms': '',
                 'sql_conditions': [],
-                'explanation': 'Não foi possível processar a resposta do Assistant'
+                'explanation': 'Não foi possível processar a resposta do Assistant',
+                'requires_join_embeddings': False
             }
             
         except json.JSONDecodeError:
             return {
                 'search_terms': original_query,
+                'negative_terms': '',
                 'sql_conditions': [],
-                'explanation': 'Resposta inválida do Assistant'
+                'explanation': 'Resposta inválida do Assistant',
+                'requires_join_embeddings': False
             }
 
 def process_search_query(user_query: str) -> Dict[str, Any]:
