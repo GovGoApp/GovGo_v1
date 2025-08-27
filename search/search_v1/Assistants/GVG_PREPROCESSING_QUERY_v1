@@ -238,7 +238,7 @@ Output:
 ```
 
 Exemplo 2:
-Input: "material escolar -- uniformes nordeste 2024 bem categorizados pregão eletrônico"
+Input: "material escolar no nordeste 2024 bem categorizados pregão eletrônico -- uniformes "
 Output:
 ```json
 {

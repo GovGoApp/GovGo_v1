@@ -1,0 +1,70 @@
+{
+  "metadata": {
+    "query": "serviço de gestão de logística e compra de medicamentos na região norte  --aquisição ",
+    "search_type": "Semântica",
+    "approach": "Filtro",
+    "relevance_level": 2,
+    "order": 1,
+    "export_date": "2025-08-26T12:27:46.787178",
+    "total_results": 3
+  },
+  "results": [
+    {
+      "rank": 1,
+      "id": "04696490000163-1-000004/2026",
+      "similarity": 0.195600492775661,
+      "orgao": "SUP. EST. DE LICITACAO",
+      "unidade": "SUPERINTEND.ESTAD.DE COMPRAS E LICITAÇÕES-RO",
+      "municipio": "Porto Velho",
+      "uf": "RO",
+      "valor_estimado": "0.1",
+      "valor_homologado": null,
+      "data_inclusao": "2025-05-16T10:34:36",
+      "data_abertura": "2025-06-18T13:00:00",
+      "data_encerramento": "2026-05-18T09:00:00",
+      "modalidade_id": "12",
+      "modalidade_nome": "Credenciamento",
+      "disputa_id": "5",
+      "disputa_nome": "Não se aplica",
+      "descricao": "Credenciamento de empresas especializadas para futuro e eventual fornecimento de medicamentos manipulados, visando atender o Núcleo de Clínica Materno Infantil do Hospital de Base Dr. Ary Pinheiro - HBAP e Coordenadoria de Conciliação e Mandados Judiciais - CCMJ."
+    },
+    {
+      "rank": 2,
+      "id": "11336672000199-1-000055/2025",
+      "similarity": 0.183920661783417,
+      "orgao": "FUNDO MUNICIPAL DE SAUDE",
+      "unidade": "FUNDO MUNICIPAL DE SAUDE",
+      "municipio": "Gurupi",
+      "uf": "TO",
+      "valor_estimado": "550000.0",
+      "valor_homologado": null,
+      "data_inclusao": "2025-07-31T17:06:12",
+      "data_abertura": "2025-08-01T08:00:00",
+      "data_encerramento": "2026-07-31T23:59:00",
+      "modalidade_id": "12",
+      "modalidade_nome": "Credenciamento",
+      "disputa_id": "5",
+      "disputa_nome": "Não se aplica",
+      "descricao": "CREDENCIAMENTO DE FARMACIAS E DROGARIAS PARA AQUISICAO DE MEDICAMENTOS DE A A Z PARA ATENDIMENTO DAS DEMANDAS JUDICIAIS"
+    },
+    {
+      "rank": 3,
+      "id": "04329736000169-1-000111/2025",
+      "similarity": 0.145326105832415,
+      "orgao": "MUNICIPIO DE PARINTINS",
+      "unidade": "MUNICIPIO DE PARINTINS",
+      "municipio": "Parintins",
+      "uf": "AM",
+      "valor_estimado": "1.0",
+      "valor_homologado": 8,
+      "data_inclusao": "2025-07-29T12:23:56",
+      "data_abertura": "2025-07-22T10:00:00",
+      "data_encerramento": "2025-12-31T10:00:00",
+      "modalidade_id": "12",
+      "modalidade_nome": "Credenciamento",
+      "disputa_id": "5",
+      "disputa_nome": "Não se aplica",
+      "descricao": "CREDENCIAMENTO DE PESSOAS JURÍDICAS PARA AQUISIÇÃO DE MEDICAMENTOS PARA ATENDER O HOSPITAL DR. JOFRE DE MATOS COHEN E A CENTRAL DE ABASTECIMENTO FARMACÊUTICO MUNICIPAL-CAF. "
+    }
+  ]
+}

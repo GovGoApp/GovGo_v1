@@ -1,0 +1,12 @@
+# Minimal requirements to run GvG_Search_Function and its dependencies
+openai>=1.0.0
+python-dotenv>=1.0.0
+psycopg2-binary>=2.9.0
+sqlalchemy>=2.0.0
+pandas>=2.0.0
+numpy>=1.24.0
+rich>=13.0.0
+requests>=2.31.0
+pgvector>=0.2.0
+openpyxl>=3.1.0
+reportlab>=4.0.0

@@ -2,7 +2,7 @@
 Execute diretamente este arquivo para fazer uma busca rápida.
 """
 
-from GvG_Search_Function import gvg_search
+from search.search_v1.GvG_Search_Function_v0 import gvg_search
 
 
 def main():

@@ -346,7 +346,7 @@ def gvg_search(
     intelligent_toggle: bool = False,
     export: Iterable[str] | None = ("json",),
     output_dir: str = "Resultados_Busca",
-    debug: bool = False,
+    debug: bool = True,
     return_export_paths: bool = True,
     return_raw: bool = False,
 ) -> Dict[str, Any]:

@@ -8,7 +8,7 @@ import os
 import re
 import time
 import numpy as np
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 import psycopg2
 
 # ============================================================================
@@ -37,7 +37,7 @@ RELEVANCE_FILTER_LEVEL = 1  # 1=sem filtro, 2=flexível, 3=restritivo
 DEBUG_RELEVANCE_FILTER = False
 USE_PARTIAL_DESCRIPTION = True
 
-# IDs (mantenha/atualize conforme necessidade)
+# IDs de assistants de relevância (Flexível e Restritivo)
 RELEVANCE_ASSISTANT_FLEXIBLE = os.getenv("GVG_RELEVANCE_FLEXIBLE", "asst_tfD5oQxSgoGhtqdKQHK9UwRi")
 RELEVANCE_ASSISTANT_RESTRICTIVE = os.getenv("GVG_RELEVANCE_RESTRICTIVE", "asst_XmsefQEKbuVWu51uNST7kpYT")
 
@@ -52,7 +52,7 @@ try:
         _openai_client = None
         _relevance_thread = None
         _RELEVANCE_AVAILABLE = False
-except Exception as _e:
+except Exception:
     _openai_client = None
     _relevance_thread = None
     _RELEVANCE_AVAILABLE = False
@@ -154,7 +154,6 @@ def _process_relevance_response(response_text, original_results):
             return original_results
         pos_set = set(positions)
         filtered = [r for r in original_results if (r.get('rank') in pos_set)]
-        # Reordenar conforme ordem de positions
         order = {p:i for i,p in enumerate(positions)}
         filtered.sort(key=lambda r: order.get(r.get('rank'), 999))
         for i,r in enumerate(filtered,1):
@@ -285,6 +284,44 @@ def _ensure_vector_cast(param_placeholder: str = "%s"):
     return f"{param_placeholder}::vector"
 
 # --------------------------------------------------------------
+# Sanitização de condições SQL retornadas pelo Assistant
+# - Escapa placeholders "%s" para não conflitar com psycopg2
+# - Ajusta c.ano_compra comparando com números (ano_compra é TEXT)
+# - BETWEEN/IN com anos numéricos -> strings
+# - No modo keyword, remove referências a ce.* (sem JOIN de embeddings)
+# --------------------------------------------------------------
+def _sanitize_sql_conditions(sql_conditions, context: str = 'generic'):
+    if not isinstance(sql_conditions, (list, tuple)):
+        return []
+    out = []
+    for cond in sql_conditions:
+        if not isinstance(cond, str):
+            continue
+        c = cond
+        # Escapar placeholders literais
+        if '%s' in c:
+            c = c.replace('%s', '%%s')
+        # ano_compra comparações numéricas -> strings
+        # ex: c.ano_compra <= 2026  => c.ano_compra <= '2026'
+        c = re.sub(r"\bc\.ano_compra\s*(=|<>|!=|<=|>=|<|>)\s*(\d{4})\b", lambda m: f"c.ano_compra {m.group(1)} '{m.group(2)}'", c, flags=re.IGNORECASE)
+        # BETWEEN
+        c = re.sub(r"\bc\.ano_compra\s+BETWEEN\s+(\d{4})\s+AND\s+(\d{4})\b", lambda m: f"c.ano_compra BETWEEN '{m.group(1)}' AND '{m.group(2)}'", c, flags=re.IGNORECASE)
+        # IN (anos)
+        def _quote_in_years(match):
+            inside = match.group(1)
+            nums = re.findall(r"\d{4}", inside)
+            if nums:
+                quoted = ",".join(f"'{n}'" for n in nums)
+                return f"c.ano_compra IN ({quoted})"
+            return match.group(0)
+        c = re.sub(r"\bc\.ano_compra\s+IN\s*\(([^)]*)\)", _quote_in_years, c, flags=re.IGNORECASE)
+        # No keyword mode, evitar ce.*
+        if context == 'keyword' and re.search(r"\bce\.", c, flags=re.IGNORECASE):
+            continue
+        out.append(c)
+    return out
+
+# --------------------------------------------------------------
 # Compatibilidade: gerar aliases adicionais nos detalhes para que
 # código legado que procura chaves sem underscore ou variantes
 # (ex: modadisputanome) não resulte em N/A.
@@ -321,15 +358,21 @@ def _augment_aliases(d: dict):
         pass
     return d
 
-def semantic_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
-                    filter_expired=DEFAULT_FILTER_EXPIRED,
-                    use_negation=DEFAULT_USE_NEGATION,
-                    intelligent_mode=True):
+def semantic_search(query_text,
+                    limit: int = MAX_RESULTS,
+                    min_results: int = MIN_RESULTS,
+                    filter_expired: bool = DEFAULT_FILTER_EXPIRED,
+                    use_negation: bool = DEFAULT_USE_NEGATION,
+                    intelligent_mode: bool = True,
+                    category_codes: Optional[List[str]] = None,
+                    pre_limit_ids: Optional[int] = None,
+                    pre_knn_limit: Optional[int] = None):
     """Busca semântica usando builder centralizado de SELECT.
 
     Agora utiliza `build_semantic_select` para evitar repetição de lista de colunas.
     """
-    conn = None; cursor = None
+    conn = None
+    cursor = None
     try:
         processed = _get_processed(query_text) if (intelligent_mode and ENABLE_INTELLIGENT_PROCESSING) else {
             'original_query': query_text,
@@ -338,85 +381,100 @@ def semantic_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
             'sql_conditions': [],
             'explanation': 'Processamento desativado'
         }
-        # Incorporar termos negativos já fornecidos pelo novo assistant (se houver)
         negative_terms = processed.get('negative_terms') or ''
         search_terms = processed.get('search_terms') or query_text
         embedding_input = f"{search_terms} -- {negative_terms}".strip() if negative_terms else search_terms
         sql_conditions = processed.get('sql_conditions', [])
 
-        # Embedding com suporte avançado a negação (não depende apenas de '--')
-        if use_negation:
-            emb = get_negation_embedding(embedding_input)
-        else:
-            emb = get_embedding(embedding_input)
+        emb = get_negation_embedding(embedding_input) if use_negation else get_embedding(embedding_input)
         if emb is None:
             return [], 0.0
-        if isinstance(emb, np.ndarray):
-            emb_vec = emb.tolist()
-        else:
-            emb_vec = emb
+        emb_vec = emb.tolist() if isinstance(emb, np.ndarray) else emb
 
         conn = create_connection()
         if not conn:
             return [], 0.0
         cursor = conn.cursor()
-        # ==============================================================
-        # Caminho OTIMIZADO index-friendly:
-        # 1. CTE 'base' ordena por distância ASC usando índice pgvector
-        # 2. JOIN recupera colunas core; similarity = 1 - distance
-        # 3. Fallback para builder antigo caso falhe
-        # Ativar/desativar via env GVG_VECTOR_OPT ("0" desativa)
-        # ==============================================================
+
         vector_opt_enabled = os.getenv("GVG_VECTOR_OPT", "1") != "0"
         executed_optimized = False
         sql_debug = os.getenv("GVG_SQL_DEBUG", "0") != "0"
+        sql_conditions_sanitized = _sanitize_sql_conditions(sql_conditions, context='semantic')
+
         if vector_opt_enabled:
             try:
                 core_cols = get_contratacao_core_columns('c')
                 core_cols_expr = ",\n  ".join(core_cols)
+                pre_ids = pre_limit_ids if pre_limit_ids is not None else int(os.getenv("GVG_PRE_ID_LIMIT", "50000"))
+                pre_knn = pre_knn_limit if pre_knn_limit is not None else int(os.getenv("GVG_PRE_KNN_LIMIT", "5000"))
+
+                where_cand = ["ce.embeddings IS NOT NULL"]
+                if filter_expired:
+                    where_cand.append("to_date(NULLIF(c.data_encerramento_proposta,''),'YYYY-MM-DD') >= CURRENT_DATE")
+                for cond in sql_conditions_sanitized:
+                    where_cand.append(cond)
+                include_categories = bool(category_codes)
+                if include_categories:
+                    where_cand.append("ce.top_categories && %s::text[]")
+
                 cte_parts = [
-                    "WITH base AS (",
-                    "  SELECT ce.numero_controle_pncp,",
-                    "         (ce.embeddings <=> %s::vector) AS distance",
+                    "WITH candidatos AS (",
+                    f"  SELECT ce.{PRIMARY_KEY}",
                     f"  FROM {CONTRATACAO_EMB_TABLE} ce",
-                    "  WHERE ce.embeddings IS NOT NULL",
-                    "  ORDER BY ce.embeddings <=> %s::vector ASC",
+                    f"  JOIN {CONTRATACAO_TABLE} c ON c.{PRIMARY_KEY} = ce.{PRIMARY_KEY}",
+                    "  WHERE " + " AND ".join(where_cand),
+                    "  LIMIT %s",
+                    ")",
+                    " , base AS (",
+                    f"  SELECT ce.{PRIMARY_KEY}, (ce.{EMB_VECTOR_FIELD} <=> %s::vector) AS distance",
+                    f"  FROM {CONTRATACAO_EMB_TABLE} ce",
+                    f"  JOIN candidatos x ON x.{PRIMARY_KEY} = ce.{PRIMARY_KEY}",
+                    "  ORDER BY distance ASC",
                     "  LIMIT %s",
                     ")",
                     "SELECT",
                     f"  {core_cols_expr},",
                     "  (1 - base.distance) AS similarity",
-                    f"FROM base JOIN {CONTRATACAO_TABLE} c ON c.{PRIMARY_KEY} = base.{PRIMARY_KEY}"
+                    f"FROM base JOIN {CONTRATACAO_TABLE} c ON c.{PRIMARY_KEY} = base.{PRIMARY_KEY}",
+                    "ORDER BY similarity DESC",
+                    "LIMIT %s"
                 ]
-                where_clauses = []
-                if filter_expired:
-                    where_clauses.append("c.data_encerramento_proposta >= TO_CHAR(CURRENT_DATE,'YYYY-MM-DD')")
-                for cond in sql_conditions:
-                    where_clauses.append(cond)
-                if where_clauses:
-                    cte_parts.append("WHERE " + " AND ".join(where_clauses))
-                cte_parts.append("ORDER BY similarity DESC")
-                cte_parts.append("LIMIT %s")
                 final_sql = "\n".join(cte_parts)
-                primary_limit = limit * 2 if (filter_expired or sql_conditions) else limit
-                params = [emb_vec, emb_vec, primary_limit, limit]
+
+                params: List[Any] = []
+                if include_categories:
+                    params.append(category_codes)
+                params.append(pre_ids)
+                params.append(emb_vec)
+                params.append(pre_knn)
+                params.append(limit)
+
                 if sql_debug or DEBUG_INTELLIGENT_QUERIES:
-                    print("\n[SQL][semantic_opt]" )
+                    print("\n[SQL][semantic_opt]")
                     print(final_sql)
+                    print(f"params: categories={'Y' if include_categories else 'N'}, pre_ids={pre_ids}, pre_knn={pre_knn}, final_limit={limit}, emb_dim=3072")
+
                 cursor.execute(final_sql, params)
                 executed_optimized = True
             except Exception as opt_err:
                 if DEBUG_INTELLIGENT_QUERIES or sql_debug:
                     print(f"⚠️ Vetor otimizado falhou: {opt_err}")
+                try:
+                    if conn:
+                        conn.rollback()
+                except Exception:
+                    pass
                 executed_optimized = False
 
         if not executed_optimized:
-            # Fallback para versão anterior (mantém comportamento existente)
             base_query = [build_semantic_select('%s').rstrip()]
             params = [emb_vec]
+            if category_codes:
+                base_query.append("AND ce.top_categories && %s::text[]")
+                params.append(category_codes)
             if filter_expired:
                 base_query.append("AND to_date(NULLIF(c.data_encerramento_proposta,''),'YYYY-MM-DD') >= CURRENT_DATE")
-            for cond in sql_conditions:
+            for cond in sql_conditions_sanitized:
                 base_query.append(f"AND {cond}")
             base_query.append("ORDER BY similarity DESC")
             base_query.append("LIMIT %s")
@@ -425,27 +483,19 @@ def semantic_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
             if sql_debug or DEBUG_INTELLIGENT_QUERIES:
                 print("\n[SQL][semantic_fallback]")
                 print(final_sql)
+                print(f"params: categories={'Y' if bool(category_codes) else 'N'}, final_limit={limit}, emb_dim=3072")
             cursor.execute(final_sql, params)
-        rows = cursor.fetchall()
 
+        rows = cursor.fetchall()
         column_names = [d[0] for d in cursor.description]
-        results = []
-        sims = []
+
+        results: List[Dict[str, Any]] = []
         core_keys = set(CONTRATACAO_FIELDS.keys())
         for idx, row in enumerate(rows):
             record = dict(zip(column_names, row))
             similarity = float(record['similarity'])
-            sims.append(similarity)
-            # details somente com campos core + similarity
             details = {k: v for k, v in record.items() if k in core_keys}
             details['similarity'] = similarity
-            out = {
-                'id': record.get(PRIMARY_KEY),
-                'numero_controle': record.get(PRIMARY_KEY),
-                'similarity': similarity,
-                'rank': idx + 1,
-                'details': details
-            }
             if intelligent_mode:
                 details['intelligent_processing'] = {
                     'original_query': processed.get('original_query', query_text),
@@ -454,9 +504,15 @@ def semantic_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
                     'explanation': processed.get('explanation','')
                 }
             _augment_aliases(details)
-            results.append(out)
-        # Aplicar filtro de relevância se disponível
-        if apply_relevance_filter and RELEVANCE_FILTER_LEVEL > 1 and results:
+            results.append({
+                'id': record.get(PRIMARY_KEY),
+                'numero_controle': record.get(PRIMARY_KEY),
+                'similarity': similarity,
+                'rank': idx + 1,
+                'details': details
+            })
+
+        if RELEVANCE_FILTER_LEVEL > 1 and results:
             meta = {
                 'search_type': 'Semântica' + (' (Inteligente)' if intelligent_mode else ''),
                 'search_approach': 'Direta',
@@ -469,6 +525,7 @@ def semantic_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
             except Exception as rf_err:
                 if DEBUG_INTELLIGENT_QUERIES:
                     print(f"⚠️ Filtro de relevância falhou: {rf_err}")
+
         return results, calculate_confidence([r['similarity'] for r in results])
     except Exception as e:
         try:
@@ -478,12 +535,6 @@ def semantic_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
             pass
         if os.getenv("GVG_SQL_DEBUG", "0") != "0" or DEBUG_INTELLIGENT_QUERIES:
             print(f"[ERRO][semantic_search] {type(e).__name__}: {e}")
-            try:
-                if cursor and getattr(cursor, 'query', None):
-                    q = cursor.query.decode() if isinstance(cursor.query, bytes) else cursor.query
-                    print(f"[ERRO][semantic_search] SQL => {q}")
-            except Exception:
-                pass
         print(f"Erro na busca semântica: {e}")
         return [], 0.0
     finally:
@@ -499,16 +550,20 @@ def keyword_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
     """
     conn = None; cursor = None
     try:
-        processed = _get_processed(query_text) if (intelligent_mode and ENABLE_INTELLIGENT_PROCESSING) else {
-            'original_query': query_text,
-            'search_terms': query_text,
-            'negative_terms': '',
-            'sql_conditions': [],
-            'explanation': 'Processamento desativado'
-        }
+        if intelligent_mode and ENABLE_INTELLIGENT_PROCESSING:
+            processed = _get_processed(query_text)
+        else:
+            processed = {
+                'original_query': query_text,
+                'search_terms': query_text,
+                'negative_terms': '',
+                'sql_conditions': [],
+                'explanation': 'Processamento desativado'
+            }
         search_terms = (processed.get('search_terms') or query_text).strip()
         negative_terms = (processed.get('negative_terms') or '').strip()
         sql_conditions = processed.get('sql_conditions', [])
+        sql_conditions_sanitized = _sanitize_sql_conditions(sql_conditions, context='keyword')
 
         conn = create_connection()
         if not conn:
@@ -553,7 +608,7 @@ def keyword_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
             base.append("AND NOT (to_tsvector('portuguese', {tf}) @@ to_tsquery('portuguese', %s))".format(tf=text_field))
         if filter_expired:
             base.append("AND to_date(NULLIF(c.data_encerramento_proposta,''),'YYYY-MM-DD') >= CURRENT_DATE")
-        for cond in sql_conditions:
+        for cond in sql_conditions_sanitized:
             base.append(f"AND {cond}")
         # Ordenação simplificada: combinação linear já calculada em Python; aqui priorizamos exato depois prefixo
         base.append("ORDER BY rank_exact DESC, rank_prefix DESC")
@@ -637,17 +692,21 @@ def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
     """
     conn=None; cursor=None
     try:
-        processed = _get_processed(query_text) if (intelligent_mode and ENABLE_INTELLIGENT_PROCESSING) else {
-            'original_query': query_text,
-            'search_terms': query_text,
-            'negative_terms': '',
-            'sql_conditions': [],
-            'explanation': 'Processamento desativado'
-        }
+        if intelligent_mode and ENABLE_INTELLIGENT_PROCESSING:
+            processed = _get_processed(query_text)
+        else:
+            processed = {
+                'original_query': query_text,
+                'search_terms': query_text,
+                'negative_terms': '',
+                'sql_conditions': [],
+                'explanation': 'Processamento desativado'
+            }
         negative_terms = processed.get('negative_terms') or ''
         search_terms = processed.get('search_terms') or query_text
         embedding_input = f"{search_terms} -- {negative_terms}".strip() if negative_terms else search_terms
         sql_conditions = processed.get('sql_conditions', [])
+        sql_conditions_sanitized = _sanitize_sql_conditions(sql_conditions, context='hybrid')
 
         # Embedding com suporte avançado a negação (não depende apenas de '--')
         if use_negation:
@@ -686,7 +745,7 @@ def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
         ]
         if filter_expired:
             base.append("AND to_date(NULLIF(c.data_encerramento_proposta,''),'YYYY-MM-DD') >= CURRENT_DATE")
-        for cond in sql_conditions:
+        for cond in sql_conditions_sanitized:
             base.append(f"AND {cond}")
         base.append("ORDER BY combined_score DESC")
         base.append("LIMIT %s")
@@ -980,7 +1039,27 @@ def category_filtered_search(query_text, search_type, top_categories, limit=30, 
     try:
         expanded_limit = limit * expanded_factor
         if search_type == 1:
-            base_results, confidence = semantic_search(query_text, limit=expanded_limit, filter_expired=filter_expired, use_negation=use_negation)
+            # Extrai códigos e injeta diretamente no SQL semântico para filtrar por categorias
+            category_codes = [c['codigo'] for c in top_categories if c.get('codigo')]
+            base_results, confidence = semantic_search(
+                query_text,
+                limit=limit,  # já limitado no SQL final
+                filter_expired=filter_expired,
+                use_negation=use_negation,
+                intelligent_mode=True,
+                category_codes=category_codes
+            )
+            # Resultados já vêm filtrados por categoria no SQL – retornar direto
+            if base_results:
+                for i, r in enumerate(base_results, 1):
+                    r['rank'] = i
+                meta = {
+                    'universe_size': len(base_results),
+                    'universe_with_categories': len(base_results),
+                    'filtered_count': len(base_results),
+                    'filtered_by_sql': True
+                }
+                return base_results, confidence, meta
         elif search_type == 2:
             base_results, confidence = keyword_search(query_text, limit=expanded_limit, filter_expired=filter_expired)
         else:

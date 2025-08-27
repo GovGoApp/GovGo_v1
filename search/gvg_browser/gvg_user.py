@@ -1,0 +1,343 @@
+"""
+gvg_user.py
+Funções auxiliares de usuário e histórico de prompts por usuário.
+
+Por ora, assume um usuário fixo (autenticação será integrada depois).
+"""
+from __future__ import annotations
+
+import os
+from typing import List, Optional, Dict, Any
+from gvg_database import create_connection
+
+# Usuário atual (mock até integrar autenticação)
+_CURRENT_USER = {
+    'uid': '5d3b153a-3854-4d70-8039-9ba34a698d67',
+    'email': 'hdaduraes@gmail.com',
+    'name': 'Haroldo Durães',
+}
+
+
+def get_current_user() -> Dict[str, str]:
+    return dict(_CURRENT_USER)
+
+
+def set_current_user(uid: str, email: str, name: str):
+    global _CURRENT_USER
+    _CURRENT_USER = {'uid': uid, 'email': email, 'name': name}
+
+
+def get_user_initials(name: Optional[str]) -> str:
+    if not name:
+        return 'NA'
+    parts = [p.strip() for p in str(name).split() if p.strip()]
+    if not parts:
+        return 'NA'
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return (parts[0][0] + parts[-1][0]).upper()
+
+
+# ==========================
+# Histórico de prompts
+# ==========================
+def fetch_prompt_texts(limit: int = 50) -> List[str]:
+    """Retorna a lista de textos dos prompts do usuário atual (mais recentes primeiro)."""
+    user = get_current_user()
+    uid = user['uid']
+    conn = None
+    cur = None
+    try:
+        conn = create_connection()
+        if not conn:
+            return []
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT text
+            FROM public.user_prompts
+            WHERE user_id = %s AND text IS NOT NULL
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (uid, limit)
+        )
+        rows = cur.fetchall()
+        return [r[0] for r in rows if r and r[0]]
+    except Exception:
+        return []
+    finally:
+        try:
+            if cur:
+                cur.close()
+        finally:
+            if conn:
+                conn.close()
+
+
+def add_prompt(
+    text: str,
+    title: Optional[str] = None,
+    *,
+    search_type: Optional[int] = None,
+    search_approach: Optional[int] = None,
+    relevance_level: Optional[int] = None,
+    sort_mode: Optional[int] = None,
+    max_results: Optional[int] = None,
+    top_categories_count: Optional[int] = None,
+    filter_expired: Optional[bool] = None,
+    embedding: Optional[List[float]] = None,
+) -> Optional[int]:
+    """Adiciona um prompt ao histórico do usuário, com configuração (e embedding, se disponível).
+
+    - Dedup por (user_id, text)
+    - Retorna o id do prompt inserido (prompt_id) em caso de sucesso; None em erro.
+    """
+    if not text:
+        return None
+    user = get_current_user(); uid = user['uid']
+    conn = None; cur = None
+    try:
+        conn = create_connection()
+        if not conn:
+            return None
+        cur = conn.cursor()
+        # Dedup por texto do mesmo usuário
+        # Para garantir remoção consistente dos resultados associados, apagamos primeiro os filhos (user_results)
+        try:
+            cur.execute(
+                "SELECT id FROM public.user_prompts WHERE user_id = %s AND text = %s",
+                (uid, text)
+            )
+            ids_rows = cur.fetchall() or []
+            old_ids = [r[0] for r in ids_rows if r and r[0] is not None]
+            if old_ids:
+                # Apaga resultados vinculados a estes prompts
+                placeholders = ','.join(['%s'] * len(old_ids))
+                cur.execute(
+                    f"DELETE FROM public.user_results WHERE user_id = %s AND prompt_id IN ({placeholders})",
+                    (uid, *old_ids)
+                )
+        except Exception:
+            # Em caso de falha nesta limpeza preventiva, prossegue; ON DELETE CASCADE pode resolver
+            pass
+        # Agora apaga os prompts duplicados por texto
+        cur.execute("DELETE FROM public.user_prompts WHERE user_id = %s AND text = %s", (uid, text))
+
+        # Descobrir colunas existentes e tipos
+        cur.execute(
+            """
+            SELECT column_name, udt_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'user_prompts'
+            """
+        )
+        rows_cols = cur.fetchall() or []
+        cols_existing = {r[0] for r in rows_cols}
+        col_types = {r[0]: r[1] for r in rows_cols}
+
+        # Colunas e valores base
+        insert_cols = ['user_id', 'title', 'text']
+        insert_vals: List[Any] = [uid, title or (text[:60] if text else None), text]
+        placeholders: List[str] = ['%s', '%s', '%s']
+
+        # Campos opcionais
+        optional_map = [
+            ('search_type', search_type),
+            ('search_approach', search_approach),
+            ('relevance_level', relevance_level),
+            ('sort_mode', sort_mode),
+            ('max_results', max_results),
+            ('top_categories_count', top_categories_count),
+            ('filter_expired', filter_expired),
+            ('embedding', embedding),
+        ]
+        for col, val in optional_map:
+            if col in cols_existing:
+                insert_cols.append(col)
+                insert_vals.append(val)
+                # Vetor precisa de cast explícito
+                if col == 'embedding' and col_types.get('embedding') == 'vector':
+                    placeholders.append('%s::vector')
+                else:
+                    placeholders.append('%s')
+
+        # Debug opcional
+        debug = (os.getenv('GVG_SQL_DEBUG') in ('1','true','TRUE')) or (os.getenv('GVG_BROWSER_DEBUG') in ('1','true','TRUE'))
+        if debug:
+            try:
+                print('[gvg_user.add_prompt] cols_existing =', sorted(list(cols_existing)))
+                print('[gvg_user.add_prompt] insert_cols =', insert_cols)
+                print('[gvg_user.add_prompt] insert_vals types =', [type(v).__name__ for v in insert_vals])
+            except Exception:
+                pass
+
+        sql = f"INSERT INTO public.user_prompts ({', '.join(insert_cols)}) VALUES ({', '.join(placeholders)}) RETURNING id"
+        cur.execute(sql, insert_vals)
+        row = cur.fetchone()
+        prompt_id = row[0] if row else None
+        conn.commit()
+        return int(prompt_id) if prompt_id is not None else None
+    except Exception:
+        try:
+            if conn: conn.rollback()
+        except Exception:
+            pass
+        return None
+    finally:
+        try:
+            if cur: cur.close()
+        finally:
+            if conn: conn.close()
+
+
+def fetch_prompts_with_config(limit: int = 50) -> List[Dict[str, Any]]:
+    """Retorna prompts (texto, título, criado_em) com as configurações salvas."""
+    user = get_current_user()
+    uid = user['uid']
+    conn = None; cur = None
+    try:
+        conn = create_connection()
+        if not conn:
+            return []
+        cur = conn.cursor()
+        # Ver quais colunas existem para montar SELECT dinamicamente
+        cur.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'user_prompts'
+            """
+        )
+        cols_existing = {r[0] for r in (cur.fetchall() or [])}
+
+        base_cols = ['text', 'title', 'created_at']
+        opt_cols = [
+            'search_type', 'search_approach', 'relevance_level', 'sort_mode',
+            'max_results', 'top_categories_count', 'filter_expired'
+        ]
+        select_cols = base_cols + [c for c in opt_cols if c in cols_existing]
+        select_sql = f"SELECT {', '.join(select_cols)} FROM public.user_prompts WHERE user_id = %s AND text IS NOT NULL ORDER BY created_at DESC LIMIT %s"
+        cur.execute(select_sql, (uid, limit))
+
+        out: List[Dict[str, Any]] = []
+        for row in cur.fetchall() or []:
+            item: Dict[str, Any] = {}
+            for idx, c in enumerate(select_cols):
+                item[c] = row[idx]
+            out.append(item)
+        return out
+    except Exception:
+        return []
+    finally:
+        try:
+            if cur: cur.close()
+        finally:
+            if conn: conn.close()
+
+
+def delete_prompt(text: str) -> bool:
+    """Remove um prompt específico (pelo texto) do histórico do usuário atual."""
+    if not text:
+        return False
+    user = get_current_user(); uid = user['uid']
+    conn = None; cur = None
+    try:
+        conn = create_connection()
+        if not conn:
+            return False
+        cur = conn.cursor()
+        # Busca os IDs dos prompts a serem removidos
+        cur.execute(
+            "SELECT id FROM public.user_prompts WHERE user_id = %s AND text = %s",
+            (uid, text)
+        )
+        ids_rows = cur.fetchall() or []
+        prompt_ids = [r[0] for r in ids_rows if r and r[0] is not None]
+
+        # Apaga resultados relacionados primeiro (seguro mesmo com FK CASCADE)
+        if prompt_ids:
+            placeholders = ','.join(['%s'] * len(prompt_ids))
+            cur.execute(
+                f"DELETE FROM public.user_results WHERE user_id = %s AND prompt_id IN ({placeholders})",
+                (uid, *prompt_ids)
+            )
+
+        # Agora remove os prompts
+        cur.execute("DELETE FROM public.user_prompts WHERE user_id = %s AND text = %s", (uid, text))
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            if conn: conn.rollback()
+        except Exception:
+            pass
+        return False
+    finally:
+        try:
+            if cur: cur.close()
+        finally:
+            if conn: conn.close()
+
+
+def save_user_results(prompt_id: int, results: List[Dict[str, Any]]) -> bool:
+    """Grava os resultados retornados para um prompt na tabela public.user_results.
+
+    Campos: user_id, prompt_id, numero_controle_pncp, rank, similarity, valor, data_encerramento_proposta
+    """
+    if not prompt_id or not results:
+        return False
+    user = get_current_user(); uid = user['uid']
+    conn = None; cur = None
+    try:
+        conn = create_connection()
+        if not conn:
+            return False
+        cur = conn.cursor()
+        # Monta linhas a inserir
+        rows = []
+        for r in results:
+            numero = r.get('numero_controle') or r.get('id')
+            rank = r.get('rank')
+            similarity = r.get('similarity')
+            details = r.get('details') or {}
+            # valor: tenta final, senão estimado (converte para float quando possível)
+            raw_val = details.get('valorfinal') or details.get('valorFinal') or details.get('valortotalestimado') or details.get('valorTotalEstimado')
+            valor = None
+            if raw_val is not None:
+                try:
+                    # aceita strings com vírgula como decimal
+                    if isinstance(raw_val, str):
+                        rv = raw_val.strip().replace('.', '').replace(',', '.') if raw_val.count(',')==1 and raw_val.count('.')>1 else raw_val
+                        valor = float(rv)
+                    else:
+                        valor = float(raw_val)
+                except Exception:
+                    valor = None
+            data_enc = details.get('dataencerramentoproposta') or details.get('dataEncerramentoProposta') or details.get('dataEncerramento')
+            if not numero or rank is None:
+                continue
+            rows.append((uid, prompt_id, str(numero), int(rank), float(similarity) if similarity is not None else None, valor, data_enc))
+        if not rows:
+            return False
+        # Inserção em lote
+        insert_sql = """
+            INSERT INTO public.user_results
+                (user_id, prompt_id, numero_controle_pncp, rank, similarity, valor, data_encerramento_proposta)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
+        for tup in rows:
+            cur.execute(insert_sql, tup)
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            if conn: conn.rollback()
+        except Exception:
+            pass
+        return False
+    finally:
+        try:
+            if cur: cur.close()
+        finally:
+            if conn: conn.close()

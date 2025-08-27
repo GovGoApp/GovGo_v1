@@ -2,22 +2,23 @@
 GvG_Search_Prompt.py
 Execução única (prompt) do Sistema de Busca PNCP v2 Otimizado.
 
-Derivado de GvG_Search_Terminal.py removendo interface interativa e menus.
-Mantém:
-  • 3 tipos de busca (semântica / palavras‑chave / híbrida)
-  • 3 abordagens (direta / correspondência / filtro)
-  • Filtro de relevância (níveis 1–3)
+  • 3 tipos de busca (--s, --search) (semântica: 1 / palavras‑chave: 2 / híbrida: 3)
+  • 3 abordagens (--a, --approach) (direta: 1 / correspondência: 2 / filtro: 3)
+  • Filtro de relevância (níveis 1–3: 1=Sem filtro, 2=Flexível, 3=Restritivo)
+  • Ordenação (--o): 1=Similaridade (desc), 2=Data de publicação (desc), 3=Valor final (desc)
   • Negation embeddings (positivos para categorias / completos para embedding)
   • Processamento inteligente (toggle opcional)
-  • Exportação: JSON, XLSX, PDF (mesmo padrão de nomenclatura v9)
+  • Exportação: JSON, XLSX, PDF (mesmo padrão de nomenclatura v9); também aceita 'all' e 'none'
+  • Paridade com o Terminal: mesmo pipeline de busca e ordenação
+  • Heurística de segurança: desativa IA nesta execução se detectar condições inseguras do assistente (p.ex. '%s' literal ou OR sem parênteses)
   • Barra de progresso (opcional via --debug)
 
 Argumentos principais (com short forms):
   --prompt (obrigatório)
-  --s / --search      (default 1)
-  --a / --approach    (default 3)
-  --r / --relevance   (default 2)
-  --o / --order       (default 1)
+  --s / --search      (default semântica: 1)
+  --a / --approach    (default híbrida: 3)
+    --r / --relevance   (default 2; 1=Sem filtro, 2=Flexível, 3=Restritivo)
+    --o / --order       (default 1; 1=Similaridade, 2=Data de publicação, 3=Valor final)
 
 Outros:
   --max_results (30 default)
@@ -25,7 +26,7 @@ Outros:
   --negation_emb (ativa por default, usar --no-negation para desativar)
   --filter_expired (ativa por default, usar --no-filter-expired para desativar)
   --intelligent (faz toggle na flag persistida)
-  --export (json|xlsx|pdf|all) pode repetir ou usar 'all' (default json)
+  --export (json|xlsx|pdf|all|none) pode repetir; 'all' = json+xlsx+pdf, 'none' = sem exportação (default json)
   --output_dir (diretório destino para exportações)
   --debug (exibe progresso 6 etapas Rich)
 
@@ -133,8 +134,8 @@ SEARCH_APPROACHES = {
 }
 SORT_MODES = {
     1: {"name": "Similaridade"},
-    2: {"name": "Data de Encerramento"},
-    3: {"name": "Valor Estimado"}
+    2: {"name": "Data (Assinatura)"},
+    3: {"name": "Valor (Final)"}
 }
 RELEVANCE_LEVELS = {
     1: {"name": "Sem filtro"},
@@ -163,26 +164,25 @@ def setup_logging(output_dir: str, query: str) -> Tuple[logging.Logger, str]:
 # BUSCA / ORQUESTRAÇÃO
 # =====================================================================================
 def sort_results(results: List[dict], order_mode: int):
+    """Ordenação alinhada ao Terminal (pipeline igual), mantendo a mesma saída visual do Prompt."""
     if not results:
         return results
     if order_mode == 1:
+        # Similaridade (desc)
         return sorted(results, key=lambda x: x.get('similarity', 0), reverse=True)
     elif order_mode == 2:
-        # Data de encerramento (ascendente) replicando lógica robusta
-        from datetime import datetime as _dt
-        def parse_date(val):
-            if not val:
-                return _dt(9999,12,31)
-            if isinstance(val, _dt):
-                return val
-            s = str(val)[:10]
-            for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
-                try: return _dt.strptime(s, fmt)
-                except Exception: continue
-            return _dt(9999,12,31)
-        return sorted(results, key=lambda x: parse_date(x.get('details', {}).get('dataencerramentoproposta') or x.get('details', {}).get('dataEncerramentoProposta')))
+        # Data: seguir o Terminal (usa dataassinatura quando disponível), ordem desc
+        def _key_date(r):
+            d = r.get('details', {})
+            val = d.get('dataassinatura') or d.get('dataAssinatura') or ''
+            return str(val)
+        return sorted(results, key=_key_date, reverse=True)
     elif order_mode == 3:
-        return sorted(results, key=lambda x: (x.get('details', {}).get('valortotalestimado') or x.get('details', {}).get('valorTotalEstimado') or 0), reverse=True)
+        # Valor: seguir o Terminal (usa valorfinal quando disponível), ordem desc
+        def _key_val(r):
+            d = r.get('details', {})
+            return d.get('valorfinal') or d.get('valorFinal') or 0
+        return sorted(results, key=_key_val, reverse=True)
     return results
 
 def perform_search(params, logger, console=None):
@@ -194,12 +194,31 @@ def perform_search(params, logger, console=None):
     # Dados base
     original_query = params.prompt
     base_category_terms = original_query
+    unsafe_intelligent = False
     try:
         processor = SearchQueryProcessor()
         processed_info = processor.process_query(original_query)
         processed_terms = (processed_info.get('search_terms') or '').strip()
         if processed_terms:
             base_category_terms = processed_terms
+        # Heurística de segurança:
+        # 1) '%s' literal em condições → conflita com placeholders do psycopg2.
+        # 2) Cadeias com OR sem parênteses externos → precedência errada (AND/OR).
+        sql_conds = processed_info.get('sql_conditions') or []
+        for cond in sql_conds:
+            if not isinstance(cond, str):
+                continue
+            # 1) Placeholder literal
+            if '%s' in cond:
+                unsafe_intelligent = True
+                break
+            # 2) OR sem parênteses externos
+            if ' OR ' in cond.upper():
+                stripped = cond.strip()
+                has_outer_parens = stripped.startswith('(') and stripped.endswith(')')
+                if not has_outer_parens:
+                    unsafe_intelligent = True
+                    break
     except Exception as e:
         logger.info(f"[WARN] Falha processamento inteligente: {e}")
 
@@ -281,6 +300,19 @@ def perform_search(params, logger, console=None):
     # [3/6] Busca principal
     if progress:
         t3 = progress.add_task("[3/6] Busca principal", total=100)
+    # Se necessário, desativar IA apenas nesta execução (evita erro de placeholders em condições com '%X').
+    restore_intelligent = None
+    if unsafe_intelligent:
+        try:
+            restore_intelligent = get_intelligent_status()['intelligent_processing']
+            if restore_intelligent:
+                toggle_intelligent_processing(False)
+                if console:
+                    console.print("[yellow]IA desativada nesta execução devido a padrões '%X' nas condições do assistente[/yellow]")
+                logger.info("[WARN] IA desativada nesta execução por padrão '%%X' nas condições")
+        except Exception as e:
+            logger.info(f"[WARN] Toggle IA temporária falhou: {e}")
+
     try:
         if params.approach == 1:
             results, confidence = _direct_search(original_query, params)
@@ -290,6 +322,12 @@ def perform_search(params, logger, console=None):
             results, confidence, _ = _category_filtered_search(original_query, params, categories, console if params.debug and RICH_AVAILABLE else None)
     except Exception as e:
         logger.info(f"[ERRO] Falha na busca: {e}")
+    finally:
+        if restore_intelligent is not None:
+            try:
+                toggle_intelligent_processing(restore_intelligent)
+            except Exception:
+                pass
     if progress:
         progress.update(t3, completed=100)
 
@@ -404,12 +442,14 @@ def _print_summary(console, results: List[dict], categories: List[dict], params,
 # ARGPARSE / MAIN
 # =====================================================================================
 def parse_args():
-    p = argparse.ArgumentParser(description='GvG Search Prompt v2 (execução única)')
+    p = argparse.ArgumentParser(description='GvG Search Prompt')
     p.add_argument('--prompt', required=True, help='Texto da busca')
     p.add_argument('--search','--s', type=int, choices=[1,2,3], default=1, help='Tipo: 1=Semântica 2=Palavras-chave 3=Híbrida (default 1)')
     p.add_argument('--approach','--a', type=int, choices=[1,2,3], default=3, help='Abordagem: 1=Direta 2=Correspondência 3=Filtro (default 3)')
-    p.add_argument('--relevance','--r', type=int, choices=[1,2,3], default=2, help='Relevância: 1=Sem filtro 2=Flexível 3=Restritivo (default 2)')
-    p.add_argument('--order','--o', type=int, choices=[1,2,3], default=1, help='Ordenação: 1=Similaridade 2=Data 3=Valor (default 1)')
+    p.add_argument('--relevance','--r', type=int, choices=[1,2,3], default=2,
+                   help='Relevância: 1=Sem filtro (não reordena) 2=Flexível (reordena/filtra leve via Assistant) 3=Restritivo (filtra forte via Assistant) (default 2)')
+    p.add_argument('--order','--o', type=int, choices=[1,2,3], default=1,
+                   help='Ordenação: 1=Similaridade (desc) 2=Data assinatura (desc) 3=Valor final (desc) (default 1)')
     p.add_argument('--max_results', type=int, default=DEFAULT_MAX_RESULTS, help='Máximo de resultados (default 30)')
     p.add_argument('--top_cat', type=int, default=DEFAULT_TOP_CATEGORIES, help='TOP categorias (default 10)')
     # Negation / filtro expirados com disable
@@ -419,7 +459,7 @@ def parse_args():
     p.add_argument('--no-filter-expired', dest='filter_expired', action='store_false', help='Não filtrar encerradas')
     p.add_argument('--intelligent', action='store_true', help='Toggle processamento inteligente antes da execução')
     p.add_argument('--debug', action='store_true', help='Mostrar barra de progresso Rich (6 etapas)')
-    p.add_argument('--export', nargs='*', default=['json'], help='Formatos: json xlsx pdf all (default json)')
+    p.add_argument('--export', nargs='*', default=['json'], help="Formatos: json xlsx pdf all none (default json; 'all' = json+xlsx+pdf; 'none' = sem exportação)")
     p.add_argument('--output_dir', default=os.path.join(os.getcwd(), 'Resultados_Busca'), help='Diretório de saída')
     return p.parse_args()
 
@@ -428,7 +468,7 @@ def main():  # pragma: no cover (exec path)
     logger, log_path = setup_logging(params.output_dir, params.prompt)
     console = Console(width=120) if (params.debug and RICH_AVAILABLE) else None
     if console:
-        console.print(Panel.fit("🚀 GvG Search Prompt v2", title="Inicialização", border_style="blue"))
+        console.print(Panel.fit("🚀 GvG Search Prompt", border_style="blue"))
 
     results, categories, confidence, elapsed = perform_search(params, logger, console)
     if not results:
@@ -436,9 +476,11 @@ def main():  # pragma: no cover (exec path)
         sys.exit(0)
 
     # Exportação
-    export_formats = set([f.lower() for f in params.export])
+    export_formats = set([str(f).lower() for f in params.export])
     if 'all' in export_formats:
         export_formats = {'json','xlsx','pdf'}
+    if 'none' in export_formats:
+        export_formats = set()
     exported = {}
     if 'json' in export_formats:
         try:

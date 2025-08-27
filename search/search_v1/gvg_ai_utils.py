@@ -29,10 +29,10 @@ formato "parte_positiva -- parte_negativa" (delimitador `--`). Se não houver
 delimitador ou parte negativa, retorna apenas o embedding positivo.
 
 NEG_WEIGHT pode ser ajustado via variável de ambiente `NEGATION_EMB_WEIGHT`
-(default 0.40). O vetor final é normalizado para manter escala consistente.
+(default 1). O vetor final é normalizado para manter escala consistente.
 """
 
-NEGATION_EMB_WEIGHT = float(os.getenv("NEGATION_EMB_WEIGHT", "0.40"))
+NEGATION_EMB_WEIGHT = float(os.getenv("NEGATION_EMB_WEIGHT", "1"))
 
 def get_embedding(text, model=EMBEDDING_MODEL):
     """
