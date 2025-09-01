@@ -22,29 +22,6 @@ MAX_RETRIES = 3
 
 # Thread global para reutilização
 _thread = None
-_spec_loaded = False
-
-def _load_assistant_spec_once(thread):
-	"""Envia o conteúdo do arquivo de especificação do Assistente V1 para a thread uma única vez.
-	Isso reforça as regras genéricas e reduz a necessidade de sanitização posterior."""
-	global _spec_loaded
-	if _spec_loaded:
-		return
-	try:
-		# Carrega o arquivo da especificação V1 do workspace
-		spec_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'search_v1', 'Assistants', 'GVG_PREPROCESSING_QUERY_v1')
-		if os.path.exists(spec_path):
-			with open(spec_path, 'r', encoding='utf-8') as f:
-				content = f.read()
-			client.beta.threads.messages.create(
-				thread_id=thread.id,
-				role="user",
-				content=f"[ESPECIFICACAO_ASSISTENTE_V1]\n{content}"
-			)
-			_spec_loaded = True
-	except Exception:
-		# Se falhar, segue sem bloquear; a sanitização do core cobre casos básicos
-		pass
 
 def get_preprocessing_thread():
 	"""
@@ -56,7 +33,6 @@ def get_preprocessing_thread():
 	global _thread
 	if _thread is None:
 		_thread = client.beta.threads.create()
-		_load_assistant_spec_once(_thread)
 	return _thread
 
 class SearchQueryProcessor:
@@ -93,8 +69,6 @@ class SearchQueryProcessor:
 				# Prompt mínimo – a lógica principal está no arquivo de especificação do Assistant (GVG_PREPROCESSING_QUERY_v1)
 				# O assistant já sabe retornar: search_terms, negative_terms, sql_conditions, explanation, requires_join_embeddings
 				prompt = f"Consulta: {user_query}"
-				# Garante que a especificação esteja disponível na thread (idempotente)
-				_load_assistant_spec_once(self.thread)
                 
 				# Enviar mensagem
 				client.beta.threads.messages.create(

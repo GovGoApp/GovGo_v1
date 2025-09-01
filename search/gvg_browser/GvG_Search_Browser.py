@@ -62,7 +62,9 @@ from gvg_exporters import (
     export_results_html,
 )
 from gvg_documents import fetch_documentos
-from gvg_css import styles, CSS_ALL
+
+from gvg_styles import styles, CSS_ALL
+
 from gvg_user import (
     get_current_user,
     get_user_initials,
@@ -71,6 +73,7 @@ from gvg_user import (
     save_user_results,
     delete_prompt,
 )
+
 
 try:
     # Prefer summarize_document; fall back to process_pncp_document if needed
@@ -132,8 +135,8 @@ COLOR_ENC_EXPIRED = "#800080"  # roxo
 COLOR_ENC_LT3 = "#FF0000EE"      # vermelho escuro (<= 3 dias)
 COLOR_ENC_LT7 = "#FF6200"      # vermelho (<= 7 dias)
 COLOR_ENC_LT15 = "#FFBD21"     # laranja (<= 15 dias)
-COLOR_ENC_LT30 = "#BBFF00"     # amarelo (<= 30 dias)
-COLOR_ENC_GT30 = "#2BFF00"     # verde  (> 30 dias)
+COLOR_ENC_LT30 = "#00FF51C7"     # amarelo (<= 30 dias)
+COLOR_ENC_GT30 = "#188901"     # verde  (> 30 dias)
 
 
 # styles agora vem de gvg_css.styles
@@ -196,34 +199,17 @@ _USER_INITIALS = get_user_initials(_USER.get('name'))
 LOGO_PATH = "https://hemztmtbejcbhgfmsvfq.supabase.co/storage/v1/object/public/govgo/LOGO/LOGO_TEXTO_GOvGO_TRIM_v3.png"
 header = html.Div([
     html.Div([
-        html.Img(src=LOGO_PATH, style={'height': '40px'}),
-        html.H4("GvG Search", style={'marginLeft': '15px', 'color': '#003A70', 'fontWeight': 'bold', 'marginTop': '4px'})
-    ], style={'display': 'flex', 'alignItems': 'center'}),
+    html.Img(src=LOGO_PATH, style=styles['header_logo']),
+    html.H4("GvG Search", style=styles['header_title'])
+    ], style=styles['header_left']),
     html.Div([
         html.Div(
             _USER_INITIALS,
             title=f"{_USER.get('name','Usuário')} ({_USER.get('email','')})",
-            style={
-                'width': '32px', 'height': '32px', 'minWidth': '32px',
-                'borderRadius': '50%', 'backgroundColor': '#FF5722',
-                'color': 'white', 'fontWeight': 'bold', 'fontSize': '14px',
-                'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
-                'cursor': 'default'
-            }
+        style=styles['header_user_badge']
         )
-    ], style={'display': 'flex', 'alignItems': 'center'})
-], style={
-    'display': 'flex',
-    'justifyContent': 'space-between',
-    'alignItems': 'center',
-    'backgroundColor': 'white',
-    'padding': '10px 20px',
-    'borderBottom': '1px solid #ddd',
-    'width': '100%',
-    'position': 'fixed',
-    'top': 0,
-    'zIndex': 1000
-})
+    ], style=styles['header_right'])
+], style=styles['header'])
 
 
 # Painel de controles (esquerda)
@@ -244,58 +230,58 @@ controls_panel = html.Div([
         )
     ], id='query-container', style=styles['input_container']),
     html.Div([
-        html.Div("Configurações de Busca", style={'fontWeight': 'bold', 'color': '#003A70'}),
+        html.Div("Configurações de Busca", style=styles['card_title']),
         html.Button(
             html.I(className="fas fa-chevron-down"),
             id='config-toggle-btn',
             title='Mostrar/ocultar configurações',
-            style={**styles['arrow_button'], 'width': '24px', 'height': '24px', 'marginRight': '12px'}
+            style={**styles['arrow_button_small'], 'marginRight': '12px'}
         ),
-    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginTop': '8px'}),
+    ], style=styles['row_header']),
     dbc.Collapse(
         html.Div([
             html.Div([
                 html.Label('Tipo', className='gvg-form-label'),
-                dcc.Dropdown(id='search-type', options=[{'label': f"{k} - {v['name']}", 'value': k} for k, v in SEARCH_TYPES.items()], value=1, clearable=False, style={'width': '100%', 'flex': '1'})
+                dcc.Dropdown(id='search-type', options=[{'label': f"{k} - {v['name']}", 'value': k} for k, v in SEARCH_TYPES.items()], value=1, clearable=False, style=styles['input_fullflex'])
             ], className='gvg-form-row'),
             html.Div([
                 html.Label('Abordagem', className='gvg-form-label'),
-                dcc.Dropdown(id='search-approach', options=[{'label': f"{k} - {v['name']}", 'value': k} for k, v in SEARCH_APPROACHES.items()], value=3, clearable=False, style={'width': '100%', 'flex': '1'})
+                dcc.Dropdown(id='search-approach', options=[{'label': f"{k} - {v['name']}", 'value': k} for k, v in SEARCH_APPROACHES.items()], value=3, clearable=False, style=styles['input_fullflex'])
             ], className='gvg-form-row'),
             html.Div([
                 html.Label('Relevância', className='gvg-form-label'),
-                dcc.Dropdown(id='relevance-level', options=[{'label': f"{k} - {v['name']}", 'value': k} for k, v in RELEVANCE_LEVELS.items()], value=2, clearable=False, style={'width': '100%', 'flex': '1'})
+                dcc.Dropdown(id='relevance-level', options=[{'label': f"{k} - {v['name']}", 'value': k} for k, v in RELEVANCE_LEVELS.items()], value=2, clearable=False, style=styles['input_fullflex'])
             ], className='gvg-form-row'),
             html.Div([
                 html.Label('Ordenação', className='gvg-form-label'),
-                dcc.Dropdown(id='sort-mode', options=[{'label': f"{k} - {v['name']}", 'value': k} for k, v in SORT_MODES.items()], value=1, clearable=False, style={'width': '100%', 'flex': '1'})
+                dcc.Dropdown(id='sort-mode', options=[{'label': f"{k} - {v['name']}", 'value': k} for k, v in SORT_MODES.items()], value=1, clearable=False, style=styles['input_fullflex'])
             ], className='gvg-form-row'),
             html.Div([
                 html.Label('Máx. resultados', className='gvg-form-label'),
-                dcc.Input(id='max-results', type='number', min=5, max=1000, value=DEFAULT_MAX_RESULTS, style={'width': '100%', 'flex': '1'})
+                dcc.Input(id='max-results', type='number', min=5, max=1000, value=DEFAULT_MAX_RESULTS, style=styles['input_fullflex'])
             ], className='gvg-form-row'),
             html.Div([
                 html.Label('TOP categorias', className='gvg-form-label'),
-                dcc.Input(id='top-categories', type='number', min=5, max=50, value=DEFAULT_TOP_CATEGORIES, style={'width': '100%', 'flex': '1'})
+                dcc.Input(id='top-categories', type='number', min=5, max=50, value=DEFAULT_TOP_CATEGORIES, style=styles['input_fullflex'])
             ], className='gvg-form-row'),
             html.Div([
                 dcc.Checklist(id='toggles', options=[
                     {'label': ' Filtrar encerrados', 'value': 'filter_expired'},
                 ], value=['filter_expired'])
-            ], style={'display': 'flex', 'gap': '10px', 'flexWrap': 'wrap'})
+            ], style=styles['row_wrap_gap'])
         ], style={**styles['controls_group'], 'position': 'relative'}, className='gvg-controls'),
         id='config-collapse', is_open=True
     ),
 
     html.Div([
-        html.Div('Histórico', style={'fontWeight': 'bold', 'color': '#003A70'}),
+        html.Div('Histórico', style=styles['card_title']),
         html.Button(
             html.I(className="fas fa-chevron-down"),
             id='history-toggle-btn',
             title='Mostrar/ocultar histórico',
-            style={**styles['arrow_button'], 'width': '24px', 'height': '24px', 'marginRight': '12px'}
+            style={**styles['arrow_button_small'], 'marginRight': '12px'}
         ),
-    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginTop': '8px'}),
+    ], style=styles['row_header']),
     dbc.Collapse(
         html.Div([
             html.Div(id='history-list')
@@ -316,36 +302,21 @@ results_panel = html.Div([
                 [
                     html.Div(
                         id='progress-fill',
-                        style={
-                            'height': '100%',
-                            'width': '0%',
-                            'backgroundColor': '#FF5722',
-                            'borderRadius': '999px',
-                            'transition': 'width 250ms ease'
-                        }
+            style={**styles['progress_fill'], 'width': '0%'}
                     )
                 ],
                 id='progress-bar',
-                style={
-                    'marginTop': '10px',
-                    'width': '260px',
-                    'height': '6px',
-                    'border': '1px solid #FF5722',
-                    'backgroundColor': 'rgba(255, 87, 34, 0.08)',
-                    'borderRadius': '999px',
-                    'overflow': 'hidden',
-                    'display': 'none'
-                }
+        style={**styles['progress_bar_container'], 'display': 'none'}
             ),
             # Rótulo/percentual abaixo da barra
             html.Div(
                 id='progress-label',
                 children='',
-                style={'marginTop': '6px', 'textAlign': 'center', 'color': '#FF5722', 'fontSize': '12px', 'display': 'none'}
+        style={**styles['progress_label'], 'display': 'none'}
             )
         ],
         id='gvg-center-spinner',
-        style={'display': 'none'}
+    style=styles['center_spinner']
     ),
     html.Div([
         html.Div([
@@ -355,7 +326,7 @@ results_panel = html.Div([
             html.Button('CSV', id='export-csv', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
             html.Button('PDF', id='export-pdf', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
             html.Button('HTML', id='export-html', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
-        ], style={'display': 'flex', 'flexWrap': 'wrap', 'marginTop': '8px'})
+    ], style=styles['export_row'])
     ], id='export-panel', style={**styles['result_card'], 'display': 'none'}),
     html.Div(id='categories-table', style={**styles['result_card'], 'display': 'none'}),
     html.Div([
@@ -383,6 +354,7 @@ app.layout = html.Div([
     dcc.Store(id='store-cache-itens', data={}),
     dcc.Store(id='store-cache-docs', data={}),
     dcc.Store(id='store-cache-resumo', data={}),
+    dcc.Store(id='store-resumo-loading', data={}),
     dcc.Store(id='progress-store', data={'percent': 0, 'label': ''}),
     dcc.Interval(id='progress-interval', interval=400, n_intervals=0, disabled=True),
     dcc.Download(id='download-out'),
@@ -1057,27 +1029,13 @@ def reflect_progress_bar(data, is_processing):
     except Exception:
         percent = 0
     label = (data or {}).get('label') or ''
-    base_bar = {
-        'marginTop': '10px',
-        'width': '260px',
-        'height': '6px',
-        'border': '1px solid #FF5722',
-        'backgroundColor': 'rgba(255, 87, 34, 0.08)',
-        'borderRadius': '999px',
-        'overflow': 'hidden',
-    }
-    bar_style = dict(base_bar)
+    bar_style = dict(styles['progress_bar_container'])
     bar_style['display'] = 'block' if (is_processing and percent > 0 and percent < 100) else 'none'
 
-    fill_style = {
-        'height': '100%',
-        'width': f'{percent}%',
-        'backgroundColor': '#FF5722',
-        'borderRadius': '999px',
-        'transition': 'width 250ms ease'
-    }
+    fill_style = dict(styles['progress_fill'])
+    fill_style['width'] = f'{percent}%'
     label_text = f"{percent}% — {label}" if label else (f"{percent}%" if percent else '')
-    label_style = {'marginTop': '6px', 'textAlign': 'center', 'color': '#FF5722', 'fontSize': '12px'}
+    label_style = dict(styles['progress_label'])
     label_style['display'] = 'block' if (is_processing and percent > 0 and percent < 100) else 'none'
     return fill_style, bar_style, label_text, label_style
 
@@ -1225,7 +1183,7 @@ def init_history(history):
 def render_history_list(history):
     items = history or []
     if not items:
-        return html.Div('Sem consultas ainda.', style={'color': '#555'})
+        return html.Div('Sem consultas ainda.', style=styles['muted_text'])
     # Render as buttons
     buttons = []
     for i, q in enumerate(items):
@@ -1235,36 +1193,18 @@ def render_history_list(history):
                     q,
                     id={'type': 'history-item', 'index': i},
                     title=q,
-                    style={
-                        'backgroundColor': 'white',
-                        'color': '#003A70',
-                        'border': '1px solid #D0D7E2',
-                        'borderRadius': '16px',
-                        'display': 'block',
-                        'width': '100%',
-                        'textAlign': 'left',
-                        'padding': '8px 12px',
-                        'whiteSpace': 'normal',
-                        'wordBreak': 'break-word',
-                        'lineHeight': '1.25',
-                        'cursor': 'pointer'
-                    }
+                    style=styles['history_item_button']
                 ),
                 html.Button(
                     html.I(className='fas fa-trash'),
                     id={'type': 'history-delete', 'index': i},
                     title='Apagar esta consulta',
-                    style={
-                        'width': '28px', 'height': '28px', 'minWidth': '28px',
-                        'borderRadius': '50%', 'border': '1px solid #FF5722',
-                        'backgroundColor': 'white', 'color': '#FF5722',
-                        'cursor': 'pointer'
-                    },
+                    style=styles['history_delete_btn'],
                     className='delete-btn'
                 )
-            ], className='history-item-row', style={'display': 'flex', 'gap': '8px', 'alignItems': 'flex-start', 'marginBottom': '6px'})
+            ], className='history-item-row', style=styles['history_item_row'])
         )
-    return html.Div(buttons, style={'display': 'flex', 'flexDirection': 'column'})
+    return html.Div(buttons, style=styles['column'])
 @app.callback(
     Output('status-bar', 'children'),
     Output('categories-table', 'children'),
@@ -1460,73 +1400,75 @@ def render_details(results, last_query):
             link_text = link_text[:97] + '...'
 
         body = html.Div([
-                html.Div([
-                    html.Span('Órgão: ', style={'fontWeight': 'bold'}), html.Span(orgao)
-                ]),
-                html.Div([
-                    html.Span('Unidade: ', style={'fontWeight': 'bold'}), html.Span(unidade)
-                ]),
-                html.Div([
-                    html.Span('ID PNCP: ', style={'fontWeight': 'bold'}), html.Span(str(pncp_id))
-                ]),
-                html.Div([
-                    html.Span('Local: ', style={'fontWeight': 'bold'}), html.Span(local)
-                ]),
-                html.Div([
-                    html.Span('Valor: ', style={'fontWeight': 'bold'}), html.Span(valor)
-                ]),
-                html.Div([
-                    html.Span('Datas: ', style={'fontWeight': 'bold'}),
-                    html.Span(f"Abertura: {data_ab} | Encerramento: "),
-                    html.Span(str(data_en), style={'color': enc_color})
-                ]),
-                html.Div([
-                    html.Span('Link: ', style={'fontWeight': 'bold'}), html.A(link_text, href=link, target='_blank', style={'wordBreak': 'break-all'}) if link else html.Span('N/A')
-                ], style={'marginBottom': '8px'}),
-                html.Div([
-                    html.Span('Descrição: ', style={'fontWeight': 'bold'}),
-                    html.Div(dcc.Markdown(children=destaque))
-                ])
-        ], style={'marginTop': '20px', 'paddingTop': '16px', 'paddingLeft': '20px', 'paddingRight': '20px'})
+            html.Div([
+                html.Span('Órgão: ', style={'fontWeight': 'bold'}), html.Span(orgao)
+            ]),
+            html.Div([
+                html.Span('Unidade: ', style={'fontWeight': 'bold'}), html.Span(unidade)
+            ]),
+            html.Div([
+                html.Span('ID PNCP: ', style={'fontWeight': 'bold'}), html.Span(str(pncp_id))
+            ]),
+            html.Div([
+                html.Span('Local: ', style={'fontWeight': 'bold'}), html.Span(local)
+            ]),
+            html.Div([
+                html.Span('Valor: ', style={'fontWeight': 'bold'}), html.Span(valor)
+            ]),
+            html.Div([
+                html.Span('Datas: ', style={'fontWeight': 'bold'}),
+                html.Span(f"Abertura: {data_ab} | Encerramento: "),
+                html.Span(str(data_en), style={'color': enc_color})
+            ]),
+            html.Div([
+                html.Span('Link: ', style={'fontWeight': 'bold'}), html.A(link_text, href=link, target='_blank', style=styles['link_break_all']) if link else html.Span('N/A')
+            ], style={'marginBottom': '8px'}),
+            html.Div([
+                html.Span('Descrição: ', style={'fontWeight': 'bold'}),
+                html.Div(dcc.Markdown(children=destaque))
+            ])
+        ], style=styles['details_body'])
 
         # Painel esquerdo (detalhes)
-        left_panel = html.Div(body, style={'width': '60%'})
+        left_panel = html.Div(body, style=styles['details_left_panel'])
 
-    # Painel direito (Itens/Documento/Resumo)
+        # Painel direito (Itens/Documento/Resumo)
         right_panel = html.Div([
-                # Botões dentro do painel direito (canto superior direito do painel)
-                html.Div([
-                    html.Button('Itens', id={'type': 'itens-btn', 'pncp': str(pncp_id)}, title='Itens', style={'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none', 'borderRadius': '16px', 'height': '28px', 'padding': '0 10px', 'cursor': 'pointer'}),
-                    html.Button('Documentos', id={'type': 'docs-btn', 'pncp': str(pncp_id)}, title='Documentos', style={'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none', 'borderRadius': '16px', 'height': '28px', 'padding': '0 10px', 'cursor': 'pointer', 'marginLeft': '6px'}),
-                    html.Button('Resumo', id={'type': 'resumo-btn', 'pncp': str(pncp_id)}, title='Resumo', style={'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none', 'borderRadius': '16px', 'height': '28px', 'padding': '0 10px', 'cursor': 'pointer', 'marginLeft': '6px'}),
-                ], style={'position': 'absolute', 'top': '0px', 'right': '10px', 'display': 'flex'}),
-                # Wrapper fixo com 3 painéis sobrepostos (somente um visível)
-                html.Div(
-                    id={'type': 'panel-wrapper', 'pncp': str(pncp_id)},
-                    children=[
-                        html.Div(
-                            id={'type': 'itens-card', 'pncp': str(pncp_id)},
-                            children=[],
-                            style={'position': 'absolute', 'top': '0', 'left': '0', 'right': '0', 'bottom': '0', 'display': 'none', 'overflowY': 'auto', 'paddingRight': '8px', 'boxSizing': 'border-box'}
-                        ),
-                        html.Div(
-                            id={'type': 'docs-card', 'pncp': str(pncp_id)},
-                            children=[],
-                            style={'position': 'absolute', 'top': '0', 'left': '0', 'right': '0', 'bottom': '0', 'display': 'none', 'overflowY': 'auto', 'paddingRight': '8px', 'boxSizing': 'border-box'}
-                        ),
-                        html.Div(
-                            id={'type': 'resumo-card', 'pncp': str(pncp_id)},
-                            children=[],
-                            style={'position': 'absolute', 'top': '0', 'left': '0', 'right': '0', 'bottom': '0', 'display': 'none', 'overflowY': 'auto', 'paddingRight': '8px', 'boxSizing': 'border-box'}
-                        ),
-                    ],
-                    style={
-                        'marginTop': '50px', 'backgroundColor': '#FFFFFF', 'border': '1px solid transparent',
-                        'borderRadius': '12px', 'padding': '10px',
-                        'flex': '1 1 auto', 'minHeight': '0', 'position': 'relative', 'display': 'none'
-                    }
-                )
-            ], style={'width': '40%', 'position': 'relative', 'display': 'flex', 'flexDirection': 'column'})
+            # Botões dentro do painel direito (canto superior direito do painel)
+            html.Div([
+                html.Button('Itens', id={'type': 'itens-btn', 'pncp': str(pncp_id)}, title='Itens', style=styles['btn_pill']),
+                html.Button('Documentos', id={'type': 'docs-btn', 'pncp': str(pncp_id)}, title='Documentos', style=styles['btn_pill']),
+                html.Button('Resumo', id={'type': 'resumo-btn', 'pncp': str(pncp_id)}, title='Resumo', style=styles['btn_pill']),
+            ], style=styles['right_panel_actions']),
+            # Wrapper fixo com 3 painéis sobrepostos (somente um visível)
+            html.Div(
+                id={'type': 'panel-wrapper', 'pncp': str(pncp_id)},
+                children=[
+                    html.Div(
+                        id={'type': 'itens-card', 'pncp': str(pncp_id)},
+                        children=[],
+                        style=styles['details_content_base']
+                    ),
+                    html.Div(
+                        id={'type': 'docs-card', 'pncp': str(pncp_id)},
+                        children=[],
+                        style=styles['details_content_base']
+                    ),
+                    html.Div(
+                        id={'type': 'resumo-card', 'pncp': str(pncp_id)},
+                        children=[
+                            html.Div(
+                                html.I(className="fas fa-spinner fa-spin"),
+                                id={'type': 'resumo-spinner', 'pncp': str(pncp_id)},
+                                style={**styles['resumo_spinner_overlay'], 'display': 'none'}
+                            )
+                        ],
+                        style=styles['details_content_base']
+                    ),
+                ],
+                style=styles['panel_wrapper']
+            )
+        ], style=styles['details_right_panel'])
 
         # Card final com duas colunas (detalhes 60% / itens 40%)
         _card_style = dict(styles['result_card'])
@@ -1644,22 +1586,14 @@ def load_itens_for_cards(n_clicks_list, active_map, results, cache_itens):
         is_open = (str(pid) in (active_map or {}) and (active_map or {}).get(str(pid)) == 'itens')
 
         # Button style toggle
-        normal_btn_style = {
-            'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none',
-            'borderRadius': '16px', 'height': '28px', 'padding': '0 10px',
-            'cursor': 'pointer', 'marginLeft': '6px'
-        }
-        inverted_btn_style = {
-            'backgroundColor': 'white', 'color': '#FF5722', 'border': '1px solid #FF5722',
-            'borderRadius': '16px', 'height': '28px', 'padding': '0 10px',
-            'cursor': 'pointer', 'marginLeft': '6px'
-        }
+        normal_btn_style = styles['btn_pill']
+        inverted_btn_style = styles['btn_pill_inverted']
         btn_styles.append(inverted_btn_style if is_open else normal_btn_style)
 
         st = {
             'position': 'absolute', 'top': '0', 'left': '0', 'right': '0', 'bottom': '0',
             'display': 'block' if is_open else 'none', 'overflowY': 'auto',
-            'paddingRight': '8px', 'boxSizing': 'border-box'
+            'boxSizing': 'border-box'
         }
         style_out.append(st)
 
@@ -1703,8 +1637,8 @@ def load_itens_for_cards(n_clicks_list, active_map, results, cache_itens):
                 columns=cols,
                 page_action='none',
                 style_table={'overflowX': 'auto', 'minWidth': '100%'},
-                style_cell={'textAlign': 'left', 'fontSize': '12px', 'padding': '6px'},
-                style_header={'backgroundColor': '#f8f9fa', 'fontWeight': 'bold', 'border': '1px solid #ddd', 'fontSize': '13px'},
+                style_cell={'textAlign': 'left', 'fontSize': '12px', 'padding': '6px', 'fontFamily': "Segoe UI, Roboto, Arial, sans-serif"},
+                style_header={'backgroundColor': '#f8f9fa', 'fontWeight': 'bold', 'border': '1px solid #ddd', 'fontSize': '12px', 'fontFamily': "Segoe UI, Roboto, Arial, sans-serif"},
                 style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': '#f2f2f2'}],
                 css=[{'selector': '.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table', 'rule': 'font-size: 11px !important;'}]
             )
@@ -1712,13 +1646,13 @@ def load_itens_for_cards(n_clicks_list, active_map, results, cache_itens):
                 html.Span('Itens: ', style={'fontWeight': 'bold'}), html.Span(str(len(rows))),
                 html.Span('  |  '),
                 html.Span('Total: ', style={'fontWeight': 'bold'}), html.Span(_format_money(total_sum)),
-            ], style={'marginTop': '6px', 'textAlign': 'right'})
+            ], style=styles['summary_right'])
             # persist cache
             try:
                 updated_cache[str(pid)] = itens
             except Exception:
                 pass
-            children_out.append([table, summary])
+            children_out.append([html.Div([table, summary], style=styles['details_content_inner'])])
         else:
             children_out.append([])
     return children_out, style_out, btn_styles, updated_cache
@@ -1735,7 +1669,6 @@ def load_itens_for_cards(n_clicks_list, active_map, results, cache_itens):
     prevent_initial_call=True,
 )
 def load_docs_for_cards(n_clicks_list, active_map, results, cache_docs):
-    from gvg_search_core import fetch_documentos
     children_out, style_out, btn_styles = [], [], []
     updated_cache = dict(cache_docs or {})
     if not results or not isinstance(n_clicks_list, list):
@@ -1751,22 +1684,14 @@ def load_docs_for_cards(n_clicks_list, active_map, results, cache_docs):
         clicks = n_clicks_list[i] or 0
         is_open = (str(pid) in (active_map or {}) and (active_map or {}).get(str(pid)) == 'docs')
 
-        normal_btn_style = {
-            'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none',
-            'borderRadius': '16px', 'height': '28px', 'padding': '0 10px',
-            'cursor': 'pointer', 'marginLeft': '6px'
-        }
-        inverted_btn_style = {
-            'backgroundColor': 'white', 'color': '#FF5722', 'border': '1px solid #FF5722',
-            'borderRadius': '16px', 'height': '28px', 'padding': '0 10px',
-            'cursor': 'pointer', 'marginLeft': '6px'
-        }
+        normal_btn_style = styles['btn_pill']
+        inverted_btn_style = styles['btn_pill_inverted']
         btn_styles.append(inverted_btn_style if is_open else normal_btn_style)
 
         st = {
             'position': 'absolute', 'top': '0', 'left': '0', 'right': '0', 'bottom': '0',
             'display': 'block' if is_open else 'none', 'overflowY': 'auto',
-            'paddingRight': '8px', 'boxSizing': 'border-box'
+            'boxSizing': 'border-box'
         }
         style_out.append(st)
 
@@ -1804,8 +1729,8 @@ def load_docs_for_cards(n_clicks_list, active_map, results, cache_docs):
                 page_action='none',
                 markdown_options={'link_target': '_blank'},
                 style_table={'overflowX': 'auto', 'minWidth': '100%'},
-                style_cell={'textAlign': 'left', 'fontSize': '12px', 'padding': '6px'},
-                style_header={'backgroundColor': '#f8f9fa', 'fontWeight': 'bold', 'border': '1px solid #ddd', 'fontSize': '13px'},
+                style_cell={'textAlign': 'left', 'fontSize': '12px', 'padding': '6px', 'fontFamily': "Segoe UI, Roboto, Arial, sans-serif"},
+                style_header={'backgroundColor': '#f8f9fa', 'fontWeight': 'bold', 'border': '1px solid #ddd', 'fontSize': '12px', 'fontFamily': "Segoe UI, Roboto, Arial, sans-serif"},
                 style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': '#f2f2f2'}],
                 css=[{'selector': '.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table', 'rule': 'font-size: 11px !important;'}]
             )
@@ -1813,14 +1738,13 @@ def load_docs_for_cards(n_clicks_list, active_map, results, cache_docs):
                 updated_cache[str(pid)] = docs
             except Exception:
                 pass
-            children_out.append([table])
+            children_out.append([html.Div([table], style=styles['details_content_inner'])])
         else:
             children_out.append([])
     return children_out, style_out, btn_styles, updated_cache
 
 @app.callback(
     Output({'type': 'resumo-card', 'pncp': ALL}, 'children'),
-    Output({'type': 'resumo-card', 'pncp': ALL}, 'style'),
     Output({'type': 'resumo-btn', 'pncp': ALL}, 'style'),
     Output('store-cache-resumo', 'data', allow_duplicate=True),
     Input({'type': 'resumo-btn', 'pncp': ALL}, 'n_clicks'),
@@ -1835,8 +1759,9 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
     Heuristic: prefer PDFs matching common names (edital, termo de referencia/TR, projeto basico,
     anexo i, pregão/pe/concorrência/dispensa); else first PDF; else first document.
     """
-    from gvg_search_core import fetch_documentos, summarize_document, process_pncp_document, DOCUMENTS_AVAILABLE
-    children_out, style_out, btn_styles = [], [], []
+    # Usar funções do pipeline de documentos do módulo gvg_documents (já importadas no topo)
+    # DOCUMENTS_AVAILABLE é definido no início deste arquivo, com base nas imports de summarize_document/process_pncp_document
+    children_out, btn_styles = [], []
     # Debug início do callback
     try:
         from gvg_search_core import SQL_DEBUG
@@ -1846,7 +1771,7 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
         pass
     updated_cache = dict(cache_resumo or {})
     if not results or not isinstance(n_clicks_list, list):
-        return children_out, style_out, btn_styles, updated_cache
+        return children_out, btn_styles, updated_cache
 
     # Helper to pick main doc
     def pick_main_doc(docs: list) -> dict | None:
@@ -1899,26 +1824,13 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
         except Exception:
             pass
 
-        normal_btn_style = {
-            'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none',
-            'borderRadius': '16px', 'height': '28px', 'padding': '0 10px',
-            'cursor': 'pointer', 'marginLeft': '6px'
-        }
-        inverted_btn_style = {
-            'backgroundColor': 'white', 'color': '#FF5722', 'border': '1px solid #FF5722',
-            'borderRadius': '16px', 'height': '28px', 'padding': '0 10px',
-            'cursor': 'pointer', 'marginLeft': '6px'
-        }
+        normal_btn_style = styles['btn_pill']
+        inverted_btn_style = styles['btn_pill_inverted']
         btn_styles.append(inverted_btn_style if is_open else normal_btn_style)
 
-        st = {
-            'position': 'absolute', 'top': '0', 'left': '0', 'right': '0', 'bottom': '0',
-            'display': 'block' if is_open else 'none', 'overflowY': 'auto',
-            'paddingRight': '8px', 'boxSizing': 'border-box'
-        }
-        style_out.append(st)
+    # estilo da janela é controlado por um callback leve separado
 
-        if is_open and pid and pid != 'N/A':
+    if is_open and pid and pid != 'N/A':
             try:
                 # Cache documentos para escolher principal rapidamente
                 docs = None
@@ -1935,13 +1847,18 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
             except Exception:
                 pass
             if not docs:
-                children_out.append(html.Div('Nenhum documento encontrado para este processo.', style={'color': '#555'}))
-                continue
+                children_out.append([html.Div('Nenhum documento encontrado para este processo.', style={'color': '#555'})])
+                btn_styles[-1] = inverted_btn_style
+                # keep placeholder content
+                children_out[-1] = [html.Div([], style=styles['details_content_inner'])]
+                # proceed to next iteration implicitly
 
             main_doc = pick_main_doc(docs)
             if not main_doc:
-                children_out.append(html.Div('Nenhum documento disponível para resumo.', style={'color': '#555'}))
-                continue
+                children_out.append([html.Div('Nenhum documento disponível para resumo.', style={'color': '#555'})])
+                btn_styles[-1] = inverted_btn_style
+                children_out[-1] = [html.Div([], style=styles['details_content_inner'])]
+                # proceed to next iteration implicitly
 
             nome = main_doc.get('nome') or main_doc.get('titulo') or 'Documento'
             url = main_doc.get('url') or main_doc.get('uri') or ''
@@ -2005,10 +1922,55 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                 updated_cache[str(pid)] = {'docs': docs, 'summary': summary_text}
             except Exception:
                 pass
-            children_out.append([dcc.Markdown(children=summary_text, className='markdown-summary')])
-        else:
-            children_out.append([])
-    return children_out, style_out, btn_styles, updated_cache
+            # Conteúdo do resumo com overlay (overlay oculto por padrão; será controlado via callback)
+            children_out.append([
+                html.Div(
+                    [
+                        html.Div(
+                            html.I(className="fas fa-spinner fa-spin"),
+                            id={'type': 'resumo-spinner', 'pncp': str(pid)},
+                            style={**styles['resumo_spinner_overlay'], 'display': 'none'}
+                        ),
+                        html.Div(dcc.Markdown(children=summary_text, className='markdown-summary'), style=styles['details_content_inner'])
+                    ],
+                    style={'height': '100%', 'position': 'relative'}
+                )
+            ])
+    else:
+        children_out.append([])
+    return children_out, btn_styles, updated_cache
+
+# Mostrar/ocultar o spinner do resumo quando a aba Resumo for ativada/concluída
+@app.callback(
+    Output({'type': 'resumo-spinner', 'pncp': ALL}, 'style'),
+    Input('store-panel-active', 'data'),
+    Input('store-cache-resumo', 'data'),
+    State('store-results-sorted', 'data'),
+    State({'type': 'resumo-spinner', 'pncp': ALL}, 'id'),
+)
+def toggle_resumo_spinner(active_map, cache_resumo, results, spinner_ids):
+    styles_out = []
+    # Construir mapa pncp->active
+    active_map = active_map or {}
+    cache_resumo = cache_resumo or {}
+    pncp_ids = []
+    for r in (results or []):
+        d = (r or {}).get('details', {}) or {}
+        pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
+        pncp_ids.append(str(pid) if pid is not None else 'N/A')
+    # Gerar estilos por spinner
+    for sid in (spinner_ids or []):
+        pn = str(sid.get('pncp'))
+        # Mostrar spinner quando ativo e ainda sem resumo em cache
+        in_cache = False
+        try:
+            in_cache = (pn in cache_resumo) and isinstance(cache_resumo[pn], dict) and ('summary' in cache_resumo[pn]) and bool(cache_resumo[pn]['summary'])
+        except Exception:
+            in_cache = False
+        show = (active_map.get(pn) == 'resumo') and (not in_cache)
+        st = {**styles['resumo_spinner_overlay'], 'display': 'block' if show else 'none'}
+        styles_out.append(st)
+    return styles_out
 
 # Define painel ativo por PNCP ao clicar em qualquer botão (sem toggle de fechamento)
 @app.callback(
@@ -2075,6 +2037,30 @@ def toggle_panel_wrapper(active_map, results):
             base['display'] = 'block'
             base['border'] = '1px solid #FF5722'
         styles_out.append(base)
+    return styles_out
+
+# Mostrar/ocultar cada resumo-card imediatamente ao ativar a aba (sem depender do processamento)
+@app.callback(
+    Output({'type': 'resumo-card', 'pncp': ALL}, 'style', allow_duplicate=True),
+    Input('store-panel-active', 'data'),
+    State('store-results-sorted', 'data'),
+    prevent_initial_call=True,
+)
+def show_resumo_card_immediate(active_map, results):
+    styles_out = []
+    active_map = active_map or {}
+    pncp_ids = []
+    for r in (results or []):
+        d = (r or {}).get('details', {}) or {}
+        pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
+        pncp_ids.append(str(pid) if pid is not None else 'N/A')
+    for pid in pncp_ids:
+        st = {
+            'position': 'absolute', 'top': '0', 'left': '0', 'right': '0', 'bottom': '0',
+            'display': 'block' if (active_map.get(str(pid)) == 'resumo') else 'none',
+            'overflowY': 'auto', 'boxSizing': 'border-box'
+        }
+        styles_out.append(st)
     return styles_out
 
 ## Visibilidade dos painéis de resultado
@@ -2295,4 +2281,3 @@ if __name__ == '__main__':
     # Porta padrão diferente do Reports para evitar conflito
     # Desativar hot-reload para evitar resets durante processamento pesado de documentos
     app.run_server(debug=True, port=8060, dev_tools_hot_reload=False, dev_tools_props_check=False, dev_tools_ui=False)
-

@@ -1,1 +1,0 @@
-# gvg_browser package
