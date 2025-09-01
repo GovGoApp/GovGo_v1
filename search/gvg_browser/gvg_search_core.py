@@ -25,7 +25,8 @@ from gvg_schema import (
 	CONTRATACAO_TABLE, CONTRATACAO_EMB_TABLE, CATEGORIA_TABLE,
 	PRIMARY_KEY, EMB_VECTOR_FIELD, CATEGORY_VECTOR_FIELD,
 	build_semantic_select, get_contratacao_core_columns, build_category_similarity_select,
-	CONTRATACAO_FIELDS
+	CONTRATACAO_FIELDS,
+	build_itens_by_pncp_select, normalize_item_contratacao_row
 )
 
 # ============================================================================
@@ -224,6 +225,63 @@ def _safe_close(cursor, conn):
 	finally:
 		if conn: conn.close()
 
+
+def _summarize_param(p: Any) -> str:
+	"""Compact representation of a parameter for SQL debug output.
+
+	- Numpy array: <ndarray shape=...> or <ndarray len=N>
+	- Long numeric list (likely embedding): <vector len=N>
+	- Short list/tuple: show first up to 3 elems and total length
+	- Strings: repr trimmed to 120 chars
+	- Others: str()
+	"""
+	try:
+		import numpy as _np  # local import to avoid global dependency issues
+		if isinstance(p, _np.ndarray):
+			try:
+				return f"<ndarray shape={p.shape}>"
+			except Exception:
+				try:
+					return f"<ndarray len={p.size}>"
+				except Exception:
+					return "<ndarray>"
+	except Exception:
+		pass
+	try:
+		if isinstance(p, (list, tuple)):
+			# Heuristic: big numeric vector
+			if len(p) > 100 and all(isinstance(x, (int, float)) for x in p[: min(10, len(p))]):
+				return f"<vector len={len(p)}>"
+			head = ", ".join(repr(x) for x in p[:3])
+			ell = ", ..." if len(p) > 3 else ""
+			return f"[{head}{ell}] (len={len(p)})"
+		if isinstance(p, str):
+			s = repr(p)
+			return s if len(s) <= 120 else s[:117] + "...'"
+		return str(p)
+	except Exception:
+		return f"<{type(p).__name__}>"
+
+
+def _debug_sql(label: str, sql: str, params: List[Any], names: Optional[List[str]] = None):
+	"""Standardized SQL debug printing with placeholder vs parameter counts."""
+	if not SQL_DEBUG:
+		return
+	try:
+		import re as _re
+		placeholders = len(_re.findall(r'(?<!%)%s', sql))
+	except Exception:
+		placeholders = sql.count('%s')
+	print(f"\n[SQL][{label}] placeholders={placeholders} params={len(params)} match={'YES' if placeholders==len(params) else 'NO'}")
+	print(sql)
+	if params:
+		print("---------------------------------")
+		print(f"[PARAMS][{label}] →")
+		for i, p in enumerate(params):
+			name = names[i] if (names and i < len(names)) else None
+			prefix = (name + " = ") if name else ""
+			print(f"  {i:02d}: {prefix}{_summarize_param(p)}")
+
 def _get_processed(query_text: str):
 	"""Executa processamento inteligente com fallback simples."""
 	processed = {
@@ -286,6 +344,27 @@ def _sanitize_sql_conditions(sql_conditions, context: str = 'generic'):
 		# Escapar placeholders literais
 		if '%s' in c:
 			c = c.replace('%s', '%%s')
+		# Importante: drivers DB-API (pyformat) podem interpretar '%' em literais
+		# como início de placeholder. Precisamos dobrar apenas os '%' usados como
+		# curingas em ILIKE/LIKE, sem alterar o escape de placeholders '%%s'.
+		try:
+			sentinel = '<__PERCENT_S__>'
+			# protege '%%s' para não ser alterado no próximo passo
+			c = c.replace('%%s', sentinel)
+			# dobra todo '%' que não fizer parte de '%%'
+			c = re.sub(r'%(?!%)', '%%', c)
+			# colapsa sequências de 3+ '%' que possam ter sido geradas
+			c = re.sub(r'%{3,}', '%%', c)
+			# restaura '%%s'
+			c = c.replace(sentinel, '%%s')
+		except Exception:
+			# fallback seguro
+			c = c.replace('%', '%%')
+		# Normaliza NOT ILIKE ANY → NOT (expr ILIKE ANY (...))
+		try:
+			c = re.sub(r"(\b[a-zA-Z_][a-zA-Z0-9_\.]*\b)\s+NOT\s+ILIKE\s+ANY\s*\(([^)]*)\)", r"NOT (\1 ILIKE ANY (\2))", c, flags=re.IGNORECASE)
+		except Exception:
+			pass
 		# ano_compra comparações numéricas -> strings
 		# ex: c.ano_compra <= 2026  => c.ano_compra <= '2026'
 		c = re.sub(r"\bc\.ano_compra\s*(=|<>|!=|<=|>=|<|>)\s*(\d{4})\b", lambda m: f"c.ano_compra {m.group(1)} '{m.group(2)}'", c, flags=re.IGNORECASE)
@@ -303,6 +382,10 @@ def _sanitize_sql_conditions(sql_conditions, context: str = 'generic'):
 		# No keyword mode, evitar ce.*
 		if context == 'keyword' and re.search(r"\bce\.", c, flags=re.IGNORECASE):
 			continue
+		# Parentizar a condição para evitar ambiguidades de precedência (AND/OR)
+		c_stripped = c.strip()
+		if not (c_stripped.startswith('(') and c_stripped.endswith(')')):
+			c = f"({c_stripped})"
 		out.append(c)
 	return out
 
@@ -435,9 +518,12 @@ def semantic_search(query_text,
 				params.append(limit)
 
 				if sql_debug:
-					print("\n[SQL][semantic_opt]")
-					print(final_sql)
-					print(f"params: categories={'Y' if include_categories else 'N'}, pre_ids={pre_ids}, pre_knn={pre_knn}, final_limit={limit}, emb_dim=3072")
+					# Monta lista de nomes alinhada ao número de parâmetros
+					name_list = []
+					if include_categories:
+						name_list.append('category_codes')
+					name_list.extend(['pre_ids','embedding','pre_knn','limit'])
+					_debug_sql('semantic-opt', final_sql, params, names=name_list)
 
 				cursor.execute(final_sql, params)
 				executed_optimized = True
@@ -466,9 +552,8 @@ def semantic_search(query_text,
 			params.append(limit)
 			final_sql = "\n".join(base_query)
 			if sql_debug:
-				print("\n[SQL][semantic_fallback]")
-				print(final_sql)
-				print(f"params: categories={'Y' if bool(category_codes) else 'N'}, final_limit={limit}, emb_dim=3072")
+				name_list = ['embedding'] + (["category_codes"] if category_codes else []) + (["limit"])
+				_debug_sql('semantic_fallback', final_sql, params, names=name_list)
 			cursor.execute(final_sql, params)
 
 		rows = cursor.fetchall()
@@ -605,9 +690,11 @@ def keyword_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 		params.append(limit)
 		sql_debug = SQL_DEBUG
 		if sql_debug:
-			print("\n[SQL][keyword]")
-			print(sql)
-			print(f"params={params}")
+			name_list = ['tsquery','tsquery_prefix','tsquery','tsquery_prefix']
+			if neg_tokens:
+				name_list.append('neg_query')
+			name_list.append('limit')
+			_debug_sql('keyword', sql, params, names=name_list)
 		cursor.execute(sql, params)
 		rows = cursor.fetchall()
 		column_names = [d[0] for d in cursor.description]
@@ -724,7 +811,7 @@ def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 			f"  (1 - (ce.{EMB_VECTOR_FIELD} <=> %s::vector)) AS semantic_score,",
 			f"  COALESCE(ts_rank(to_tsvector('portuguese', {text_field}), to_tsquery('portuguese', %s)),0) AS keyword_score,",
 			f"  COALESCE(ts_rank(to_tsvector('portuguese', {text_field}), to_tsquery('portuguese', %s)),0) AS keyword_prefix_score,",
-			f"  ( %s * (1 - (ce.{EMB_VECTOR_FIELD} <=> %s::vector)) + (1 - %s) * LEAST((0.7 * COALESCE(ts_rank(to_tsvector('portuguese', {text_field}), to_tsquery('portuguese', %s)) + 0.3 * COALESCE(ts_rank(to_tsvector('portuguese', {text_field}), to_tsquery('portuguese', %s))) ) / %s, 1.0) ) AS combined_score",
+			f"  ( %s * (1 - (ce.{EMB_VECTOR_FIELD} <=> %s::vector)) + (1 - %s) * LEAST((0.7 * COALESCE(ts_rank(to_tsvector('portuguese', {text_field}), to_tsquery('portuguese', %s)),0) + 0.3 * COALESCE(ts_rank(to_tsvector('portuguese', {text_field}), to_tsquery('portuguese', %s)),0)) / %s, 1.0) ) AS combined_score",
 			f"FROM {CONTRATACAO_TABLE} c",
 			f"JOIN {CONTRATACAO_EMB_TABLE} ce ON c.{PRIMARY_KEY} = ce.{PRIMARY_KEY}",
 			f"WHERE ce.{EMB_VECTOR_FIELD} IS NOT NULL"
@@ -737,6 +824,10 @@ def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 		base.append("LIMIT %s")
 		sql = "\n".join(base)
 		params = [emb_vec, tsquery, tsquery_prefix, semantic_weight, emb_vec, semantic_weight, tsquery, tsquery_prefix, max_possible_keyword_score, limit]
+		if SQL_DEBUG:
+			_debug_sql('hybrid', sql, params, names=[
+				'embedding','tsquery','tsquery_prefix','semantic_weight','embedding','semantic_weight','tsquery','tsquery_prefix','max_keyword_norm','limit'
+			])
 		try:
 			cursor.execute(sql, params)
 			rows = cursor.fetchall(); column_names=[d[0] for d in cursor.description]; results=[]; sims=[]; core_keys=set(CONTRATACAO_FIELDS.keys())
@@ -776,11 +867,11 @@ def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 						results = filtered
 				except Exception as rf_err:
 							if sql_debug:
-								print(f"⚠️ Filtro de relevância falhou: {rf_err}")
+								print(f"⚠️ [ERRO] Filtro de relevância falhou: {rf_err}")
 			return results, calculate_confidence([r['similarity'] for r in results])
 		except Exception as fe:
 			if sql_debug:
-				print(f"⚠️ Híbrida SQL única falhou, fallback dupla: {fe}")
+				print(f"⚠️ [ERRO] Híbrida SQL única falhou, fallback dupla: {fe}")
 			# Fallback: combinar duas buscas
 			sem_results, sem_conf = semantic_search(query_text, limit, min_results, filter_expired, use_negation, intelligent_mode)
 			kw_results, kw_conf = keyword_search(query_text, limit, min_results, filter_expired, intelligent_mode)
@@ -843,6 +934,7 @@ def toggle_intelligent_processing(enable: bool = True):
 	global ENABLE_INTELLIGENT_PROCESSING
 	ENABLE_INTELLIGENT_PROCESSING = enable
 	status = "ATIVADO" if enable else "DESATIVADO"
+	print("========================================")
 	print(f"🧠 Processamento Inteligente: {status}")
 
 def set_sql_debug(enable: bool = False):
@@ -1086,5 +1178,42 @@ __all__ = [
 	'semantic_search','keyword_search','hybrid_search',
 	'apply_relevance_filter','set_relevance_filter_level','toggle_relevance_filter','get_relevance_filter_status',
 	'toggle_intelligent_processing','get_intelligent_status','set_sql_debug',
-	'get_top_categories_for_query','correspondence_search','category_filtered_search'
+	'get_top_categories_for_query','correspondence_search','category_filtered_search',
+	'fetch_itens_contratacao'
 ]
+
+
+def fetch_itens_contratacao(numero_controle_pncp: str, limit: int = 500) -> List[Dict[str, Any]]:
+	"""Busca itens da contratação (item_contratacao) por numero_controle_pncp.
+
+	Retorna lista de dicionários normalizados conforme gvg_schema.
+	"""
+	if not numero_controle_pncp:
+		return []
+	conn = None; cur = None
+	try:
+		conn = create_connection()
+		if not conn:
+			return []
+		cur = conn.cursor()
+		sql = build_itens_by_pncp_select('%s')
+		cur.execute(sql, (numero_controle_pncp, limit))
+		rows = cur.fetchall()
+		cols = [d[0] for d in cur.description]
+		out: List[Dict[str, Any]] = []
+		for row in rows:
+			rec = dict(zip(cols, row))
+			norm = normalize_item_contratacao_row(rec)
+			out.append(norm)
+		return out
+	except Exception as e:
+		if SQL_DEBUG:
+			print(f"[ERRO][fetch_itens_contratacao] {e}")
+		try:
+			if conn:
+				conn.rollback()
+		except Exception:
+			pass
+		return []
+	finally:
+		_safe_close(cur, conn)

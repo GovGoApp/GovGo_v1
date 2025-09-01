@@ -1,10 +1,22 @@
 """
-gvg_document_utils_v3.py (copiado para gvg_documents.py)
-Processamento de documentos PNCP usando Docling v3 (EXATO conforme solicitado)
+gvg_documents.py
+Processamento de documentos PNCP:
+- Download, detecção e conversão para Markdown (Docling isolado em subprocesso)
+- Extração de ZIP e RAR
+- Resumo com OpenAI Assistants (ID via .env: GVG_SUMMARY_DOCUMENT_v1)
+
+Observações:
+- Mantemos Docling em subprocesso por estabilidade.
+- Paths de trabalho vêm do .env (FILES_PATH, RESULTS_PATH, TEMP_PATH).
+- Logs reduzidos via flag DOCUMENTS_DEBUG/DEBUG.
+- Preparamos terreno para futuramente enviar o arquivo original ao Assistant sem Docling.
 """
 
 import os
+import re
 import sys
+import json
+import subprocess
 import requests
 import tempfile
 import warnings
@@ -15,6 +27,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 import unicodedata
 import logging
+import re
+import time
+from dotenv import load_dotenv
+import psycopg2
 
 # Import OpenAI opcional (não deve impedir carregamento do módulo)
 try:
@@ -34,44 +50,85 @@ warnings.filterwarnings("ignore", category=UserWarning, module="pdfminer.*")
 logging.getLogger("pdfminer").setLevel(logging.ERROR)
 logging.getLogger("pdfminer.pdfinterp").setLevel(logging.ERROR)
 
-BASE_PATH = "C:\\Users\\Haroldo Duraes\\Desktop\\GOvGO\\v0\\#DATA\\PNCP\\GvG\\Terminal\\"
-FILE_PATH = BASE_PATH + "Arquivos\\"
-SUMMARY_PATH = BASE_PATH + "Resumos\\"
-OPENAI_ENV_FILE = "openai.env"
-MAX_TOKENS = 2000
+# ========= Configuração via .env =========
+load_dotenv()  # garante variáveis carregadas
 
-def load_openai_config():
-    config = {}
-    if os.path.exists(OPENAI_ENV_FILE):
-        with open(OPENAI_ENV_FILE, 'r') as f:
-            for line in f:
-                if '=' in line:
-                    key, value = line.strip().split('=', 1)
-                    config[key] = value
-    return config
+# Logs de depuração (menos ruído por padrão)
+_DOC_DEBUG = (os.getenv('DOCUMENTS_DEBUG', os.getenv('DEBUG', 'false')) or 'false').strip().lower() in ('1', 'true', 'yes', 'on')
 
-def setup_openai():
+def _dbg(msg: str):
+    if _DOC_DEBUG:
+        try:
+            print(msg)
+        except Exception:
+            pass
+
+# Debug helper to print Assistant output when app runs with --debug
+def _dbg_assistant_output(tag: str, text: str):
+    try:
+        from gvg_search_core import SQL_DEBUG  # imported lazily to avoid hard dependency
+        if SQL_DEBUG or _DOC_DEBUG:
+            try:
+                print(f"[GSB][RESUMO][ASSISTENTE]{'['+tag+']' if tag else ''}:\n{text}\n")
+            except Exception:
+                pass
+    except Exception:
+        # Fallback to _DOC_DEBUG only
+        if _DOC_DEBUG:
+            try:
+                print(f"[GSB][RESUMO][ASSISTENTE]{'['+tag+']' if tag else ''}:\n{text}\n")
+            except Exception:
+                pass
+
+# Strip unwanted citation markers like 【4:5†source】 or [..source..]
+def strip_citations(text: str) -> str:
+    if not isinstance(text, str) or not text:
+        return text
+    # Remove fullwidth-bracket citations
+    text = re.sub(r"【[^】]*】", "", text)
+    # Remove square-bracket citations that contain the word 'source'
+    text = re.sub(r"\[[^\]]*source[^\]]*\]", "", text, flags=re.IGNORECASE)
+    # Collapse excessive whitespace created by removals
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+# Diretórios de trabalho
+_BASE_PATH = os.getenv('BASE_PATH') or str(Path(__file__).resolve().parents[2] / 'data')
+FILE_PATH = os.getenv('FILES_PATH') or str(Path(_BASE_PATH) / 'files')
+SUMMARY_PATH = os.getenv('RESULTS_PATH') or str(Path(_BASE_PATH) / 'reports')
+TEMP_PATH = os.getenv('TEMP_PATH') or tempfile.gettempdir()
+
+# Controle: gerar Markdown (Docling) antes do resumo ou enviar arquivo original ao Assistant
+# Não vem do .env. Padrão: False (0). Será alterado pelo app (--markdown)
+GVG_MARKDOWN = False
+
+def set_markdown_enabled(enabled: bool):
+    global GVG_MARKDOWN
+    GVG_MARKDOWN = bool(enabled)
+
+# OpenAI Assistants
+_OPENAI_CLIENT = None
+_ASSISTANT_SUMMARY_ID = os.getenv('GVG_SUMMARY_DOCUMENT_v1')
+
+def _get_openai_client():
+    global _OPENAI_CLIENT
     if not _OPENAI_AVAILABLE:
         return None
+    if _OPENAI_CLIENT is not None:
+        return _OPENAI_CLIENT
+    api_key = os.getenv('OPENAI_API_KEY')
+    if not api_key:
+        return None
     try:
-        config = load_openai_config()
-        api_key = config.get('api_key') or os.environ.get('OPENAI_API_KEY')
-        if api_key:
-            os.environ['OPENAI_API_KEY'] = api_key
-            try:
-                client = OpenAI(api_key=api_key)
-                return client
-            except Exception:
-                return None
-        return None
+        _OPENAI_CLIENT = OpenAI(api_key=api_key)
     except Exception:
-        return None
+        _OPENAI_CLIENT = None
+    return _OPENAI_CLIENT
 
 def create_files_directory():
-    if not os.path.exists(FILE_PATH):
-        os.makedirs(FILE_PATH)
-    if not os.path.exists(SUMMARY_PATH):
-        os.makedirs(SUMMARY_PATH)
+    Path(FILE_PATH).mkdir(parents=True, exist_ok=True)
+    Path(SUMMARY_PATH).mkdir(parents=True, exist_ok=True)
 
 def download_document(doc_url, timeout=30):
     try:
@@ -110,7 +167,14 @@ def download_document(doc_url, timeout=30):
                     filename = "documento.json"
                 else:
                     filename = "documento_temporario"
-        temp_dir = tempfile.gettempdir()
+        temp_dir = TEMP_PATH or tempfile.gettempdir()
+        try:
+            # Garantir diretório temporário existente; se falhar, usar temp do sistema
+            os.makedirs(temp_dir, exist_ok=True)
+        except Exception as e:
+            _dbg(f"[GSB][RESUMO] TEMP_PATH inválido ('{temp_dir}'): {e}; usando temp padrão do sistema.")
+            temp_dir = tempfile.gettempdir()
+            os.makedirs(temp_dir, exist_ok=True)
         temp_path = os.path.join(temp_dir, f"pncp_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}")
         with open(temp_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
@@ -128,75 +192,58 @@ def download_document(doc_url, timeout=30):
         return False, None, None, f"Erro inesperado: {str(e)}"
 
 def convert_document_to_markdown(file_path, original_filename):
+    """Convert a PDF to Markdown using Docling in a subprocess (stable path)."""
     try:
-        from docling.document_converter import DocumentConverter, PdfFormatOption
-        from docling.datamodel.pipeline_options import (
-            PdfPipelineOptions, 
-            TableStructureOptions,
-            TableFormerMode
+        try:
+            print(f"[GSB][RESUMO] Subprocesso Docling iniciado para '{original_filename}'")
+        except Exception:
+            pass
+        code = (
+            "import json,sys; "
+            "fp=sys.argv[1]; fn=sys.argv[2];\n"
+            "from docling.document_converter import DocumentConverter, PdfFormatOption\n"
+            "from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode\n"
+            "from docling.datamodel.base_models import InputFormat\n"
+            "from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions\n"
+            "from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend\n"
+            "ppo=PdfPipelineOptions(); ppo.do_ocr=False; ppo.do_picture_classification=False; ppo.do_picture_description=False; ppo.do_code_enrichment=False; ppo.do_formula_enrichment=False; ppo.do_table_structure=True;\n"
+            "ppo.table_structure_options=TableStructureOptions(); ppo.table_structure_options.mode=TableFormerMode.FAST; ppo.table_structure_options.do_cell_matching=False;\n"
+            "ppo.generate_page_images=False; ppo.generate_picture_images=False; ppo.images_scale=1.0; ppo.accelerator_options=AcceleratorOptions(num_threads=4, device=AcceleratorDevice.AUTO)\n"
+            "dc=DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=ppo, backend=PyPdfiumDocumentBackend)});\n"
+            "res=dc.convert(fp); md=res.document.export_to_markdown(); print(json.dumps({'ok':True,'markdown':md}))"
         )
-        from docling.datamodel.base_models import InputFormat
-        from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
-        from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
-        print(f"🔄 Iniciando conversão SUPER OTIMIZADA do arquivo: {original_filename}")
-        file_size = os.path.getsize(file_path)
-        file_size_mb = file_size / (1024 * 1024)
-        print(f"📄 Tamanho do arquivo: {file_size_mb:.2f} MB")
-        pipeline_options = PdfPipelineOptions()
-        pipeline_options.do_ocr = False
-        pipeline_options.do_picture_classification = False
-        pipeline_options.do_picture_description = False
-        pipeline_options.do_code_enrichment = False
-        pipeline_options.do_formula_enrichment = False
-        pipeline_options.do_table_structure = True
-        pipeline_options.table_structure_options = TableStructureOptions()
-        pipeline_options.table_structure_options.mode = TableFormerMode.FAST
-        pipeline_options.table_structure_options.do_cell_matching = False
-        pipeline_options.generate_page_images = False
-        pipeline_options.generate_picture_images = False
-        pipeline_options.images_scale = 1.0
-        pipeline_options.accelerator_options = AcceleratorOptions(
-            num_threads=4,
-            device=AcceleratorDevice.AUTO
-        )
-        doc_converter = DocumentConverter(
-            format_options={
-                InputFormat.PDF: PdfFormatOption(
-                    pipeline_options=pipeline_options, 
-                    backend=PyPdfiumDocumentBackend
-                )
-            }
-        )
-        print("🚀 Convertendo com Docling SUPER OTIMIZADO (PyPdfium + TableFormer FAST)...")
-        result = doc_converter.convert(file_path)
-        doc = result.document
-        print("✅ Conversão concluída, extraindo markdown...")
-        markdown_content_raw = doc.export_to_markdown()
-        table_count = 0
-        if hasattr(doc, 'tables') and doc.tables:
-            table_count = len(doc.tables)
-        print(f"📊 Tabelas encontradas: {table_count}")
-        file_info = os.stat(file_path)
-        size_mb = file_info.st_size / (1024 * 1024)
-        table_info = f"**Tabelas encontradas:** {table_count}  \n" if table_count > 0 else ""
-        markdown_content = f"""# Documento PNCP: {original_filename}
-
-**Arquivo original:** `{original_filename}`  
-**Tamanho:** {size_mb:.2f} MB  
-**Processado em:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  
-**Ferramenta:** Docling SUPER OTIMIZADO (PyPdfium + TableFormer FAST) + OpenAI GPT-4o  
-{table_info}
-
----
-
-{markdown_content_raw}
-"""
-        print("✅ Markdown preparado com sucesso!")
-        return True, markdown_content, None
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-c", code, file_path, original_filename],
+                capture_output=True, text=True, timeout=180
+            )
+        except Exception as e:
+            return False, None, f"Falha ao executar subprocesso Docling: {e}"
+        if proc.returncode != 0:
+            err = proc.stderr.strip() or proc.stdout.strip()
+            try:
+                print(f"[GSB][RESUMO] Subprocesso Docling falhou rc={proc.returncode}: {err[:300]}")
+            except Exception:
+                pass
+            return False, None, f"Docling falhou no subprocesso: {err}" if err else "Docling falhou no subprocesso"
+        try:
+            payload = json.loads(proc.stdout.strip())
+            if payload.get('ok') and 'markdown' in payload:
+                return True, payload['markdown'], None
+        except Exception as e:
+            return False, None, f"Saída inválida do subprocesso Docling: {e}"
+        return False, None, "Saída inesperada do subprocesso Docling"
     except ImportError:
+        try:
+            print("[GSB][RESUMO] ImportError em Docling - Docling não instalado")
+        except Exception:
+            pass
         return False, None, "Docling não está instalado. Execute: pip install docling"
     except Exception as e:
-        print(f"❌ Erro na conversão: {str(e)}")
+        try:
+            print(f"[GSB][RESUMO] Exceção em convert_document_to_markdown: {e}")
+        except Exception:
+            pass
         return False, None, f"Erro na conversão: {str(e)}"
 
 def save_markdown_file(content, original_filename, doc_url, timestamp=None):
@@ -224,7 +271,8 @@ def save_markdown_file(content, original_filename, doc_url, timestamp=None):
     except Exception as e:
         return False, None, f"Erro ao salvar arquivo: {str(e)}"
 
-def save_summary_file(summary_content, original_filename, doc_url, timestamp=None, pncp_data=None):
+def save_summary_file(summary_content, original_filename, doc_url, timestamp=None, pncp_data=None, method_label: str = "Docling + Assistant", markdown_filename: str | None = None):
+    """Save ONLY the assistant's output to the summary file (no headers or extras)."""
     try:
         create_files_directory()
         if not timestamp:
@@ -235,167 +283,150 @@ def save_summary_file(summary_content, original_filename, doc_url, timestamp=Non
             safe_name = f"documento_{timestamp}"
         summary_filename = f"SUMMARY_{safe_name}_{timestamp}.md"
         summary_full_path = os.path.join(SUMMARY_PATH, summary_filename)
-        timestamp_display = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        pncp_header = ""
-        if pncp_data:
-            descricao_completa = pncp_data.get('descricao', 'Não informado')
-            if " :: " in descricao_completa:
-                descricao_resumida = descricao_completa.split(" :: ")[0].strip()
-            else:
-                descricao_resumida = descricao_completa[:200] + "..." if len(descricao_completa) > 200 else descricao_completa
-            modalidade_id = pncp_data.get('modalidade_id', 'N/A')
-            modalidade_nome = pncp_data.get('modalidade_nome', 'Não informado')
-            disputa_id = pncp_data.get('disputa_id', 'N/A')
-            disputa_nome = pncp_data.get('disputa_nome', 'Não informado')
-            modalidade_texto = f"{modalidade_id} - {modalidade_nome}"
-            disputa_texto = f"{disputa_id} - {disputa_nome}"
-            pncp_header = f"""
-## 🏛️ DADOS BÁSICOS DO PNCP
-- **📍 Localização:** {pncp_data.get('municipio', 'Não informado')}/{pncp_data.get('uf', 'Não informado')}
-- **🏢 Órgão:** {pncp_data.get('orgao', 'Não informado')}
-- **🆔 ID do Processo:** {pncp_data.get('id', 'Não informado')}
-- **🔗 Link PNCP:** {pncp_data.get('link', 'Não informado')}
-- **📅 Inclusão:** {pncp_data.get('data_inclusao', 'Não informado')} | **Abertura:** {pncp_data.get('data_abertura', 'Não informado')} | **Encerramento:** {pncp_data.get('data_encerramento', 'Não informado')}
-- **⚖️ Modalidade:** {modalidade_texto} | **Disputa:** {disputa_texto}
-- **📋 Descrição:** {descricao_resumida}
-
-"""
-        summary_header = f"""# Resumo: {original_filename}
-
-**Data de Processamento:** {timestamp_display}  
-**URL Original:** {doc_url}  
-**Ferramenta:** Docling  
-**Arquivo Markdown:** DOCLING_{safe_name}_{timestamp}.md  
-{pncp_header}---
-
-"""
-        full_summary_content = summary_header + summary_content
+        content = summary_content or ""
         with open(summary_full_path, 'w', encoding='utf-8') as f:
-            f.write(full_summary_content)
+            f.write(content)
         return True, summary_full_path, None
     except Exception as e:
         return False, None, str(e)
 
 def generate_document_summary(markdown_content, max_tokens=None, pncp_data=None):
+    """Resumo via OpenAI Assistants (ID do .env: GVG_SUMMARY_DOCUMENT_v1)."""
     try:
-        openai_client = setup_openai()
-        if not openai_client:
-            return "OpenAI não configurado - não foi possível gerar resumo"
-        max_content_chars = 100000
-        if len(markdown_content) > max_content_chars:
-            markdown_content = markdown_content[:max_content_chars] + "\n\n...(documento truncado devido ao limite de tokens)"
-        pncp_header = ""
-        if pncp_data:
-            descricao_completa = pncp_data.get('descricao', 'Não informado')
-            if " :: " in descricao_completa:
-                descricao_resumida = descricao_completa.split(" :: ")[0].strip()
-            else:
-                descricao_resumida = descricao_completa[:200] + "..." if len(descricao_completa) > 200 else descricao_completa
-            modalidade_id = pncp_data.get('modalidade_id', 'N/A')
-            modalidade_nome = pncp_data.get('modalidade_nome', 'Não informado')
-            disputa_id = pncp_data.get('disputa_id', 'N/A')
-            disputa_nome = pncp_data.get('disputa_nome', 'Não informado')
-            pncp_header = f"""
-
-Os dados básicos do PNCP já estão no cabeçalho do arquivo. Use essas informações como contexto:
-- ID do Processo: {pncp_data.get('id', 'Não informado')}
-- Localização: {pncp_data.get('municipio', 'Não informado')}/{pncp_data.get('uf', 'Não informado')}
-- Órgão: {pncp_data.get('orgao', 'Não informado')}
-- Datas: Inclusão: {pncp_data.get('data_inclusao', 'Não informado')} | Abertura: {pncp_data.get('data_abertura', 'Não informado')} | Encerramento: {pncp_data.get('data_encerramento', 'Não informado')}
-- Modalidade: {modalidade_id} - {modalidade_nome} | Disputa: {disputa_id} - {disputa_nome}
-- Descrição: {descricao_resumida}
-
-"""
-        prompt = f"""
-Analise o seguinte documento PNCP convertido para Markdown usando Docling e gere um resumo COMPLETO seguindo EXATAMENTE a estrutura padronizada abaixo.{pncp_header}
-
-ESTRUTURA OBRIGATÓRIA DO RESUMO:
-
-## 📄 IDENTIFICAÇÃO DO DOCUMENTO
-- **Tipo:** [Edital/Ata/Contrato/Termo de Referência/etc]
-- **Modalidade:** [Pregão Eletrônico/Concorrência/Dispensa/etc]
-- **Número:** [Número do processo/edital]
-- **Órgão:** [Secretaria/Prefeitura/etc]
-- **Data:** [Data de publicação/assinatura]
-
-## 🎯 OBJETO PRINCIPAL
-- **Descrição:** [O que está sendo contratado/licitado]
-- **Finalidade:** [Para que será usado]
-
-## 💰 INFORMAÇÕES FINANCEIRAS
-- **Valor Estimado/Contratado:** [Valores principais]
-- **Fonte de Recursos:** [Se mencionado]
-- **Forma de Pagamento:** [Condições de pagamento]
-
-## ⏰ PRAZOS E CRONOGRAMA
-- **Prazo de Entrega/Execução:** [Tempo para conclusão]
-- **Vigência do Contrato:** [Período de validade]
-- **Prazos Importantes:** [Datas críticas]
-
-## 📋 ESPECIFICAÇÕES TÉCNICAS
-- **Requisitos Principais:** [Especificações obrigatórias]
-- **Quantidades:** [Volumes/quantitativos]
-- **Padrões/Normas:** [Certificações exigidas]
-
-## 📑 DOCUMENTOS EXIGIDOS
-### 📊 Documentos de Habilitação Jurídica
-- **Societários:** [CNPJ, contrato social, etc.]
-- **Regularidade Jurídica:** [Certidões, declarações]
-
-### 💼 Documentos de Qualificação Técnica
-- **Atestados Técnicos:** [Comprovação de capacidade]
-- **Certidões Técnicas:** [Registros profissionais]
-- **Equipe Técnica:** [Qualificação dos profissionais]
-
-### 💰 Documentos de Qualificação Econômico-Financeira
-- **Balanços Patrimoniais:** [Demonstrações contábeis]
-- **Certidões Negativas:** [Débitos fiscais/trabalhistas]
-- **Garantias:** [Seguros, fianças]
-
-### 📋 Documentos Complementares
-- **Declarações:** [Idoneidade, menor, etc.]
-- **Propostas:** [Técnica e comercial]
-- **Amostras:** [Se exigidas]
-
-## 📊 DADOS ESTRUTURADOS (TABELAS)
-- **Resumo de Tabelas:** [Principais informações tabulares]
-- **Itens/Produtos:** [Lista dos principais itens se houver]
-- **Valores Relevantes:** [Dados quantitativos importantes]
-
-## ⚖️ CONDIÇÕES E EXIGÊNCIAS
-- **Habilitação:** [Requisitos para participar]
-- **Critérios de Julgamento:** [Como será avaliado]
-- **Penalidades:** [Multas e sanções]
-
-## 📍 INFORMAÇÕES COMPLEMENTARES
-- **Endereço de Entrega:** [Local de execução]
-- **Contatos:** [Responsáveis/telefones]
-- **Observações:** [Informações adicionais relevantes]
-
-INSTRUÇÕES IMPORTANTES:
-- Siga EXATAMENTE a estrutura acima
-- Mantenha todos os emojis e formatação
-- Se alguma informação não estiver disponível, escreva "Não informado" ou "Não especificado"
-- Use linguagem técnica apropriada para licitações públicas
-- Extraia TODAS as informações relevantes do documento
-- Dê atenção especial a tabelas e dados estruturados extraídos pelo Docling
-
-DOCUMENTO:
-{markdown_content}
-
-RESUMO:
-"""
-        completion = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "Você é um especialista em análise de documentos de licitações públicas e contratos governamentais. Gere resumos técnicos e precisos seguindo EXATAMENTE a estrutura fornecida. Dê atenção especial às tabelas extraídas pelo Docling."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.2
+        _dbg("[GSB][RESUMO] generate_document_summary() via Assistants...")
+        client = _get_openai_client()
+        if client is None or not _ASSISTANT_SUMMARY_ID:
+            return "OpenAI/Assistant não configurado (verifique OPENAI_API_KEY e GVG_SUMMARY_DOCUMENT_v1 no .env)."
+        # Truncagem conservadora
+        content = markdown_content or ""
+        if len(content) > 100_000:
+            content = content[:100_000] + "\n\n...(documento truncado)"
+        # Contexto compacto
+        ctx_lines = []
+        if isinstance(pncp_data, dict) and pncp_data:
+            try:
+                ctx_lines.append(f"ID: {pncp_data.get('id')}")
+                ctx_lines.append(f"Órgão: {pncp_data.get('orgao')} | Local: {pncp_data.get('municipio')}/{pncp_data.get('uf')}")
+                ctx_lines.append(f"Datas: Inc {pncp_data.get('data_inclusao')} | Ab {pncp_data.get('data_abertura')} | Enc {pncp_data.get('data_encerramento')}")
+                ctx_lines.append(f"Modal/Disp: {pncp_data.get('modalidade_id')} - {pncp_data.get('modalidade_nome')} | {pncp_data.get('disputa_id')} - {pncp_data.get('disputa_nome')}")
+            except Exception:
+                pass
+        ctx_block = ("\n".join([l for l in ctx_lines if l])) if ctx_lines else ""
+        anti_citation = (
+            "INSTRUÇÕES ADICIONAIS IMPORTANTES:\n"
+            "- NUNCA inclua citações, referências ou marcas de fonte.\n"
+            "- Remova padrões como 【4:5†source】, [1], [1:2], [qualquer-coisa†source] ou links.\n"
+            "- Gere apenas o resumo no formato especificado, sem referências.\n\n"
         )
-        return completion.choices[0].message.content.strip()
+        user_message = (
+            (("Contexto PNCP:\n" + ctx_block + "\n\n") if ctx_block else "")
+            + anti_citation
+            + "Documento (Markdown):\n\n" + content
+        )
+        # Threads & Runs
+        thread = client.beta.threads.create()
+        client.beta.threads.messages.create(thread_id=thread.id, role="user", content=[{"type": "text", "text": user_message}])
+        run = client.beta.threads.runs.create(thread_id=thread.id, assistant_id=_ASSISTANT_SUMMARY_ID)
+        t0 = time.time(); timeout_s = 180
+        while True:
+            run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+            if run.status in ("completed", "failed", "requires_action", "cancelled", "expired"):
+                break
+            if time.time() - t0 > timeout_s:
+                return "Tempo limite excedido ao gerar o resumo."
+            time.sleep(1.2)
+        if run.status != "completed":
+            return f"Falha ao gerar resumo (status: {run.status})."
+        msgs = client.beta.threads.messages.list(thread_id=thread.id, order="desc", limit=10)
+        for m in msgs.data:
+            if getattr(m, 'role', None) == 'assistant' and getattr(m, 'content', None):
+                for p in m.content:
+                    try:
+                        if getattr(p, 'type', None) == 'text' and getattr(p, 'text', None):
+                            val = getattr(p.text, 'value', None)
+                            if isinstance(val, str) and val.strip():
+                                out = strip_citations(val.strip())
+                                _dbg_assistant_output("MD->Assistant", out)
+                                return out
+                    except Exception:
+                        continue
+        return "Não foi possível obter o conteúdo do assistente."
     except Exception as e:
-        return f"Erro ao gerar resumo: {str(e)}"
+        return f"Erro ao gerar resumo (Assistants): {str(e)}"
+
+def generate_document_summary_from_files(file_paths: list[str], max_tokens=None, pncp_data=None):
+    """Generate a summary by uploading original files to the Assistant (skip Docling).
+
+    Expects the Assistant (GVG_SUMMARY_DOCUMENT_v1) to be configured to read attached files.
+    """
+    try:
+        client = _get_openai_client()
+        if client is None or not _ASSISTANT_SUMMARY_ID:
+            return "OpenAI/Assistant não configurado (verifique OPENAI_API_KEY e GVG_SUMMARY_DOCUMENT_v1 no .env)."
+        # Upload files
+        attachments = []
+        for p in file_paths or []:
+            try:
+                with open(p, "rb") as f:
+                    up = client.files.create(purpose="assistants", file=f)
+                    # File Search is the most common tool for attachments
+                    attachments.append({"file_id": up.id, "tools": [{"type": "file_search"}]})
+            except Exception as e:
+                _dbg(f"[GSB][RESUMO] Falha ao anexar arquivo '{p}': {e}")
+        if not attachments:
+            return "Nenhum arquivo válido para envio ao Assistente."
+        # Context block (compact)
+        ctx_lines = []
+        if isinstance(pncp_data, dict) and pncp_data:
+            try:
+                ctx_lines.append(f"ID: {pncp_data.get('id')}")
+                ctx_lines.append(f"Órgão: {pncp_data.get('orgao')} | Local: {pncp_data.get('municipio')}/{pncp_data.get('uf')}")
+                ctx_lines.append(f"Datas: Inc {pncp_data.get('data_inclusao')} | Ab {pncp_data.get('data_abertura')} | Enc {pncp_data.get('data_encerramento')}")
+                ctx_lines.append(f"Modal/Disp: {pncp_data.get('modalidade_id')} - {pncp_data.get('modalidade_nome')} | {pncp_data.get('disputa_id')} - {pncp_data.get('disputa_nome')}")
+            except Exception:
+                pass
+        ctx_block = ("\n".join([l for l in ctx_lines if l])) if ctx_lines else ""
+        anti_citation = (
+            "INSTRUÇÕES ADICIONAIS IMPORTANTES:\n"
+            "- NUNCA inclua citações, referências ou marcas de fonte.\n"
+            "- Remova padrões como 【4:5†source】, [1], [1:2], [qualquer-coisa†source] ou links.\n"
+            "- Gere apenas o resumo no formato especificado, sem referências.\n\n"
+        )
+        user_message = (
+            (("Contexto PNCP:\n" + ctx_block + "\n\n") if ctx_block else "")
+            + anti_citation
+            + "Documentos anexados. Gerar um resumo executivo com itens de atenção."
+        )
+        # Thread & run
+        thread = client.beta.threads.create()
+        client.beta.threads.messages.create(thread_id=thread.id, role="user", content=[{"type": "text", "text": user_message}], attachments=attachments)
+        run = client.beta.threads.runs.create(thread_id=thread.id, assistant_id=_ASSISTANT_SUMMARY_ID)
+        t0 = time.time(); timeout_s = 180
+        while True:
+            run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+            if run.status in ("completed", "failed", "requires_action", "cancelled", "expired"):
+                break
+            if time.time() - t0 > timeout_s:
+                return "Tempo limite excedido ao gerar o resumo."
+            time.sleep(1.2)
+        if run.status != "completed":
+            return f"Falha ao gerar resumo (status: {run.status})."
+        msgs = client.beta.threads.messages.list(thread_id=thread.id, order="desc", limit=10)
+        for m in msgs.data:
+            if getattr(m, 'role', None) == 'assistant' and getattr(m, 'content', None):
+                for p in m.content:
+                    try:
+                        if getattr(p, 'type', None) == 'text' and getattr(p, 'text', None):
+                            val = getattr(p.text, 'value', None)
+                            if isinstance(val, str) and val.strip():
+                                out = strip_citations(val.strip())
+                                _dbg_assistant_output("Files->Assistant", out)
+                                return out
+                    except Exception:
+                        continue
+        return "Não foi possível obter o conteúdo do assistente."
+    except Exception as e:
+        return f"Erro ao gerar resumo (Assistants arquivos): {str(e)}"
 
 def cleanup_temp_file(temp_path):
     try:
@@ -471,6 +502,19 @@ def is_zip_file(file_path):
         return False
     return False
 
+def is_rar_file(file_path: str) -> bool:
+    try:
+        p = file_path.lower()
+        if p.endswith('.rar'):
+            return True
+        with open(file_path, 'rb') as f:
+            header = f.read(4)
+            if header == b'Rar!':
+                return True
+    except Exception:
+        return False
+    return False
+
 def extract_all_supported_files_from_zip(zip_path):
     try:
         supported_extensions = ['.pdf', '.docx', '.doc', '.pptx', '.xlsx', '.xls', '.csv', '.txt', '.md']
@@ -517,11 +561,91 @@ def extract_first_pdf_from_zip(zip_path):
     except Exception as e:
         return False, None, None, f"Erro ao extrair ZIP: {str(e)}"
 
+def _discover_7z_exe():
+    candidates = [
+        r"C:\\Program Files\\7-Zip\\7z.exe",
+        r"C:\\Program Files (x86)\\7-Zip\\7z.exe",
+        "7z",
+    ]
+    for c in candidates:
+        try:
+            if os.path.sep in c:
+                if os.path.exists(c):
+                    return c
+            else:
+                return c
+        except Exception:
+            continue
+    return None
+
+def extract_all_supported_files_from_rar(rar_path: str):
+    try:
+        supported_extensions = ['.pdf', '.docx', '.doc', '.pptx', '.xlsx', '.xls', '.csv', '.txt', '.md']
+        extract_dir = os.path.join(tempfile.gettempdir(), f"rar_extract_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        os.makedirs(extract_dir, exist_ok=True)
+        extracted_files = []
+        # Tentar rarfile
+        used_rarfile = False
+        try:
+            import rarfile  # type: ignore
+            rf = rarfile.RarFile(rar_path)
+            names = rf.namelist()
+            _dbg(f"   📦 Arquivos no RAR: {len(names)}")
+            for nm in names:
+                if nm.endswith('/') or nm.startswith('__MACOSX/'):
+                    continue
+                ext = os.path.splitext(nm)[1].lower()
+                if ext in supported_extensions:
+                    try:
+                        rf.extract(nm, extract_dir)
+                        outp = os.path.join(extract_dir, nm)
+                        if os.path.exists(outp):
+                            extracted_files.append((outp, os.path.basename(nm)))
+                            _dbg(f"   📄 Extraído: {os.path.basename(nm)}")
+                    except Exception as e:
+                        _dbg(f"   ⚠️ Erro ao extrair {nm}: {e}")
+                        continue
+            used_rarfile = True
+        except Exception as e:
+            _dbg(f"[RAR] rarfile indisponível/erro: {e}")
+        # Fallback 7z
+        if not extracted_files:
+            seven = _discover_7z_exe()
+            if not seven:
+                return False, [], "RAR: 'rarfile' indisponível e 7-Zip não encontrado."
+            try:
+                proc = subprocess.run([seven, 'x', '-y', f"-o{extract_dir}", rar_path], capture_output=True, text=True, timeout=120)
+                if proc.returncode != 0:
+                    err = proc.stderr.strip() or proc.stdout.strip()
+                    return False, [], f"Erro 7-Zip ao extrair RAR: {err[:200]}"
+                for root, _, files in os.walk(extract_dir):
+                    for fn in files:
+                        ext = os.path.splitext(fn)[1].lower()
+                        if ext in supported_extensions:
+                            path = os.path.join(root, fn)
+                            extracted_files.append((path, fn))
+                            _dbg(f"   📄 Extraído: {fn}")
+            except Exception as e:
+                return False, [], f"Falha ao usar 7-Zip para RAR: {e}"
+        if not extracted_files:
+            return False, [], "Nenhum arquivo suportado encontrado no RAR"
+        return True, extracted_files, None
+    except Exception as e:
+        return False, [], f"Erro ao extrair RAR: {str(e)}"
+
 def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data=None):
     temp_path = None
     try:
         processing_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        try:
+            print(f"[GSB][RESUMO] process_pncp_document() inicio url='{str(doc_url)[:80]}{'...' if doc_url and len(str(doc_url))>80 else ''}' nome='{document_name}'")
+        except Exception:
+            pass
         success, temp_path, filename, error = download_document(doc_url)
+        try:
+            print(f"[GSB][RESUMO] download_document -> success={success} temp='{temp_path}' file='{filename}' err='{error}'")
+        except Exception:
+            pass
         if not success:
             return f"Erro no download: {error}"
         final_filename = document_name if document_name else filename
@@ -532,106 +656,225 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                 return f"Erro ao extrair arquivos do ZIP: {error}"
             if not extracted_files_list:
                 return "Erro: Nenhum arquivo suportado encontrado no ZIP"
-            all_markdown_content = f"# Documento PNCP: {final_filename} (ZIP com múltiplos arquivos)\n\n"
-            all_markdown_content += f"**Arquivo original:** `{final_filename}`  \n"
-            all_markdown_content += f"**Processado em:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  \n"
-            all_markdown_content += f"**Ferramenta:** Docling SUPER OTIMIZADO (PyPdfium + TableFormer FAST) + OpenAI GPT-4o  \n"
-            all_markdown_content += f"**Arquivos extraídos:** {len(extracted_files_list)}  \n\n"
-            all_markdown_content += "---\n\n"
-            processed_files = []
-            total_size = 0
-            for extracted_path, original_name in extracted_files_list:
-                print(f"📄 Processando arquivo extraído: {original_name}")
-                if os.path.exists(extracted_path):
-                    file_size_extracted = os.path.getsize(extracted_path) / (1024 * 1024)
-                    total_size += file_size_extracted
-                    print(f"📏 Tamanho: {file_size_extracted:.2f} MB")
-                    file_success, file_markdown, file_error = convert_document_to_markdown(
-                        extracted_path, 
-                        original_name
-                    )
-                    if file_success:
-                        all_markdown_content += f"## 📄 Arquivo: {original_name}\n\n"
-                        all_markdown_content += f"**Tamanho:** {file_size_extracted:.2f} MB  \n"
-                        all_markdown_content += f"**Status:** ✅ Processado com sucesso  \n\n"
-                        all_markdown_content += "### Conteúdo:\n\n"
-                        all_markdown_content += file_markdown
-                        all_markdown_content += "\n\n---\n\n"
-                        processed_files.append({
-                            'name': original_name,
-                            'success': True,
-                            'size': file_size_extracted,
-                            'chars': len(file_markdown)
-                        })
-                        print(f"✅ {original_name} processado com sucesso")
+            if GVG_MARKDOWN:
+                # Docling -> Markdown -> Assistant
+                all_markdown_content = f"# Documento PNCP: {final_filename} (ZIP com múltiplos arquivos)\n\n"
+                all_markdown_content += f"**Arquivo original:** `{final_filename}`  \n"
+                all_markdown_content += f"**Processado em:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  \n"
+                all_markdown_content += f"**Ferramenta:** Docling SUPER OTIMIZADO (PyPdfium + TableFormer FAST) + OpenAI GPT-4o  \n"
+                all_markdown_content += f"**Arquivos extraídos:** {len(extracted_files_list)}  \n\n"
+                all_markdown_content += "---\n\n"
+                processed_files = []
+                for extracted_path, original_name in extracted_files_list:
+                    print(f"📄 Processando arquivo extraído: {original_name}")
+                    if os.path.exists(extracted_path):
+                        file_size_extracted = os.path.getsize(extracted_path) / (1024 * 1024)
+                        print(f"📏 Tamanho: {file_size_extracted:.2f} MB")
+                        file_success, file_markdown, file_error = convert_document_to_markdown(extracted_path, original_name)
+                        if file_success:
+                            all_markdown_content += f"## 📄 Arquivo: {original_name}\n\n"
+                            all_markdown_content += f"**Tamanho:** {file_size_extracted:.2f} MB  \n"
+                            all_markdown_content += f"**Status:** ✅ Processado com sucesso  \n\n"
+                            all_markdown_content += "### Conteúdo:\n\n"
+                            all_markdown_content += file_markdown
+                            all_markdown_content += "\n\n---\n\n"
+                            processed_files.append({'name': original_name, 'success': True})
+                            print(f"✅ {original_name} processado com sucesso")
+                        else:
+                            all_markdown_content += f"## ❌ Arquivo: {original_name}\n\n"
+                            all_markdown_content += f"**Tamanho:** {file_size_extracted:.2f} MB  \n"
+                            all_markdown_content += f"**Status:** ❌ Erro no processamento  \n"
+                            all_markdown_content += f"**Erro:** {file_error}  \n\n"
+                            all_markdown_content += "---\n\n"
+                            processed_files.append({'name': original_name, 'success': False})
+                            print(f"❌ Erro em {original_name}: {file_error}")
                     else:
-                        all_markdown_content += f"## ❌ Arquivo: {original_name}\n\n"
-                        all_markdown_content += f"**Tamanho:** {file_size_extracted:.2f} MB  \n"
-                        all_markdown_content += f"**Status:** ❌ Erro no processamento  \n"
-                        all_markdown_content += f"**Erro:** {file_error}  \n\n"
-                        all_markdown_content += "---\n\n"
-                        processed_files.append({
-                            'name': original_name,
-                            'success': False,
-                            'error': file_error
-                        })
-                        print(f"❌ Erro em {original_name}: {file_error}")
+                        print(f"❌ Arquivo extraído não encontrado: {original_name}")
+                # Cleanup
+                try:
+                    if extracted_files_list:
+                        extract_dir = os.path.dirname(extracted_files_list[0][0])
+                        if os.path.exists(extract_dir):
+                            shutil.rmtree(extract_dir)
+                except Exception as cleanup_error:
+                    print(f"⚠️ Aviso: Erro na limpeza: {cleanup_error}")
+                successful_files = [f for f in processed_files if f['success']]
+                if successful_files:
+                    success = True
+                    markdown_content = all_markdown_content
+                    error = None
+                    final_filename = f"{final_filename} ({len(successful_files)}-{len(processed_files)} arquivos)"
+                    print(f"✅ ZIP processado: {len(successful_files)}/{len(processed_files)} arquivos com sucesso")
                 else:
-                    print(f"❌ Arquivo extraído não encontrado: {original_name}")
-            try:
-                if extracted_files_list:
-                    extract_dir = os.path.dirname(extracted_files_list[0][0])
-                    if os.path.exists(extract_dir):
-                        shutil.rmtree(extract_dir)
-            except Exception as cleanup_error:
-                print(f"⚠️ Aviso: Erro na limpeza: {cleanup_error}")
-            successful_files = [f for f in processed_files if f['success']]
-            if successful_files:
-                success = True
-                markdown_content = all_markdown_content
-                error = None
-                final_filename = f"{final_filename} ({len(successful_files)}-{len(processed_files)} arquivos)"
-                print(f"✅ ZIP processado: {len(successful_files)}/{len(processed_files)} arquivos com sucesso")
+                    return "Erro: Nenhum arquivo do ZIP foi processado com sucesso"
             else:
-                return "Erro: Nenhum arquivo do ZIP foi processado com sucesso"
+                # Assistant direto com arquivos originais
+                try:
+                    files_to_send = [p for (p, _n) in extracted_files_list if os.path.exists(p)]
+                    summary = generate_document_summary_from_files(files_to_send, max_tokens, pncp_data)
+                    method_label = "Assistant (arquivos originais)"
+                    summary_success, summary_path, summary_error = save_summary_file(summary, final_filename, doc_url, processing_timestamp, pncp_data, method_label=method_label, markdown_filename=None)
+                    if not summary_success:
+                        print(f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
+                    # Cleanup extract dir
+                    try:
+                        if extracted_files_list:
+                            extract_dir = os.path.dirname(extracted_files_list[0][0])
+                            if os.path.exists(extract_dir):
+                                shutil.rmtree(extract_dir)
+                    except Exception as cleanup_error:
+                        print(f"⚠️ Aviso: Erro na limpeza: {cleanup_error}")
+                    # Return only assistant output so the UI shows the exact text
+                    return summary
+                finally:
+                    # Ensure temp is removed
+                    pass
+        elif is_rar_file(temp_path):
+            print("📦 Arquivo RAR detectado. Extraindo TODOS os arquivos suportados...")
+            success, extracted_files_list, error = extract_all_supported_files_from_rar(temp_path)
+            if not success:
+                return f"Erro ao extrair arquivos do RAR: {error}"
+            if not extracted_files_list:
+                return "Erro: Nenhum arquivo suportado encontrado no RAR"
+            if GVG_MARKDOWN:
+                # Docling -> Markdown -> Assistant
+                all_markdown_content = f"# Documento PNCP: {final_filename} (RAR com múltiplos arquivos)\n\n"
+                all_markdown_content += f"**Arquivo original:** `{final_filename}`  \n"
+                all_markdown_content += f"**Processado em:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  \n"
+                all_markdown_content += f"**Ferramenta:** Docling SUPER OTIMIZADO (PyPdfium + TableFormer FAST) + OpenAI GPT-4o  \n"
+                all_markdown_content += f"**Arquivos extraídos:** {len(extracted_files_list)}  \n\n"
+                all_markdown_content += "---\n\n"
+                processed_files = []
+                for extracted_path, original_name in extracted_files_list:
+                    print(f"📄 Processando arquivo extraído: {original_name}")
+                    if os.path.exists(extracted_path):
+                        file_size_extracted = os.path.getsize(extracted_path) / (1024 * 1024)
+                        print(f"📏 Tamanho: {file_size_extracted:.2f} MB")
+                        file_success, file_markdown, file_error = convert_document_to_markdown(extracted_path, original_name)
+                        if file_success:
+                            all_markdown_content += f"## 📄 Arquivo: {original_name}\n\n"
+                            all_markdown_content += f"**Tamanho:** {file_size_extracted:.2f} MB  \n"
+                            all_markdown_content += f"**Status:** ✅ Processado com sucesso  \n\n"
+                            all_markdown_content += "### Conteúdo:\n\n"
+                            all_markdown_content += file_markdown
+                            all_markdown_content += "\n\n---\n\n"
+                            processed_files.append({'name': original_name, 'success': True})
+                            print(f"✅ {original_name} processado com sucesso")
+                        else:
+                            all_markdown_content += f"## ❌ Arquivo: {original_name}\n\n"
+                            all_markdown_content += f"**Tamanho:** {file_size_extracted:.2f} MB  \n"
+                            all_markdown_content += f"**Status:** ❌ Erro no processamento  \n"
+                            all_markdown_content += f"**Erro:** {file_error}  \n\n"
+                            all_markdown_content += "---\n\n"
+                            processed_files.append({'name': original_name, 'success': False})
+                            print(f"❌ Erro em {original_name}: {file_error}")
+                    else:
+                        print(f"❌ Arquivo extraído não encontrado: {original_name}")
+                try:
+                    if extracted_files_list:
+                        extract_dir = os.path.dirname(extracted_files_list[0][0])
+                        if os.path.exists(extract_dir):
+                            shutil.rmtree(extract_dir)
+                except Exception as cleanup_error:
+                    print(f"⚠️ Aviso: Erro na limpeza: {cleanup_error}")
+                successful_files = [f for f in processed_files if f['success']]
+                if successful_files:
+                    success = True
+                    markdown_content = all_markdown_content
+                    error = None
+                    final_filename = f"{final_filename} ({len(successful_files)}-{len(processed_files)} arquivos)"
+                    print(f"✅ RAR processado: {len(successful_files)}/{len(processed_files)} arquivos com sucesso")
+                else:
+                    return "Erro: Nenhum arquivo do RAR foi processado com sucesso"
+            else:
+                # Assistant direto com arquivos originais
+                try:
+                    files_to_send = [p for (p, _n) in extracted_files_list if os.path.exists(p)]
+                    summary = generate_document_summary_from_files(files_to_send, max_tokens, pncp_data)
+                    method_label = "Assistant (arquivos originais)"
+                    summary_success, summary_path, summary_error = save_summary_file(summary, final_filename, doc_url, processing_timestamp, pncp_data, method_label=method_label, markdown_filename=None)
+                    if not summary_success:
+                        print(f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
+                    try:
+                        if extracted_files_list:
+                            extract_dir = os.path.dirname(extracted_files_list[0][0])
+                            if os.path.exists(extract_dir):
+                                shutil.rmtree(extract_dir)
+                    except Exception as cleanup_error:
+                        print(f"⚠️ Aviso: Erro na limpeza: {cleanup_error}")
+                    return summary
+                finally:
+                    pass
         else:
             print(f"📄 Processando arquivo diretamente: {final_filename}")
             file_to_process = temp_path
-            success, markdown_content, error = convert_document_to_markdown(file_to_process, final_filename)
-            if not success:
-                return f"Erro na conversão: {error}"
+            try:
+                print(f"[GSB][RESUMO] Converter -> path='{file_to_process}' nome='{final_filename}'")
+            except Exception:
+                pass
+            if GVG_MARKDOWN:
+                success, markdown_content, error = convert_document_to_markdown(file_to_process, final_filename)
+                if not success:
+                    return f"Erro na conversão: {error}"
+                try:
+                    print("[GSB][RESUMO] Salvando Markdown...")
+                except Exception:
+                    pass
+                save_success, saved_path, save_error = save_markdown_file(markdown_content, final_filename, doc_url, processing_timestamp)
+                if not save_success:
+                    try:
+                        print(f"[GSB][RESUMO] Falha ao salvar Markdown: {save_error}")
+                    except Exception:
+                        pass
+                    return f"Erro ao salvar: {save_error}"
+                summary = generate_document_summary(markdown_content, max_tokens, pncp_data)
+                try:
+                    print(f"[GSB][RESUMO] Resumo gerado (len={len(summary) if isinstance(summary,str) else 'N/A'})")
+                except Exception:
+                    pass
+                summary_success, summary_path, summary_error = save_summary_file(summary, final_filename, doc_url, processing_timestamp, pncp_data, method_label="Docling + Assistant", markdown_filename=os.path.basename(saved_path) if save_success else None)
+                if not summary_success:
+                    print(f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
+                return summary
+            else:
+                # Assistant direto com arquivo original
+                summary = generate_document_summary_from_files([file_to_process], max_tokens, pncp_data)
+                method_label = "Assistant (arquivo original)"
+                summary_success, summary_path, summary_error = save_summary_file(summary, final_filename, doc_url, processing_timestamp, pncp_data, method_label=method_label, markdown_filename=None)
+                if not summary_success:
+                    print(f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
+                return summary
+        # Common path (GVG_MARKDOWN True) continues below to save markdown + summary (already returned in direct paths)
+        try:
+            print("[GSB][RESUMO] Salvando Markdown...")
+        except Exception:
+            pass
         save_success, saved_path, save_error = save_markdown_file(markdown_content, final_filename, doc_url, processing_timestamp)
         if not save_success:
+            try:
+                print(f"[GSB][RESUMO] Falha ao salvar Markdown: {save_error}")
+            except Exception:
+                pass
             return f"Erro ao salvar: {save_error}"
         summary = generate_document_summary(markdown_content, max_tokens, pncp_data)
-        summary_success, summary_path, summary_error = save_summary_file(summary, final_filename, doc_url, processing_timestamp, pncp_data)
+        try:
+            print(f"[GSB][RESUMO] Resumo gerado (len={len(summary) if isinstance(summary,str) else 'N/A'})")
+        except Exception:
+            pass
+        summary_success, summary_path, summary_error = save_summary_file(summary, final_filename, doc_url, processing_timestamp, pncp_data, method_label="Docling + Assistant", markdown_filename=os.path.basename(saved_path) if save_success else None)
         if not summary_success:
             print(f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
-        final_summary = f"""📄 **DOCUMENTO PROCESSADO**
-
-**Arquivo:** {final_filename}  
-**Markdown:** `{os.path.basename(saved_path)}`  
-**Resumo:** `{os.path.basename(summary_path) if summary_success else 'Erro ao salvar'}`  
-**Pasta Arquivos:** `{FILE_PATH}`  
-**Pasta Resumos:** `{SUMMARY_PATH}`  
-
----
-
-## 📋 RESUMO
-
-{summary}
-
----
-
-💡 *Documento completo disponível em Markdown e resumo salvos nas respectivas pastas.*
-"""
-        return final_summary
+        return summary
     except Exception as e:
         return f"Erro inesperado no processamento: {str(e)}"
     finally:
         cleanup_temp_file(temp_path)
 
 def summarize_document(doc_url, max_tokens=500, document_name=None, pncp_data=None):
+    try:
+        print(f"[GSB][RESUMO] summarize_document() url='{str(doc_url)[:80]}{'...' if doc_url and len(str(doc_url))>80 else ''}' nome='{document_name}' tokens={max_tokens}")
+    except Exception:
+        pass
     return process_pncp_document(doc_url, max_tokens, document_name, pncp_data)
 
 def create_safe_filename(filename, max_length=100):
@@ -652,5 +895,109 @@ __all__ = [
     'convert_document_to_markdown',
     'save_markdown_file',
     'save_summary_file',
-    'generate_document_summary'
+    'generate_document_summary',
+    'generate_document_summary_from_files',
+    'set_markdown_enabled',
+    'fetch_documentos'
 ]
+
+
+# =========================
+# Document listing (moved from gvg_database)
+# =========================
+load_dotenv()
+
+def _load_env_priority():
+    for candidate in ("supabase_v1.env", ".env", "supabase_v0.env"):
+        if os.path.exists(candidate):
+            load_dotenv(candidate, override=False)
+
+
+def _parse_numero_controle_pncp(numero_controle: str):
+    if not numero_controle:
+        return None, None, None
+    pattern = r"^(\d{14})-1-(\d+)/(\d{4})$"
+    m = re.match(pattern, str(numero_controle).strip())
+    if not m:
+        return None, None, None
+    return m.group(1), m.group(2), m.group(3)
+
+
+def _create_connection():
+    try:
+        _load_env_priority()
+        connection = psycopg2.connect(
+            host=os.getenv("SUPABASE_HOST", "aws-0-sa-east-1.pooler.supabase.com"),
+            database=os.getenv("SUPABASE_DBNAME", os.getenv("SUPABASE_DB_NAME", "postgres")),
+            user=os.getenv("SUPABASE_USER"),
+            password=os.getenv("SUPABASE_PASSWORD"),
+            port=os.getenv("SUPABASE_PORT", "6543"),
+            connect_timeout=10
+        )
+        return connection
+    except Exception as e:
+        print(f"Erro ao conectar ao banco: {e}")
+        return None
+
+
+def fetch_documentos(numero_controle: str):
+    if not numero_controle:
+        return []
+
+    documentos = []
+    conn = _create_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='contratacao'
+                """
+            )
+            cols = {r[0].lower() for r in cur.fetchall()}
+            url_cols_priority = ['link_sistema_origem','url','link']
+            url_cols = [c for c in url_cols_priority if c in cols]
+            if url_cols:
+                col = url_cols[0]
+                cur.execute(f"SELECT {col} FROM contratacao WHERE numero_controle_pncp = %s LIMIT 1", (numero_controle,))
+                for (url,) in cur.fetchall():
+                    if url:
+                        documentos.append({'url': url, 'nome': 'Link Sistema', 'tipo': 'origem', 'origem': 'db'})
+            cur.close(); conn.close()
+        except Exception as e:
+            print(f"⚠️ fetch_documentos DB: {e}")
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    if documentos:
+        return documentos
+
+    cnpj, sequencial, ano = _parse_numero_controle_pncp(numero_controle)
+    if not all([cnpj, sequencial, ano]):
+        return []
+    api_url = f"https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}/arquivos"
+    try:
+        resp = requests.get(api_url, timeout=20)
+        if resp.status_code == 200:
+            data = resp.json()
+            if isinstance(data, list):
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+                    documentos.append({
+                        'url': item.get('url') or item.get('uri') or '',
+                        'nome': item.get('titulo') or 'Documento',
+                        'tipo': item.get('tipoDocumentoNome') or 'N/I',
+                        'tamanho': item.get('tamanhoArquivo'),
+                        'modificacao': item.get('dataPublicacaoPncp'),
+                        'sequencial': item.get('sequencialDocumento'),
+                        'origem': 'api'
+                    })
+        else:
+            print(f"⚠️ API documentos status {resp.status_code} ({numero_controle})")
+    except Exception as e:
+        print(f"⚠️ API documentos erro: {e}")
+    return documentos

@@ -61,7 +61,8 @@ from gvg_exporters import (
     export_results_pdf,
     export_results_html,
 )
-from gvg_database import fetch_documentos
+from gvg_documents import fetch_documentos
+from gvg_css import styles, CSS_ALL
 from gvg_user import (
     get_current_user,
     get_user_initials,
@@ -72,9 +73,26 @@ from gvg_user import (
 )
 
 try:
-    from gvg_documents import process_pncp_document
-    DOCUMENTS_AVAILABLE = True
+    # Prefer summarize_document; fall back to process_pncp_document if needed
+    try:
+        from gvg_documents import summarize_document  # type: ignore
+    except Exception:
+        summarize_document = None  # type: ignore
+    try:
+        from gvg_documents import process_pncp_document  # type: ignore
+    except Exception:
+        process_pncp_document = None  # type: ignore
+    try:
+        from gvg_documents import set_markdown_enabled  # type: ignore
+    except Exception:
+        def set_markdown_enabled(_enabled: bool):
+            return None
+    DOCUMENTS_AVAILABLE = bool(summarize_document or process_pncp_document)
 except Exception:
+    summarize_document = None  # type: ignore
+    process_pncp_document = None  # type: ignore
+    def set_markdown_enabled(_enabled: bool):
+        return None
     DOCUMENTS_AVAILABLE = False
 
 
@@ -96,8 +114,8 @@ SEARCH_APPROACHES = {
 }
 SORT_MODES = {
     1: {"name": "Similaridade"},
-    2: {"name": "Data (Assinatura)"},
-    3: {"name": "Valor (Final)"},
+    2: {"name": "Data (Encerramento)"},
+    3: {"name": "Valor (Estimado)"},
 }
 RELEVANCE_LEVELS = {
     1: {"name": "Sem filtro"},
@@ -107,121 +125,18 @@ RELEVANCE_LEVELS = {
 
 
 # =====================================================================================
-# Estilos reutilizados do GvG_SU_Report_v1 (mesmas cores, bordas, tipografia, layout)
+# Cores padronizadas para datas de encerramento (tabela e detalhes)
 # =====================================================================================
-styles = {
-    'container': {
-        'display': 'flex',
-        'height': 'calc(100vh - 60px)',
-        'width': '100%',
-        'marginTop': '60px',
-        'padding': '5px',
-    },
-    'left_panel': {
-    'width': '35%',
-        'backgroundColor': '#E0EAF9',
-        'padding': '10px',
-        'margin': '5px',
-        'borderRadius': '15px',
-        'overflowY': 'auto',
-        'display': 'flex',
-        'flexDirection': 'column',
-        'height': 'calc(100vh - 100px)'
-    },
-    'right_panel': {
-    'width': '65%',
-        'backgroundColor': '#E0EAF9',
-        'padding': '10px',
-        'margin': '5px',
-        'borderRadius': '15px',
-        'overflowY': 'auto',
-        'height': 'calc(100vh - 100px)'
-    },
-    # Caixa branca para os controles (acima)
-    'controls_group': {
-        'padding': '10px',
-        'backgroundColor': 'white',
-        'borderRadius': '15px',
-        'display': 'flex',
-        'flexDirection': 'column',
-        'gap': '8px',
-        'marginTop': '8px',
-    },
-    # Botões retangulares (exportações)
-    'submit_button': {
-        'backgroundColor': '#FF5722',
-        'color': 'white',
-        'border': 'none',
-        'borderRadius': '25px',
-        'height': '36px',
-        'display': 'flex',
-        'alignItems': 'center',
-        'justifyContent': 'center',
-        'cursor': 'pointer'
-    },
-    # Container da consulta NL no rodapé esquerdo (igual Reports)
-    'input_container': {
-        'padding': '10px',
-        'backgroundColor': 'white',
-        'borderRadius': '25px',
-        'display': 'flex',
-        'alignItems': 'center',
-    'marginTop': '10px'
-    },
-    'input_field': {
-        'flex': '1',
-        'border': 'none',
-        'outline': 'none',
-        'padding': '8px',
-        'backgroundColor': 'transparent'
-    },
-    # Botão circular com seta (igual Reports)
-    'arrow_button': {
-        'backgroundColor': '#FF5722',
-        'color': 'white',
-        'border': 'none',
-        'borderRadius': '50%',
-        'width': '32px',
-        'height': '32px',
-        'display': 'flex',
-        'alignItems': 'center',
-        'justifyContent': 'center',
-        'cursor': 'pointer'
-    },
-    'result_card': {
-        'backgroundColor': 'white',
-        'borderRadius': '15px',
-        'padding': '15px',
-        'marginBottom': '12px',
-    'outline': '#E0EAF9 solid 1px',
-        'boxShadow': '0 1px 3px rgba(0,0,0,0.1)',
-        'position': 'relative'
-    },
-    'logo': {
-        'marginBottom': '20px',
-        'maxWidth': '100px'
-    },
-}
+COLOR_ENC_NA = "#000000"       # N/A
+COLOR_ENC_EXPIRED = "#800080"  # roxo
+COLOR_ENC_LT3 = "#FF0000EE"      # vermelho escuro (<= 3 dias)
+COLOR_ENC_LT7 = "#FF6200"      # vermelho (<= 7 dias)
+COLOR_ENC_LT15 = "#FFBD21"     # laranja (<= 15 dias)
+COLOR_ENC_LT30 = "#BBFF00"     # amarelo (<= 30 dias)
+COLOR_ENC_GT30 = "#2BFF00"     # verde  (> 30 dias)
 
-styles['result_number'] = {
-    'position': 'absolute',
-    'top': '10px',
-    'left': '10px',
-    'backgroundColor': '#FF5722',
-    'color': 'white',
-    'borderRadius': '50%',
-    'width': '24px',
-    'height': '24px',
-    'display': 'flex',
-    'padding': '5px',
-    'alignItems': 'center',
-    'justifyContent': 'center',
-    'fontSize': '12px',
-    'fontWeight': 'bold',
-}
 
-# Título padrão para cards (igual ao de "Configurações de Busca")
-styles['card_title'] = {'fontWeight': 'bold', 'color': '#003A70'}
+# styles agora vem de gvg_css.styles
 
 
 # =====================================================================================
@@ -230,16 +145,40 @@ styles['card_title'] = {'fontWeight': 'bold', 'color': '#003A70'}
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 app.title = 'GovGo Search'
 
-# Parse argumento --debug (ex: python GvG_Search_Browser.py --debug)
+# Parse argumentos --debug e --markdown (ex: python GvG_Search_Browser.py --debug --markdown)
 try:
     import argparse
     _parser = argparse.ArgumentParser(add_help=False)
     _parser.add_argument('--debug', action='store_true')
+    _parser.add_argument('--markdown', action='store_true')
     _known, _ = _parser.parse_known_args()
     if _known and getattr(_known, 'debug', False):
         set_sql_debug(True)
+    if _known and getattr(_known, 'markdown', False):
+        try:
+            set_markdown_enabled(True)
+        except Exception:
+            pass
 except Exception:
     pass
+
+# ==========================
+# Progresso global (polled por Interval)
+# ==========================
+PROGRESS = {"percent": 0, "label": ""}
+
+def progress_set(percent: int, label: str | None = None):
+    try:
+        p = int(max(0, min(100, percent)))
+    except Exception:
+        p = 0
+    PROGRESS["percent"] = p
+    if label is not None:
+        PROGRESS["label"] = str(label)
+
+def progress_reset():
+    PROGRESS["percent"] = 0
+    PROGRESS["label"] = ""
 
 def b64_image(image_path: str) -> str:
     try:
@@ -258,7 +197,7 @@ LOGO_PATH = "https://hemztmtbejcbhgfmsvfq.supabase.co/storage/v1/object/public/g
 header = html.Div([
     html.Div([
         html.Img(src=LOGO_PATH, style={'height': '40px'}),
-        html.H4("GvG Search", style={'marginLeft': '15px', 'color': '#003A70'})
+        html.H4("GvG Search", style={'marginLeft': '15px', 'color': '#003A70', 'fontWeight': 'bold', 'marginTop': '4px'})
     ], style={'display': 'flex', 'alignItems': 'center'}),
     html.Div([
         html.Div(
@@ -289,15 +228,30 @@ header = html.Div([
 
 # Painel de controles (esquerda)
 controls_panel = html.Div([
+    html.Div('Consulta', style={**styles['card_title'], }),
+    # Entrada de consulta estilo Reports no rodapé esquerdo
+    html.Div([
+        dcc.Textarea(
+            id='query-input',
+            placeholder='Digite sua consulta...',
+            rows=2,
+            style={**styles['input_field'], 'overflowY': 'auto', 'resize': 'none', 'height': '80px'}
+        ),
+        html.Button(
+            html.I(className="fas fa-arrow-right"),
+            id='submit-button',
+            style=styles['arrow_button']
+        )
+    ], id='query-container', style=styles['input_container']),
     html.Div([
         html.Div("Configurações de Busca", style={'fontWeight': 'bold', 'color': '#003A70'}),
         html.Button(
             html.I(className="fas fa-chevron-down"),
             id='config-toggle-btn',
             title='Mostrar/ocultar configurações',
-            style={**styles['arrow_button'], 'width': '28px', 'height': '28px'}
+            style={**styles['arrow_button'], 'width': '24px', 'height': '24px', 'marginRight': '12px'}
         ),
-    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between'}),
+    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginTop': '8px'}),
     dbc.Collapse(
         html.Div([
             html.Div([
@@ -332,28 +286,14 @@ controls_panel = html.Div([
         ], style={**styles['controls_group'], 'position': 'relative'}, className='gvg-controls'),
         id='config-collapse', is_open=True
     ),
-    html.Div('Consulta', style={**styles['card_title'], 'marginTop': '8px'}),
-    # Entrada de consulta estilo Reports no rodapé esquerdo
-    html.Div([
-        dcc.Textarea(
-            id='query-input',
-            placeholder='Digite sua consulta...',
-            rows=2,
-            style={**styles['input_field'], 'overflowY': 'auto', 'resize': 'none', 'height': '80px'}
-        ),
-        html.Button(
-            html.I(className="fas fa-arrow-right"),
-            id='submit-button',
-            style=styles['arrow_button']
-        )
-    ], id='query-container', style=styles['input_container']),
+
     html.Div([
         html.Div('Histórico', style={'fontWeight': 'bold', 'color': '#003A70'}),
         html.Button(
             html.I(className="fas fa-chevron-down"),
             id='history-toggle-btn',
             title='Mostrar/ocultar histórico',
-            style={**styles['arrow_button'], 'width': '28px', 'height': '28px'}
+            style={**styles['arrow_button'], 'width': '24px', 'height': '24px', 'marginRight': '12px'}
         ),
     ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginTop': '8px'}),
     dbc.Collapse(
@@ -368,9 +308,48 @@ controls_panel = html.Div([
 # Painel de resultados (direita)
 results_panel = html.Div([
     html.Div(id='status-bar', style={**styles['result_card'], 'display': 'none'}),
+    # Spinner central durante processamento (idêntico ao botão de busca em modo cálculo)
+    html.Div(
+        [
+            # Barra de progresso fina sob o spinner
+            html.Div(
+                [
+                    html.Div(
+                        id='progress-fill',
+                        style={
+                            'height': '100%',
+                            'width': '0%',
+                            'backgroundColor': '#FF5722',
+                            'borderRadius': '999px',
+                            'transition': 'width 250ms ease'
+                        }
+                    )
+                ],
+                id='progress-bar',
+                style={
+                    'marginTop': '10px',
+                    'width': '260px',
+                    'height': '6px',
+                    'border': '1px solid #FF5722',
+                    'backgroundColor': 'rgba(255, 87, 34, 0.08)',
+                    'borderRadius': '999px',
+                    'overflow': 'hidden',
+                    'display': 'none'
+                }
+            ),
+            # Rótulo/percentual abaixo da barra
+            html.Div(
+                id='progress-label',
+                children='',
+                style={'marginTop': '6px', 'textAlign': 'center', 'color': '#FF5722', 'fontSize': '12px', 'display': 'none'}
+            )
+        ],
+        id='gvg-center-spinner',
+        style={'display': 'none'}
+    ),
     html.Div([
-        html.Div('Exportar', style=styles['card_title']),
         html.Div([
+            html.Div('Exportar', style=styles['card_title']),
             html.Button('JSON', id='export-json', style={**styles['submit_button'], 'width': '120px'}),
             html.Button('XLSX', id='export-xlsx', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
             html.Button('CSV', id='export-csv', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
@@ -390,6 +369,7 @@ results_panel = html.Div([
 # Layout principal
 app.layout = html.Div([
     dcc.Store(id='store-results', data=[]),
+    dcc.Store(id='store-results-sorted', data=[]),
     dcc.Store(id='store-categories', data=[]),
     dcc.Store(id='store-meta', data={}),
     dcc.Store(id='store-last-query', data=""),
@@ -397,6 +377,14 @@ app.layout = html.Div([
     dcc.Store(id='store-history-open', data=True),
     dcc.Store(id='processing-state', data=False),
     dcc.Store(id='store-config-open', data=True),
+    dcc.Store(id='store-items', data={}),
+    dcc.Store(id='store-sort', data=None),
+    dcc.Store(id='store-panel-active', data={}),
+    dcc.Store(id='store-cache-itens', data={}),
+    dcc.Store(id='store-cache-docs', data={}),
+    dcc.Store(id='store-cache-resumo', data={}),
+    dcc.Store(id='progress-store', data={'percent': 0, 'label': ''}),
+    dcc.Interval(id='progress-interval', interval=400, n_intervals=0, disabled=True),
     dcc.Download(id='download-out'),
 
     header,
@@ -444,7 +432,43 @@ def _sort_results(results: List[dict], order_mode: int) -> List[dict]:
     if order_mode == 1:
         return sorted(results, key=lambda x: x.get('similarity', 0), reverse=True)
     if order_mode == 2:
-        return sorted(results, key=lambda x: (x.get('details', {}).get('dataassinatura') or x.get('details', {}).get('dataAssinatura') or ''), reverse=True)
+        # Sort by closing date (data de encerramento)
+        def _to_date(date_value):
+            """Parse date string to sortable date object (YYYY-MM-DD preferred). Returns datetime.date or None if invalid."""
+            if not date_value:
+                return None
+            s = str(date_value).strip()
+            if not s:
+                return None
+            from datetime import datetime
+            # Try ISO first
+            for fmt in ('%Y-%m-%d', '%Y-%m-%dT%H:%M:%S', '%d/%m/%Y'):
+                try:
+                    return datetime.strptime(s[:10], fmt).date()
+                except Exception:
+                    continue
+            # Fallback: try to extract YYYY-MM-DD
+            import re
+            m = re.match(r'(\d{4})-(\d{2})-(\d{2})', s)
+            if m:
+                try:
+                    return datetime.strptime(m.group(0), '%Y-%m-%d').date()
+                except Exception:
+                    pass
+            return None
+        def _date_key(item: dict):
+            d = item.get('details', {}) or {}
+            # Try canonical then aliases
+            v = (
+                d.get('data_encerramento_proposta')
+                or d.get('dataencerramentoproposta')
+                or d.get('dataEncerramentoProposta')
+                or d.get('dataEncerramento')
+            )
+            dt = _to_date(v)
+            # For descending order, None dates go last
+            return dt if dt is not None else ''
+    return sorted(results, key=_date_key, reverse=False)
     if order_mode == 3:
         # Prefer estimated value; fallback to homologated/final
         def _value_key(item: dict) -> float:
@@ -467,18 +491,218 @@ def _sort_results(results: List[dict], order_mode: int) -> List[dict]:
     return results
 
 
+def _extract_text(d: dict, keys: List[str]) -> str:
+    for k in keys:
+        v = d.get(k)
+        if v:
+            return str(v)
+    return ''
+
+
+def _sorted_for_ui(results: List[dict], sort_state: dict) -> List[dict]:
+    """Return a new list sorted according to sort_state = {field, direction}.
+
+    Fields: orgao, municipio, uf, similaridade, valor, data
+    Direction: 'asc' | 'desc'
+    Always keeps None/missing at the end.
+    """
+    if not results:
+        return []
+    state = sort_state or {}
+    field = (state.get('field') or 'similaridade').lower()
+    direction = (state.get('direction') or 'desc').lower()
+    is_desc = direction == 'desc'
+
+    def key_fn(item: dict):
+        d = item.get('details', {}) or {}
+        if field == 'similaridade':
+            v = item.get('similarity', None)
+            if v is None:
+                return float('inf')
+            return -float(v) if is_desc else float(v)
+        if field == 'valor':
+            v_est = d.get('valor_total_estimado') or d.get('valortotalestimado') or d.get('valorTotalEstimado')
+            v = _to_float(v_est)
+            if v is None:
+                # fallback homologado/final
+                v_h = d.get('valor_total_homologado') or d.get('valortotalhomologado') or d.get('valorTotalHomologado') or d.get('valorfinal') or d.get('valorFinal')
+                v = _to_float(v_h)
+            if v is None:
+                return float('inf')
+            return -v if is_desc else v
+        if field == 'data':
+            dt = _parse_date_generic(
+                d.get('dataencerramentoproposta') or d.get('dataEncerramentoProposta') or d.get('dataEncerramento')
+            )
+            if dt is None:
+                return float('inf')
+            ordv = dt.toordinal()
+            return -ordv if is_desc else ordv
+        # For text fields we won't use key_fn; handled below
+        if field in ('orgao', 'municipio', 'uf'):
+            return 0
+        # default: keep input order
+        return float('inf')
+
+    # Text fields: sort present values, then append missing to keep them last
+    if field in ('orgao', 'municipio', 'uf'):
+        def get_text(item: dict) -> str:
+            d = item.get('details', {}) or {}
+            if field == 'orgao':
+                unidade = _extract_text(d, ['unidadeorgao_nomeunidade', 'unidadeOrgao_nomeUnidade'])
+                orgao = _extract_text(d, ['orgaoentidade_razaosocial', 'orgaoEntidade_razaosocial', 'nomeorgaoentidade'])
+                return (unidade or orgao or '').strip().lower()
+            if field == 'municipio':
+                return _extract_text(d, ['unidadeorgao_municipionome', 'unidadeOrgao_municipioNome', 'municipioentidade']).strip().lower()
+            if field == 'uf':
+                return _extract_text(d, ['unidadeorgao_ufsigla', 'unidadeOrgao_ufSigla', 'uf']).strip().lower()
+            return ''
+        present = [it for it in results if get_text(it)]
+        missing = [it for it in results if not get_text(it)]
+        present_sorted = sorted(present, key=lambda it: get_text(it), reverse=is_desc)
+        out = present_sorted + missing
+    else:
+        # Stable sort based on key function; since key encodes direction, use reverse=False
+        out = sorted(list(results), key=key_fn)
+    # Recompute rank according to new order
+    for i, r in enumerate(out, 1):
+        r['rank'] = i
+    return out
+
+
 def _highlight_terms(text: str, query: str) -> str:
+    """Destaca apenas os termos da consulta pós pré-processamento.
+
+    - Usa SearchQueryProcessor() para obter os termos finais (mais limpos).
+    - Não usa regex; cria spans de índice e envolve com <mark> sem sobreposição.
+    - Case-insensitive, preservando o texto original.
+    """
     if not text:
         return ''
-    safe = str(text)
-    for term in (query or '').split():
-        if len(term) <= 2:
-            continue
+
+    source = str(text)
+    q = (query or '').strip()
+    if not q:
+        return source
+
+    # 1) Pré-processar consulta para extrair termos finais
+    try:
+        processor = SearchQueryProcessor()
+        info = processor.process_query(q) or {}
+        processed = (info.get('search_terms') or '').strip()
+    except Exception:
+        processed = q
+
+    # Lista de termos: filtrar curtos e duplicados
+    terms_raw = [t for t in (processed.split() if processed else []) if len(t) > 2]
+    if not terms_raw:
+        return source
+    # Normalizar para comparação (lower) e manter original para tamanho
+    seen = set()
+    terms = []
+    for t in terms_raw:
+        tl = t.lower()
+        if tl not in seen:
+            seen.add(tl)
+            terms.append(t)
+    # Ordenar por tamanho decrescente apenas por estética (não estritamente necessário)
+    terms.sort(key=lambda x: len(x), reverse=True)
+
+    # 2) Encontrar todas as ocorrências (sem regex)
+    s_lower = source.lower()
+    spans = []  # lista de (start, end)
+    for t in terms:
+        tl = t.lower()
+        start = 0
+        L = len(tl)
+        while True:
+            pos = s_lower.find(tl, start)
+            if pos == -1:
+                break
+            spans.append((pos, pos + L))
+            start = pos + L  # avança para evitar sobreposição infinita
+
+    if not spans:
+        return source
+
+    # 3) Mesclar spans sobrepostos/contíguos (garante uma marcação por trecho)
+    spans.sort(key=lambda x: x[0])
+    merged = []
+    for st, en in spans:
+        if not merged or st > merged[-1][1]:
+            merged.append([st, en])
+        else:
+            merged[-1][1] = max(merged[-1][1], en)
+
+    # 4) Construir saída com <mark>
+    out = []
+    last = 0
+    for st, en in merged:
+        if st > last:
+            out.append(source[last:st])
+        out.append("<mark style='background:#FFE08A'>")
+        out.append(source[st:en])
+        out.append("</mark>")
+        last = en
+    if last < len(source):
+        out.append(source[last:])
+    return ''.join(out)
+
+
+def _parse_date_generic(date_value):
+    """Parse supported date formats to datetime.date or return None."""
+    if not date_value:
+        return None
+    s = str(date_value).strip()
+    if not s or s.upper() == 'N/A':
+        return None
+    try:
+        # Normalize ISO with time
+        from datetime import datetime
+        if 'T' in s:
+            s0 = s[:19]
+            try:
+                return datetime.fromisoformat(s0).date()
+            except Exception:
+                pass
+        # YYYY-MM-DD
         try:
-            safe = re.sub(rf"({re.escape(term)})", r"<mark style='background:#FFE08A'>\1</mark>", safe, flags=re.IGNORECASE)
-        except re.error:
+            return datetime.strptime(s[:10], '%Y-%m-%d').date()
+        except Exception:
             pass
-    return safe
+        # DD/MM/YYYY
+        try:
+            return datetime.strptime(s[:10], '%d/%m/%Y').date()
+        except Exception:
+            pass
+    except Exception:
+        return None
+    return None
+
+
+def _enc_status_and_color(date_value):
+    """Return a tuple (status, color) for the closing date proximity.
+
+    Status values: 'na', 'expired', 'lt3', 'lt7', 'lt15', 'lt30', 'gt30'
+    Colors: black, purple, darkred, red, orange, yellow, green
+    """
+    from datetime import date as _date
+    dt = _parse_date_generic(date_value)
+    if not dt:
+        return 'na', COLOR_ENC_NA
+    today = _date.today()
+    diff = (dt - today).days
+    if diff < 0:
+        return 'expired', COLOR_ENC_EXPIRED
+    if diff <= 3:
+        return 'lt3', COLOR_ENC_LT3
+    if diff <= 7:
+        return 'lt7', COLOR_ENC_LT7
+    if diff <= 15:
+        return 'lt15', COLOR_ENC_LT15
+    if diff <= 30:
+        return 'lt30', COLOR_ENC_LT30
+    return 'gt30', COLOR_ENC_GT30
 
 
 def _build_pncp_data(details: dict) -> dict:
@@ -511,6 +735,24 @@ def _format_br_date(date_value) -> str:
         return dt.strftime('%d/%m/%Y')
     except Exception:
         return s
+
+
+def _format_qty(value) -> str:
+    """Format quantities using BR style: thousands '.', decimal ',' with up to 2 decimals when needed."""
+    f = _to_float(value)
+    if f is None:
+        return str(value or '')
+    if abs(f - int(f)) < 1e-9:
+        return f"{int(f):,}".replace(',', '.')
+    return f"{f:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+
+
+def _format_money(value) -> str:
+    """Format monetary values without currency symbol, BR style (1.234,56)."""
+    f = _to_float(value)
+    if f is None:
+        return str(value or '')
+    return f"{f:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 
 # Sanitização de limites vindos da UI
@@ -568,6 +810,12 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
         raise PreventUpdate
     if not query or len(query.strip()) < 3:
         raise PreventUpdate
+    # Resetar e iniciar progresso
+    try:
+        progress_reset()
+        progress_set(2, 'Iniciando')
+    except Exception:
+        pass
 
     # Alinhar nível de relevância
     try:
@@ -591,6 +839,10 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
     try:
         processor = SearchQueryProcessor()
         info = processor.process_query(query)
+        try:
+            progress_set(10, 'Pré-processando consulta')
+        except Exception:
+            pass
         # Debug opcional: exibir saída do Assistant quando SQL debug estiver ativo
         try:
             from gvg_search_core import SQL_DEBUG
@@ -613,6 +865,10 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
     categories: List[dict] = []
     if approach in (2, 3):
         try:
+            try:
+                progress_set(20, 'Buscando categorias')
+            except Exception:
+                pass
             categories = get_top_categories_for_query(
                 query_text=base_terms or query,
                 top_n=safe_top,
@@ -627,6 +883,10 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
     confidence: float = 0.0
     try:
         if approach == 1:
+            try:
+                progress_set(70, 'Executando busca direta')
+            except Exception:
+                pass
             if s_type == 1:
                 results, confidence = semantic_search(query, limit=safe_limit, filter_expired=filter_expired, use_negation=negation_emb)
             elif s_type == 2:
@@ -635,6 +895,10 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
                 results, confidence = hybrid_search(query, limit=safe_limit, filter_expired=filter_expired, use_negation=negation_emb)
         elif approach == 2:
             if categories:
+                try:
+                    progress_set(70, 'Executando busca por correspondência')
+                except Exception:
+                    pass
                 results, confidence, _ = categories_correspondence_search(
                     query_text=query,
                     top_categories=categories,
@@ -644,6 +908,10 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
                 )
         elif approach == 3:
             if categories:
+                try:
+                    progress_set(70, 'Executando busca filtrada por categoria')
+                except Exception:
+                    pass
                 results, confidence, _ = categories_category_filtered_search(
                     query_text=query,
                     search_type=s_type,
@@ -657,6 +925,10 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
         results = []
         confidence = 0.0
 
+    try:
+        progress_set(78, 'Ordenando resultados')
+    except Exception:
+        pass
     results = _sort_results(results or [], order or 1)
     for i, r in enumerate(results, 1):
         r['rank'] = i
@@ -674,6 +946,10 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
                 prompt_emb = emb.tolist() if emb is not None and hasattr(emb, 'tolist') else (emb if emb is not None else None)
             except Exception:
                 prompt_emb = None
+            try:
+                progress_set(90, 'Salvando histórico')
+            except Exception:
+                pass
             prompt_id = add_prompt(
                 query.strip(),
                 search_type=s_type,
@@ -705,6 +981,11 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
     'max_results': safe_limit,
     'top_categories': safe_top,
     }
+    try:
+        progress_set(100, 'Concluído')
+        progress_reset()
+    except Exception:
+        pass
     return results, categories, meta, query, False
 
 
@@ -719,6 +1000,124 @@ def update_submit_button(is_processing):
     if is_processing:
         return html.I(className="fas fa-spinner fa-spin", style={'color': 'white'}), True, styles['arrow_button']
     return html.I(className="fas fa-arrow-right"), False, styles['arrow_button']
+
+
+# Mostrar/ocultar spinner central no painel direito
+@app.callback(
+    Output('gvg-center-spinner', 'style'),
+    Input('processing-state', 'data')
+)
+def toggle_center_spinner(is_processing):
+    if is_processing:
+        return {'display': 'block'}
+    return {'display': 'none'}
+
+
+# Habilita/desabilita o Interval do progresso conforme o processamento
+@app.callback(
+    Output('progress-interval', 'disabled'),
+    Input('processing-state', 'data')
+)
+def toggle_progress_interval(is_processing):
+    return not bool(is_processing)
+
+
+# Atualiza a Store de progresso periodicamente a partir do estado global
+@app.callback(
+    Output('progress-store', 'data'),
+    Input('progress-interval', 'n_intervals'),
+    State('processing-state', 'data'),
+    prevent_initial_call=False,
+)
+def update_progress_store(_n, is_processing):
+    if not is_processing:
+        return {'percent': 0, 'label': ''}
+    try:
+        p = int(PROGRESS.get('percent', 0))
+        lbl = PROGRESS.get('label', '')
+    except Exception:
+        p, lbl = 0, ''
+    return {'percent': p, 'label': lbl}
+
+
+# Reflete a barra de progresso na UI
+@app.callback(
+    Output('progress-fill', 'style'),
+    Output('progress-bar', 'style'),
+    Output('progress-label', 'children'),
+    Output('progress-label', 'style'),
+    Input('progress-store', 'data'),
+    Input('processing-state', 'data'),
+    prevent_initial_call=False,
+)
+def reflect_progress_bar(data, is_processing):
+    percent = 0
+    try:
+        percent = int((data or {}).get('percent', 0))
+    except Exception:
+        percent = 0
+    label = (data or {}).get('label') or ''
+    base_bar = {
+        'marginTop': '10px',
+        'width': '260px',
+        'height': '6px',
+        'border': '1px solid #FF5722',
+        'backgroundColor': 'rgba(255, 87, 34, 0.08)',
+        'borderRadius': '999px',
+        'overflow': 'hidden',
+    }
+    bar_style = dict(base_bar)
+    bar_style['display'] = 'block' if (is_processing and percent > 0 and percent < 100) else 'none'
+
+    fill_style = {
+        'height': '100%',
+        'width': f'{percent}%',
+        'backgroundColor': '#FF5722',
+        'borderRadius': '999px',
+        'transition': 'width 250ms ease'
+    }
+    label_text = f"{percent}% — {label}" if label else (f"{percent}%" if percent else '')
+    label_style = {'marginTop': '6px', 'textAlign': 'center', 'color': '#FF5722', 'fontSize': '12px'}
+    label_style['display'] = 'block' if (is_processing and percent > 0 and percent < 100) else 'none'
+    return fill_style, bar_style, label_text, label_style
+
+
+# Limpar conteúdo do painel de resultados ao iniciar nova busca
+@app.callback(
+    Output('results-table-inner', 'children', allow_duplicate=True),
+    Output('results-details', 'children', allow_duplicate=True),
+    Output('status-bar', 'children', allow_duplicate=True),
+    Output('categories-table', 'children', allow_duplicate=True),
+    Output('store-panel-active', 'data', allow_duplicate=True),
+    Output('store-cache-itens', 'data', allow_duplicate=True),
+    Output('store-cache-docs', 'data', allow_duplicate=True),
+    Output('store-cache-resumo', 'data', allow_duplicate=True),
+    Input('processing-state', 'data'),
+    prevent_initial_call=True,
+)
+def clear_results_content_on_start(is_processing):
+    if not is_processing:
+        raise PreventUpdate
+    # Esvazia conteúdos imediatamente
+    return [], [], [], [], {}, {}, {}, {}
+
+
+# Ocultar cartões/tabelas enquanto processa (evita flicker de conteúdo antigo)
+@app.callback(
+    Output('status-bar', 'style', allow_duplicate=True),
+    Output('categories-table', 'style', allow_duplicate=True),
+    Output('export-panel', 'style', allow_duplicate=True),
+    Output('results-table', 'style', allow_duplicate=True),
+    Output('results-details', 'style', allow_duplicate=True),
+    Input('processing-state', 'data'),
+    prevent_initial_call=True,
+)
+def hide_result_panels_during_processing(is_processing):
+    if not is_processing:
+        raise PreventUpdate
+    base = styles['result_card'].copy()
+    hidden = {**base, 'display': 'none'}
+    return hidden, hidden, hidden, hidden, hidden
 
 
 # Callback: define estado de processamento quando clicar seta
@@ -879,7 +1278,6 @@ def render_status_and_categories(meta, categories, last_query):
         # hide both when no meta
         return dash.no_update, dash.no_update
     status = [
-        html.Div('Resumo da Busca', style=styles['card_title']),
         html.Div([
             html.Span('Busca: ', style={'fontWeight': 'bold'}),
             html.Span(last_query or '')
@@ -933,38 +1331,78 @@ def render_status_and_categories(meta, categories, last_query):
 # Tabela de resultados (resumo)
 @app.callback(
     Output('results-table-inner', 'children'),
-    Input('store-results', 'data'),
+    Input('store-results-sorted', 'data'),
+    Input('store-sort', 'data'),
     prevent_initial_call=True,
 )
-def render_results_table(results):
+def render_results_table(results, sort_state):
     if not results:
         return html.Div("Nenhum resultado encontrado", style={'color': '#555'})
     data = []
     for r in results:
-        d = r.get('details', {})
-        unidade = d.get('unidadeorgao_nomeunidade') or d.get('unidadeOrgao_nomeUnidade') or d.get('orgaoentidade_razaosocial') or d.get('nomeorgaoentidade') or 'N/A'
+        d = r.get('details', {}) or {}
+        unidade = d.get('orgaoentidade_razaosocial') or d.get('orgaoEntidade_razaosocial') or d.get('nomeorgaoentidade') or 'N/A'
         municipio = d.get('unidadeorgao_municipionome') or d.get('unidadeOrgao_municipioNome') or d.get('municipioentidade') or 'N/A'
         uf = d.get('unidadeorgao_ufsigla') or d.get('unidadeOrgao_ufSigla') or d.get('uf') or ''
-        local = f"{municipio}/{uf}" if uf else municipio
         valor = format_currency(d.get('valortotalestimado') or d.get('valorTotalEstimado') or d.get('valorfinal') or d.get('valorFinal') or 0)
-        data_enc = format_date(d.get('dataencerramentoproposta') or d.get('dataEncerramentoProposta') or d.get('dataEncerramento') or d.get('dataassinatura') or d.get('dataAssinatura') or 'N/A')
+        raw_enc = d.get('dataencerramentoproposta') or d.get('dataEncerramentoProposta') or d.get('dataEncerramento') or d.get('dataassinatura') or d.get('dataAssinatura') or 'N/A'
+        data_enc = _format_br_date(raw_enc)
+        enc_status, _enc_color = _enc_status_and_color(raw_enc)
         data.append({
             'Rank': r.get('rank'),
             'Órgão': unidade,
-            'Local': local,
+            'Município': municipio,
+            'UF': uf,
             'Similaridade': round(r.get('similarity', 0), 4),
             'Valor (R$)': valor,
             'Data Encerramento': str(data_enc),
+            'EncStatus': enc_status,
         })
-    cols = [{'name': k, 'id': k} for k in ['Rank', 'Órgão', 'Local', 'Similaridade', 'Valor (R$)', 'Data Encerramento']]
+    cols = [{'name': k, 'id': k} for k in ['Rank', 'Órgão', 'Município', 'UF', 'Similaridade', 'Valor (R$)', 'Data Encerramento']]
+    # Map current sort state to DataTable sort_by
+    st = sort_state or {'field': 'similaridade', 'direction': 'desc'}
+    field_to_col = {
+        'orgao': 'Órgão',
+        'municipio': 'Município',
+        'uf': 'UF',
+        'similaridade': 'Similaridade',
+        'valor': 'Valor (R$)',
+        'data': 'Data Encerramento',
+    }
+    sort_by = []
+    if st.get('field') in field_to_col:
+        sort_by = [{'column_id': field_to_col[st['field']], 'direction': st.get('direction', 'asc')}]
+    # Active header highlight (laranja) for current sorted column
+    active_col = field_to_col.get(st.get('field')) if st else None
+    header_cond = []
+    if active_col:
+        header_cond.append({
+            'if': {'column_id': active_col},
+            'backgroundColor': '#FFE6DB',  # light orange highlight
+            'color': '#FF5722',
+            'fontWeight': 'bold'
+        })
     return dash_table.DataTable(
+        id='results-dt',
         data=data,
         columns=cols,
+        sort_action='custom',
+        sort_by=sort_by,
         page_size=10,
         style_table={'overflowX': 'auto'},
         style_cell={'textAlign': 'left', 'fontSize': '12px', 'padding': '6px', 'maxWidth': '140px', 'overflow': 'hidden', 'textOverflow': 'ellipsis'},
         style_header={'backgroundColor': '#f8f9fa', 'fontWeight': 'bold', 'border': '1px solid #ddd', 'fontSize': '13px'},
-        style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': '#f2f2f2'}],
+        style_header_conditional=header_cond,
+        style_data_conditional=[
+            {'if': {'row_index': 'odd'}, 'backgroundColor': '#f2f2f2'},
+            {'if': {'filter_query': '{EncStatus} = "na"', 'column_id': 'Data Encerramento'}, 'color': COLOR_ENC_NA},
+            {'if': {'filter_query': '{EncStatus} = "expired"', 'column_id': 'Data Encerramento'}, 'color': COLOR_ENC_EXPIRED},
+            {'if': {'filter_query': '{EncStatus} = "lt3"', 'column_id': 'Data Encerramento'}, 'color': COLOR_ENC_LT3},
+            {'if': {'filter_query': '{EncStatus} = "lt7"', 'column_id': 'Data Encerramento'}, 'color': COLOR_ENC_LT7},
+            {'if': {'filter_query': '{EncStatus} = "lt15"', 'column_id': 'Data Encerramento'}, 'color': COLOR_ENC_LT15},
+            {'if': {'filter_query': '{EncStatus} = "lt30"', 'column_id': 'Data Encerramento'}, 'color': COLOR_ENC_LT30},
+            {'if': {'filter_query': '{EncStatus} = "gt30"', 'column_id': 'Data Encerramento'}, 'color': COLOR_ENC_GT30},
+        ],
         css=[{'selector': '.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table', 'rule': 'font-size: 11px !important;'}]
     )
 
@@ -972,23 +1410,41 @@ def render_results_table(results):
 ## Detalhes por resultado (cards)
 @app.callback(
     Output('results-details', 'children'),
-    Input('store-results', 'data'),
+    Input('store-results-sorted', 'data'),
     Input('store-last-query', 'data'),
     prevent_initial_call=True,
 )
 def render_details(results, last_query):
     if not results:
+        # Debug: sem resultados
+        try:
+            from gvg_search_core import SQL_DEBUG
+            if SQL_DEBUG:
+                print("[GSB][render_details] Nenhum resultado para renderizar.")
+        except Exception:
+            pass
         return []
+    try:
+        from gvg_search_core import SQL_DEBUG
+        if SQL_DEBUG:
+            print(f"[GSB][render_details] Renderizando {len(results)} cards de detalhe...")
+    except Exception:
+        pass
     cards = []
+    # Título do painel de detalhes (aparece junto com os cartões)
+    cards.append(html.Div('Detalhes', style=styles['card_title']))
     for r in results:
         d = r.get('details', {}) or {}
         descricao_full = d.get('descricaocompleta') or d.get('descricaoCompleta') or d.get('objeto') or ''
-        destaque = _highlight_terms(descricao_full, last_query or '')
+         # Desativado o highlight por performance; usar texto puro
+        destaque = descricao_full
 
         valor = format_currency(d.get('valortotalestimado') or d.get('valorTotalEstimado') or d.get('valorfinal') or d.get('valorFinal') or 0)
         data_inc = _format_br_date(d.get('datainclusao') or d.get('dataInclusao') or d.get('dataassinatura') or d.get('dataAssinatura'))
         data_ab = _format_br_date(d.get('dataaberturaproposta') or d.get('dataAberturaProposta'))
-        data_en = _format_br_date(d.get('dataencerramentoproposta') or d.get('dataEncerramentoProposta') or d.get('dataEncerramento'))
+        raw_en = d.get('dataencerramentoproposta') or d.get('dataEncerramentoProposta') or d.get('dataEncerramento')
+        data_en = _format_br_date(raw_en)
+        _enc_status, enc_color = _enc_status_and_color(raw_en)
 
         orgao = d.get('orgaoentidade_razaosocial') or d.get('orgaoEntidade_razaosocial') or d.get('nomeorgaoentidade') or 'N/A'
         unidade = d.get('unidadeorgao_nomeunidade') or d.get('unidadeOrgao_nomeUnidade') or 'N/A'
@@ -1004,45 +1460,622 @@ def render_details(results, last_query):
             link_text = link_text[:97] + '...'
 
         body = html.Div([
-            html.Div([
-                html.Span('Órgão: ', style={'fontWeight': 'bold'}), html.Span(orgao)
-            ]),
-            html.Div([
-                html.Span('Unidade: ', style={'fontWeight': 'bold'}), html.Span(unidade)
-            ]),
-            html.Div([
-                html.Span('ID PNCP: ', style={'fontWeight': 'bold'}), html.Span(str(pncp_id))
-            ]),
-            html.Div([
-                html.Span('Local: ', style={'fontWeight': 'bold'}), html.Span(local)
-            ]),
-            html.Div([
-                html.Span('Valor: ', style={'fontWeight': 'bold'}), html.Span(valor)
-            ]),
-            html.Div([
-                html.Span('Datas: ', style={'fontWeight': 'bold'}), html.Span(f"Inclusão: {data_inc} | Abertura: {data_ab} | Encerramento: {data_en}")
-            ]),
-            html.Div([
-                html.Span('Link: ', style={'fontWeight': 'bold'}), html.A(link_text, href=link, target='_blank', style={'wordBreak': 'break-all'}) if link else html.Span('N/A')
-            ], style={'marginBottom': '8px'}),
-            html.Div([
-                html.Span('Descrição: ', style={'fontWeight': 'bold'}),
-                html.Div(dcc.Markdown(dangerously_allow_html=True, children=destaque))
-            ])
-        ], style={'marginTop': '20px', 'paddingTop': '16px', 'paddingLeft': '40px', 'paddingRight': '160px'})
+                html.Div([
+                    html.Span('Órgão: ', style={'fontWeight': 'bold'}), html.Span(orgao)
+                ]),
+                html.Div([
+                    html.Span('Unidade: ', style={'fontWeight': 'bold'}), html.Span(unidade)
+                ]),
+                html.Div([
+                    html.Span('ID PNCP: ', style={'fontWeight': 'bold'}), html.Span(str(pncp_id))
+                ]),
+                html.Div([
+                    html.Span('Local: ', style={'fontWeight': 'bold'}), html.Span(local)
+                ]),
+                html.Div([
+                    html.Span('Valor: ', style={'fontWeight': 'bold'}), html.Span(valor)
+                ]),
+                html.Div([
+                    html.Span('Datas: ', style={'fontWeight': 'bold'}),
+                    html.Span(f"Abertura: {data_ab} | Encerramento: "),
+                    html.Span(str(data_en), style={'color': enc_color})
+                ]),
+                html.Div([
+                    html.Span('Link: ', style={'fontWeight': 'bold'}), html.A(link_text, href=link, target='_blank', style={'wordBreak': 'break-all'}) if link else html.Span('N/A')
+                ], style={'marginBottom': '8px'}),
+                html.Div([
+                    html.Span('Descrição: ', style={'fontWeight': 'bold'}),
+                    html.Div(dcc.Markdown(children=destaque))
+                ])
+        ], style={'marginTop': '20px', 'paddingTop': '16px', 'paddingLeft': '20px', 'paddingRight': '20px'})
 
-        # Botões (dummy) no canto superior direito
-        action_btns = html.Div([
-            html.Button('Resumo do Edital', title='Resumo do Edital (dummy)', style={'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none', 'borderRadius': '16px', 'height': '28px', 'padding': '0 10px', 'cursor': 'pointer'}),
-            html.Button('Itens do Edital', title='Itens do Edital (dummy)', style={'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none', 'borderRadius': '16px', 'height': '28px', 'padding': '0 10px', 'cursor': 'pointer', 'marginLeft': '6px'}),
-        ], style={'position': 'absolute', 'top': '10px', 'right': '10px', 'display': 'flex'})
+        # Painel esquerdo (detalhes)
+        left_panel = html.Div(body, style={'width': '60%'})
 
+    # Painel direito (Itens/Documento/Resumo)
+        right_panel = html.Div([
+                # Botões dentro do painel direito (canto superior direito do painel)
+                html.Div([
+                    html.Button('Itens', id={'type': 'itens-btn', 'pncp': str(pncp_id)}, title='Itens', style={'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none', 'borderRadius': '16px', 'height': '28px', 'padding': '0 10px', 'cursor': 'pointer'}),
+                    html.Button('Documentos', id={'type': 'docs-btn', 'pncp': str(pncp_id)}, title='Documentos', style={'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none', 'borderRadius': '16px', 'height': '28px', 'padding': '0 10px', 'cursor': 'pointer', 'marginLeft': '6px'}),
+                    html.Button('Resumo', id={'type': 'resumo-btn', 'pncp': str(pncp_id)}, title='Resumo', style={'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none', 'borderRadius': '16px', 'height': '28px', 'padding': '0 10px', 'cursor': 'pointer', 'marginLeft': '6px'}),
+                ], style={'position': 'absolute', 'top': '0px', 'right': '10px', 'display': 'flex'}),
+                # Wrapper fixo com 3 painéis sobrepostos (somente um visível)
+                html.Div(
+                    id={'type': 'panel-wrapper', 'pncp': str(pncp_id)},
+                    children=[
+                        html.Div(
+                            id={'type': 'itens-card', 'pncp': str(pncp_id)},
+                            children=[],
+                            style={'position': 'absolute', 'top': '0', 'left': '0', 'right': '0', 'bottom': '0', 'display': 'none', 'overflowY': 'auto', 'paddingRight': '8px', 'boxSizing': 'border-box'}
+                        ),
+                        html.Div(
+                            id={'type': 'docs-card', 'pncp': str(pncp_id)},
+                            children=[],
+                            style={'position': 'absolute', 'top': '0', 'left': '0', 'right': '0', 'bottom': '0', 'display': 'none', 'overflowY': 'auto', 'paddingRight': '8px', 'boxSizing': 'border-box'}
+                        ),
+                        html.Div(
+                            id={'type': 'resumo-card', 'pncp': str(pncp_id)},
+                            children=[],
+                            style={'position': 'absolute', 'top': '0', 'left': '0', 'right': '0', 'bottom': '0', 'display': 'none', 'overflowY': 'auto', 'paddingRight': '8px', 'boxSizing': 'border-box'}
+                        ),
+                    ],
+                    style={
+                        'marginTop': '50px', 'backgroundColor': '#FFFFFF', 'border': '1px solid transparent',
+                        'borderRadius': '12px', 'padding': '10px',
+                        'flex': '1 1 auto', 'minHeight': '0', 'position': 'relative', 'display': 'none'
+                    }
+                )
+            ], style={'width': '40%', 'position': 'relative', 'display': 'flex', 'flexDirection': 'column'})
+
+        # Card final com duas colunas (detalhes 60% / itens 40%)
+        _card_style = dict(styles['result_card'])
+        _card_style['marginBottom'] = '6px'  # reduzir espaço vertical entre cards (apenas nos cards de detalhe)
+        # Debug por card
+        try:
+            from gvg_search_core import SQL_DEBUG
+            if SQL_DEBUG:
+                print(f"[GSB][render_details] Card rank={r.get('rank')} pncp={pncp_id} pronto.")
+        except Exception:
+            pass
         cards.append(html.Div([
-            body,
-            action_btns,
+            html.Div([
+                left_panel,
+                right_panel
+            ], style={'display': 'flex', 'gap': '10px', 'alignItems': 'stretch'}),
             html.Div(str(r.get('rank')), style=styles['result_number'])
-        ], style=styles['result_card']))
+        ], style=_card_style))
     return cards
+
+
+# Sync sorted results with sort state and base results
+@app.callback(
+    Output('store-results-sorted', 'data'),
+    Input('store-results', 'data'),
+    Input('store-sort', 'data'),
+    prevent_initial_call=True,
+)
+def compute_sorted_results(results, sort_state):
+    try:
+        return _sorted_for_ui(results or [], sort_state or {'field': 'similaridade', 'direction': 'desc'})
+    except Exception:
+        return results or []
+
+
+# Initialize default sort based on meta order when a search completes
+@app.callback(
+    Output('store-sort', 'data'),
+    Input('store-meta', 'data'),
+    prevent_initial_call=True,
+)
+def init_sort_from_meta(meta):
+    if not meta:
+        raise PreventUpdate
+    order = meta.get('order', 1)
+    if order == 1:
+        return {'field': 'similaridade', 'direction': 'desc'}
+    if order == 2:
+        # keep ascending to show mais próximo ao início (compatível com _sort_results)
+        return {'field': 'data', 'direction': 'asc'}
+    if order == 3:
+        return {'field': 'valor', 'direction': 'desc'}
+    return {'field': 'similaridade', 'direction': 'desc'}
+
+
+@app.callback(
+    Output('store-sort', 'data', allow_duplicate=True),
+    Input('results-dt', 'sort_by'),
+    State('store-sort', 'data'),
+    prevent_initial_call=True,
+)
+def on_header_sort(sort_by, curr):
+    # sort_by is a list like [{'column_id': 'Órgão', 'direction': 'asc'}]
+    if not sort_by:
+        raise PreventUpdate
+    sb = sort_by[0]
+    col = sb.get('column_id')
+    dir_ = sb.get('direction') or 'asc'
+    col_to_field = {
+        'Órgão': 'orgao',
+        'Município': 'municipio',
+        'UF': 'uf',
+        'Similaridade': 'similaridade',
+        'Valor (R$)': 'valor',
+        'Data Encerramento': 'data',
+    }
+    fld = col_to_field.get(col)
+    if not fld:
+        raise PreventUpdate
+    new_state = {'field': fld, 'direction': dir_}
+    curr = curr or {}
+    if curr.get('field') == new_state['field'] and curr.get('direction') == new_state['direction']:
+        raise PreventUpdate
+    return new_state
+
+
+@app.callback(
+    Output({'type': 'itens-card', 'pncp': ALL}, 'children'),
+    Output({'type': 'itens-card', 'pncp': ALL}, 'style'),
+    Output({'type': 'itens-btn', 'pncp': ALL}, 'style'),
+    Output('store-cache-itens', 'data', allow_duplicate=True),
+    Input({'type': 'itens-btn', 'pncp': ALL}, 'n_clicks'),
+    Input('store-panel-active', 'data'),
+    State('store-results-sorted', 'data'),
+    State('store-cache-itens', 'data'),
+    prevent_initial_call=True,
+)
+def load_itens_for_cards(n_clicks_list, active_map, results, cache_itens):
+    from gvg_search_core import fetch_itens_contratacao
+    children_out, style_out, btn_styles = [], [], []
+    updated_cache = dict(cache_itens or {})
+    if not results or not isinstance(n_clicks_list, list):
+        return children_out, style_out, btn_styles, updated_cache
+    # Build pncp id list aligned with components order
+    pncp_ids = []
+    for r in results:
+        d = (r or {}).get('details', {}) or {}
+        pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
+        pncp_ids.append(str(pid) if pid is not None else 'N/A')
+    count = min(len(pncp_ids), len(n_clicks_list))
+    for i in range(count):
+        pid = pncp_ids[i]
+        clicks = n_clicks_list[i] or 0
+        # Ativo se mapa marcar 'itens' para esse pncp
+        is_open = (str(pid) in (active_map or {}) and (active_map or {}).get(str(pid)) == 'itens')
+
+        # Button style toggle
+        normal_btn_style = {
+            'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none',
+            'borderRadius': '16px', 'height': '28px', 'padding': '0 10px',
+            'cursor': 'pointer', 'marginLeft': '6px'
+        }
+        inverted_btn_style = {
+            'backgroundColor': 'white', 'color': '#FF5722', 'border': '1px solid #FF5722',
+            'borderRadius': '16px', 'height': '28px', 'padding': '0 10px',
+            'cursor': 'pointer', 'marginLeft': '6px'
+        }
+        btn_styles.append(inverted_btn_style if is_open else normal_btn_style)
+
+        st = {
+            'position': 'absolute', 'top': '0', 'left': '0', 'right': '0', 'bottom': '0',
+            'display': 'block' if is_open else 'none', 'overflowY': 'auto',
+            'paddingRight': '8px', 'boxSizing': 'border-box'
+        }
+        style_out.append(st)
+
+        if is_open and pid and pid != 'N/A':
+            # Cache: use if available
+            itens = None
+            try:
+                if isinstance(cache_itens, dict) and str(pid) in cache_itens:
+                    itens = cache_itens.get(str(pid)) or []
+            except Exception:
+                itens = None
+            if itens is None:
+                try:
+                    itens = fetch_itens_contratacao(pid, limit=500) or []
+                except Exception:
+                    itens = []
+            rows = []
+            total_sum = 0.0
+            for idx_it, it in enumerate(itens, start=1):
+                desc = (it.get('descricao_item') or it.get('descricao') or it.get('objeto') or '')
+                desc = str(desc)
+                if len(desc) > 50:
+                    desc = desc[:47] + '...'
+                qty = it.get('quantidade_item') or it.get('quantidade') or it.get('qtd')
+                unit = it.get('valor_unitario_estimado') or it.get('valor_unitario') or it.get('valorUnitario')
+                tot = it.get('valor_total_estimado') or it.get('valor_total') or it.get('valorTotal')
+                f_qty = _to_float(qty) or 0.0
+                f_unit = _to_float(unit) or 0.0
+                f_total = _to_float(tot) if _to_float(tot) is not None else (f_qty * f_unit)
+                total_sum += (f_total or 0.0)
+                rows.append({
+                    'Nº': idx_it,
+                    'Descrição': desc,
+                    'Qtde': _format_qty(f_qty),
+                    'Unit (R$)': _format_money(f_unit),
+                    'Total (R$)': _format_money(f_total),
+                })
+            cols = [{'name': k, 'id': k} for k in ['Nº', 'Descrição', 'Qtde', 'Unit (R$)', 'Total (R$)']]
+            table = dash_table.DataTable(
+                data=rows,
+                columns=cols,
+                page_action='none',
+                style_table={'overflowX': 'auto', 'minWidth': '100%'},
+                style_cell={'textAlign': 'left', 'fontSize': '12px', 'padding': '6px'},
+                style_header={'backgroundColor': '#f8f9fa', 'fontWeight': 'bold', 'border': '1px solid #ddd', 'fontSize': '13px'},
+                style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': '#f2f2f2'}],
+                css=[{'selector': '.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table', 'rule': 'font-size: 11px !important;'}]
+            )
+            summary = html.Div([
+                html.Span('Itens: ', style={'fontWeight': 'bold'}), html.Span(str(len(rows))),
+                html.Span('  |  '),
+                html.Span('Total: ', style={'fontWeight': 'bold'}), html.Span(_format_money(total_sum)),
+            ], style={'marginTop': '6px', 'textAlign': 'right'})
+            # persist cache
+            try:
+                updated_cache[str(pid)] = itens
+            except Exception:
+                pass
+            children_out.append([table, summary])
+        else:
+            children_out.append([])
+    return children_out, style_out, btn_styles, updated_cache
+
+@app.callback(
+    Output({'type': 'docs-card', 'pncp': ALL}, 'children'),
+    Output({'type': 'docs-card', 'pncp': ALL}, 'style'),
+    Output({'type': 'docs-btn', 'pncp': ALL}, 'style'),
+    Output('store-cache-docs', 'data', allow_duplicate=True),
+    Input({'type': 'docs-btn', 'pncp': ALL}, 'n_clicks'),
+    Input('store-panel-active', 'data'),
+    State('store-results-sorted', 'data'),
+    State('store-cache-docs', 'data'),
+    prevent_initial_call=True,
+)
+def load_docs_for_cards(n_clicks_list, active_map, results, cache_docs):
+    from gvg_search_core import fetch_documentos
+    children_out, style_out, btn_styles = [], [], []
+    updated_cache = dict(cache_docs or {})
+    if not results or not isinstance(n_clicks_list, list):
+        return children_out, style_out, btn_styles, updated_cache
+    pncp_ids = []
+    for r in results:
+        d = (r or {}).get('details', {}) or {}
+        pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
+        pncp_ids.append(str(pid) if pid is not None else 'N/A')
+    count = min(len(pncp_ids), len(n_clicks_list))
+    for i in range(count):
+        pid = pncp_ids[i]
+        clicks = n_clicks_list[i] or 0
+        is_open = (str(pid) in (active_map or {}) and (active_map or {}).get(str(pid)) == 'docs')
+
+        normal_btn_style = {
+            'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none',
+            'borderRadius': '16px', 'height': '28px', 'padding': '0 10px',
+            'cursor': 'pointer', 'marginLeft': '6px'
+        }
+        inverted_btn_style = {
+            'backgroundColor': 'white', 'color': '#FF5722', 'border': '1px solid #FF5722',
+            'borderRadius': '16px', 'height': '28px', 'padding': '0 10px',
+            'cursor': 'pointer', 'marginLeft': '6px'
+        }
+        btn_styles.append(inverted_btn_style if is_open else normal_btn_style)
+
+        st = {
+            'position': 'absolute', 'top': '0', 'left': '0', 'right': '0', 'bottom': '0',
+            'display': 'block' if is_open else 'none', 'overflowY': 'auto',
+            'paddingRight': '8px', 'boxSizing': 'border-box'
+        }
+        style_out.append(st)
+
+        if is_open and pid and pid != 'N/A':
+            # Cache: use if available
+            docs = None
+            try:
+                if isinstance(cache_docs, dict) and str(pid) in cache_docs:
+                    docs = cache_docs.get(str(pid)) or []
+            except Exception:
+                docs = None
+            if docs is None:
+                try:
+                    docs = fetch_documentos(pid) or []
+                except Exception:
+                    docs = []
+            rows = []
+            for idx_doc, doc in enumerate(docs, start=1):
+                nome = doc.get('nome') or doc.get('titulo') or 'Documento'
+                url = doc.get('url') or doc.get('uri') or ''
+                # Render as markdown link [nome](url)
+                safe_nome = str(nome).replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)')
+                doc_markdown = f"[{safe_nome}]({url})" if url else safe_nome
+                rows.append({
+                    'Nº': idx_doc,
+                    'Documento': doc_markdown,
+                })
+            cols = [
+                {'name': 'Nº', 'id': 'Nº'},
+                {'name': 'Documento', 'id': 'Documento', 'presentation': 'markdown'},
+            ]
+            table = dash_table.DataTable(
+                data=rows,
+                columns=cols,
+                page_action='none',
+                markdown_options={'link_target': '_blank'},
+                style_table={'overflowX': 'auto', 'minWidth': '100%'},
+                style_cell={'textAlign': 'left', 'fontSize': '12px', 'padding': '6px'},
+                style_header={'backgroundColor': '#f8f9fa', 'fontWeight': 'bold', 'border': '1px solid #ddd', 'fontSize': '13px'},
+                style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': '#f2f2f2'}],
+                css=[{'selector': '.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table', 'rule': 'font-size: 11px !important;'}]
+            )
+            try:
+                updated_cache[str(pid)] = docs
+            except Exception:
+                pass
+            children_out.append([table])
+        else:
+            children_out.append([])
+    return children_out, style_out, btn_styles, updated_cache
+
+@app.callback(
+    Output({'type': 'resumo-card', 'pncp': ALL}, 'children'),
+    Output({'type': 'resumo-card', 'pncp': ALL}, 'style'),
+    Output({'type': 'resumo-btn', 'pncp': ALL}, 'style'),
+    Output('store-cache-resumo', 'data', allow_duplicate=True),
+    Input({'type': 'resumo-btn', 'pncp': ALL}, 'n_clicks'),
+    Input('store-panel-active', 'data'),
+    State('store-results-sorted', 'data'),
+    State('store-cache-resumo', 'data'),
+    prevent_initial_call=True,
+)
+def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
+    """Generate and display a summary for the main document of each process.
+
+    Heuristic: prefer PDFs matching common names (edital, termo de referencia/TR, projeto basico,
+    anexo i, pregão/pe/concorrência/dispensa); else first PDF; else first document.
+    """
+    from gvg_search_core import fetch_documentos, summarize_document, process_pncp_document, DOCUMENTS_AVAILABLE
+    children_out, style_out, btn_styles = [], [], []
+    # Debug início do callback
+    try:
+        from gvg_search_core import SQL_DEBUG
+        if SQL_DEBUG:
+            print(f"[GSB][RESUMO] Callback acionado. clicks={n_clicks_list if isinstance(n_clicks_list,list) else 'N/A'} results={len(results) if isinstance(results,list) else 'N/A'}")
+    except Exception:
+        pass
+    updated_cache = dict(cache_resumo or {})
+    if not results or not isinstance(n_clicks_list, list):
+        return children_out, style_out, btn_styles, updated_cache
+
+    # Helper to pick main doc
+    def pick_main_doc(docs: list) -> dict | None:
+        if not docs:
+            return None
+        # Normalize and score by keywords
+        keywords = [
+            r"edital",
+            r"termo\s+de\s+refer(ê|e)ncia|termo\s+de\s+referencia|\bTR\b",
+            r"projeto\s+b(á|a)sico|projeto\s+basico",
+            r"anexo\s*i\b",
+            r"preg(ã|a)o|\bpe\b|concorr(ê|e)ncia|dispensa",
+        ]
+        def is_pdf(name: str) -> bool:
+            return name.lower().endswith('.pdf') if name else False
+        # First pass: keyword + pdf
+        for kw in keywords:
+            rx = re.compile(kw, flags=re.IGNORECASE)
+            for d in docs:
+                nome = str(d.get('nome') or d.get('titulo') or '')
+                url = str(d.get('url') or d.get('uri') or '')
+                if (nome and rx.search(nome)) or (url and rx.search(url)):
+                    # Prefer pdf
+                    if is_pdf(nome) or is_pdf(url):
+                        return d
+        # Second pass: first pdf
+        for d in docs:
+            nome = str(d.get('nome') or d.get('titulo') or '')
+            url = str(d.get('url') or d.get('uri') or '')
+            if is_pdf(nome) or is_pdf(url):
+                return d
+        # Fallback: first
+        return docs[0]
+
+    pncp_ids = []
+    for r in results:
+        d = (r or {}).get('details', {}) or {}
+        pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
+        pncp_ids.append(str(pid) if pid is not None else 'N/A')
+
+    count = min(len(pncp_ids), len(n_clicks_list))
+    for i in range(count):
+        pid = pncp_ids[i]
+        clicks = n_clicks_list[i] or 0
+        is_open = (str(pid) in (active_map or {}) and (active_map or {}).get(str(pid)) == 'resumo')
+        try:
+            from gvg_search_core import SQL_DEBUG
+            if SQL_DEBUG:
+                print(f"[GSB][RESUMO] index={i} pncp={pid} clicks={clicks} -> {'abrir' if is_open else 'fechar'}")
+        except Exception:
+            pass
+
+        normal_btn_style = {
+            'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none',
+            'borderRadius': '16px', 'height': '28px', 'padding': '0 10px',
+            'cursor': 'pointer', 'marginLeft': '6px'
+        }
+        inverted_btn_style = {
+            'backgroundColor': 'white', 'color': '#FF5722', 'border': '1px solid #FF5722',
+            'borderRadius': '16px', 'height': '28px', 'padding': '0 10px',
+            'cursor': 'pointer', 'marginLeft': '6px'
+        }
+        btn_styles.append(inverted_btn_style if is_open else normal_btn_style)
+
+        st = {
+            'position': 'absolute', 'top': '0', 'left': '0', 'right': '0', 'bottom': '0',
+            'display': 'block' if is_open else 'none', 'overflowY': 'auto',
+            'paddingRight': '8px', 'boxSizing': 'border-box'
+        }
+        style_out.append(st)
+
+        if is_open and pid and pid != 'N/A':
+            try:
+                # Cache documentos para escolher principal rapidamente
+                docs = None
+                if isinstance(cache_resumo, dict) and str(pid) in cache_resumo and isinstance(cache_resumo[str(pid)], dict) and 'docs' in cache_resumo[str(pid)]:
+                    docs = cache_resumo[str(pid)]['docs'] or []
+                if docs is None:
+                    docs = fetch_documentos(pid) or []
+            except Exception:
+                docs = []
+            try:
+                from gvg_search_core import SQL_DEBUG
+                if SQL_DEBUG:
+                    print(f"[GSB][RESUMO] pncp={pid} documentos_encontrados={len(docs)}")
+            except Exception:
+                pass
+            if not docs:
+                children_out.append(html.Div('Nenhum documento encontrado para este processo.', style={'color': '#555'}))
+                continue
+
+            main_doc = pick_main_doc(docs)
+            if not main_doc:
+                children_out.append(html.Div('Nenhum documento disponível para resumo.', style={'color': '#555'}))
+                continue
+
+            nome = main_doc.get('nome') or main_doc.get('titulo') or 'Documento'
+            url = main_doc.get('url') or main_doc.get('uri') or ''
+            try:
+                from gvg_search_core import SQL_DEBUG
+                if SQL_DEBUG:
+                    short = (url[:80] + '...') if len(url) > 80 else url
+                    print(f"[GSB][RESUMO] Documento escolhido: nome='{nome}' url='{short}'")
+            except Exception:
+                pass
+            pncp_data = {}
+            # Build pncp_data from matching result
+            try:
+                d = (results[i] or {}).get('details', {}) or {}
+                pncp_data = _build_pncp_data(d)
+            except Exception:
+                pncp_data = {}
+
+            # Call summarizer (prefer summarize_document) with cache
+            summary_text = None
+            try:
+                if isinstance(cache_resumo, dict) and str(pid) in cache_resumo and isinstance(cache_resumo[str(pid)], dict) and 'summary' in cache_resumo[str(pid)]:
+                    summary_text = cache_resumo[str(pid)]['summary']
+            except Exception:
+                summary_text = None
+            if DOCUMENTS_AVAILABLE:
+                try:
+                    if summarize_document:
+                        try:
+                            from gvg_search_core import SQL_DEBUG
+                            if SQL_DEBUG:
+                                print("[GSB][RESUMO] Gerando resumo via summarize_document...")
+                        except Exception:
+                            pass
+                        summary_text = summarize_document(url, max_tokens=500, document_name=nome, pncp_data=pncp_data)
+                    elif process_pncp_document:
+                        try:
+                            from gvg_search_core import SQL_DEBUG
+                            if SQL_DEBUG:
+                                print("[GSB][RESUMO] Gerando resumo via process_pncp_document (fallback)...")
+                        except Exception:
+                            pass
+                        summary_text = process_pncp_document(url, max_tokens=500, document_name=nome, pncp_data=pncp_data)
+                except Exception as e:
+                    summary_text = f"Erro ao gerar resumo: {e}"
+            else:
+                summary_text = 'Pipeline de documentos não está disponível neste ambiente.'
+
+            try:
+                from gvg_search_core import SQL_DEBUG
+                if SQL_DEBUG and summary_text is not None:
+                    sz = len(summary_text) if isinstance(summary_text, str) else 'N/A'
+                    print(f"[GSB][RESUMO] Resumo gerado (chars={sz})")
+            except Exception:
+                pass
+
+            if not summary_text:
+                summary_text = 'Não foi possível gerar o resumo.'
+
+            try:
+                updated_cache[str(pid)] = {'docs': docs, 'summary': summary_text}
+            except Exception:
+                pass
+            children_out.append([dcc.Markdown(children=summary_text, className='markdown-summary')])
+        else:
+            children_out.append([])
+    return children_out, style_out, btn_styles, updated_cache
+
+# Define painel ativo por PNCP ao clicar em qualquer botão (sem toggle de fechamento)
+@app.callback(
+    Output('store-panel-active', 'data', allow_duplicate=True),
+    Input({'type': 'itens-btn', 'pncp': ALL}, 'n_clicks'),
+    Input({'type': 'docs-btn', 'pncp': ALL}, 'n_clicks'),
+    Input({'type': 'resumo-btn', 'pncp': ALL}, 'n_clicks'),
+    State('store-results-sorted', 'data'),
+    State('store-panel-active', 'data'),
+    prevent_initial_call=True,
+)
+def set_active_panel(it_clicks, dc_clicks, rs_clicks, results, active_map):
+    active_map = dict(active_map or {})
+    if not results:
+        raise PreventUpdate
+    # Determine which pncp/index fired
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    trig = ctx.triggered[0]['prop_id']
+    # id is like {"type":"itens-btn","pncp":"..."}.n_clicks
+    try:
+        import json as _json
+        id_str = trig.split('.')[0]
+        trg_id = _json.loads(id_str)
+    except Exception:
+        raise PreventUpdate
+    pncp = str(trg_id.get('pncp'))
+    t = trg_id.get('type')
+    # Toggle: if clicking the same active tab, remove selection
+    current = active_map.get(pncp)
+    if t == 'itens-btn':
+        active_map[pncp] = None if current == 'itens' else 'itens'
+    elif t == 'docs-btn':
+        active_map[pncp] = None if current == 'docs' else 'docs'
+    elif t == 'resumo-btn':
+        active_map[pncp] = None if current == 'resumo' else 'resumo'
+    # Clean None to avoid truthy checks
+    if active_map.get(pncp) is None:
+        active_map.pop(pncp, None)
+    return active_map
+
+# Mostrar wrapper apenas se alguma aba ativa existir para o PNCP correspondente
+@app.callback(
+    Output({'type': 'panel-wrapper', 'pncp': ALL}, 'style'),
+    Input('store-panel-active', 'data'),
+    State('store-results-sorted', 'data'),
+    prevent_initial_call=True,
+)
+def toggle_panel_wrapper(active_map, results):
+    styles_out = []
+    pncp_ids = []
+    for r in (results or []):
+        d = (r or {}).get('details', {}) or {}
+        pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
+        pncp_ids.append(str(pid) if pid is not None else 'N/A')
+    for pid in pncp_ids:
+        base = {
+            'marginTop': '50px', 'backgroundColor': '#FFFFFF', 'border': '1px solid transparent',
+            'borderRadius': '12px', 'padding': '10px',
+            'flex': '1 1 auto', 'minHeight': '0', 'position': 'relative', 'display': 'none'
+        }
+        if str(pid) in (active_map or {}):
+            base['display'] = 'block'
+            base['border'] = '1px solid #FF5722'
+        styles_out.append(base)
+    return styles_out
 
 ## Visibilidade dos painéis de resultado
 @app.callback(
@@ -1224,33 +2257,9 @@ app.index_string = '''
         {%favicon%}
         {%css%}
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
-        <style>
-            /* Compact controls inside left panel config card */
-            .gvg-controls .Select-control { min-height: 32px; height: 32px; border-radius: 16px; font-size: 12px; border: 1px solid #D0D7E2; box-shadow: none; }
-            .gvg-controls .is-focused .Select-control, .gvg-controls .Select.is-focused > .Select-control { border-color: #52ACFF; box-shadow: 0 0 0 2px rgba(82,172,255,0.12); }
-            .gvg-controls .is-open .Select-control { border-color: #52ACFF; }
-            .gvg-controls .Select-value-label,
-            .gvg-controls .Select-option,
-            .gvg-controls .VirtualizedSelectOption,
-            .gvg-controls .Select-placeholder { font-size: 12px; }
-            .gvg-controls .Select-menu-outer { font-size: 12px; border-radius: 12px; }
-            .gvg-controls input[type="number"] { height: 32px; border-radius: 16px; font-size: 12px; padding: 6px 10px; border: 1px solid #D0D7E2; outline: none; }
-            .gvg-controls input[type="number"]:focus { border-color: #52ACFF; box-shadow: 0 0 0 2px rgba(82,172,255,0.12); outline: none; }
-            /* Reduce label spacing slightly */
-            .gvg-controls label { font-size: 12px; margin-bottom: 4px; }
-            /* Remove default input spinners for consistent look (optional) */
-            .gvg-controls input[type=number]::-webkit-outer-spin-button,
-            .gvg-controls input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-            .gvg-controls input[type=number] { -moz-appearance: textfield; }
-            /* Horizontal form rows */
-            .gvg-controls .gvg-form-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-            .gvg-controls .gvg-form-label { width: 130px; min-width: 130px; font-size: 12px; color: #003A70; margin: 0; font-weight: 600; }
-            .gvg-controls .gvg-form-row > *:last-child { flex: 1; }
-
-            /* History row hover: show delete button */
-            .history-item-row .delete-btn { opacity: 0; transition: opacity 0.15s ease-in-out; }
-            .history-item-row:hover .delete-btn { opacity: 1; }
-            .history-item-row .delete-btn:hover { background-color: #FDEDEC; }
+    <style>
+            /* CSS importado do módulo gvg_css.py */
+            %CSS_ALL%
         </style>
     </head>
     <body>
@@ -1279,10 +2288,11 @@ app.index_string = '''
         </footer>
     </body>
 </html>
-'''
+'''.replace('%CSS_ALL%', CSS_ALL)
 
 
 if __name__ == '__main__':
     # Porta padrão diferente do Reports para evitar conflito
-    app.run_server(debug=True, port=8060, dev_tools_hot_reload=True, dev_tools_props_check=False, dev_tools_ui=False)
+    # Desativar hot-reload para evitar resets durante processamento pesado de documentos
+    app.run_server(debug=True, port=8060, dev_tools_hot_reload=False, dev_tools_props_check=False, dev_tools_ui=False)
 

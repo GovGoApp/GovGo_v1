@@ -324,3 +324,49 @@ Output:
 - Datas usam campo default correto? (sim)
 - requires_join_embeddings coerente? (sim)
 - JSON válido, sem texto fora? (sim)
+
+11. Compatibilidade e Padrões de SQL (Recomendado)
+• Placeholders/curingas:
+  - Nunca usar placeholders do driver (ex.: %s, %(nome)s, ?, :1) nas sql_conditions; sempre gerar literais completas.
+  - Em padrões LIKE/ILIKE, usar sempre '%%' em vez de '%' (ex.: ILIKE '%%EBSERH%%').
+  - Em listas (ILIKE ANY), manter literais: ILIKE ANY (ARRAY['%%A%%','%%B%%']::text[]).
+• Exclusão robusta de capitais (ex.: “tirando capitais” nas regiões Norte/Nordeste):
+  - Preferir igualdade normalizada (melhor precisão que padrões amplos):
+    NOT (
+      unaccent(lower(c.unidade_orgao_municipio_nome)) = ANY (
+        ARRAY[
+          'salvador','recife','aracaju','maceio','sao luis','teresina','fortaleza','natal','joao pessoa',
+          'manaus','boa vista','macapa','belem','palmas','porto velho','rio branco'
+        ]::text[]
+      )
+    )
+  - Se unaccent indisponível, usar apenas lower(...) e literais sem acento.
+  - Ajustar a lista de capitais conforme a(s) região(ões) inferida(s).
+
+11.1. Padrões genéricos para nomes (qualquer campo textual)
+Use estes padrões para qualquer filtro por nome(s) em campos textuais (ex.: c.unidade_orgao_nome_unidade, c.orgao_entidade_razao_social, c.usuario_nome, c.modalidade_nome, c.modo_disputa_nome). Atenção: para c.objeto_compra só gerar condição quando explicitamente pedido (ex.: “objeto contém ...”).
+
+• Normalização recomendada:
+  - Aplique unaccent(lower(<CAMPO>)) no lado esquerdo.
+  - Remova acentos e coloque em minúsculas os literais de nomes.
+
+• Inclusão por lista (match exato normalizado):
+  - Ex.: unaccent(lower(c.<CAMPO>)) = ANY (ARRAY['nome1','nome2', ...]::text[])
+
+• Exclusão por lista (match exato normalizado):
+  - Ex.: NOT (unaccent(lower(c.<CAMPO>)) = ANY (ARRAY['nome1','nome2', ...]::text[]))
+
+• Contém/substring (quando pedido: “contém”, “inclua termos”, etc.):
+  - Preferir ILIKE ANY em vez de OR gigante; sempre com '%%' nos padrões:
+    - Ex.: unaccent(lower(c.<CAMPO>)) ILIKE ANY (ARRAY['%%termo1%%','%%termo2%%']::text[])
+    - Exclusão: NOT (unaccent(lower(c.<CAMPO>)) ILIKE ANY (ARRAY['%%termo%%']::text[]))
+
+• Múltiplos campos (aplicar a mais de um campo ao mesmo tempo):
+  - Inclusão: (unaccent(lower(c.<CAMPO1>)) = ANY (ARR) OR unaccent(lower(c.<CAMPO2>)) = ANY (ARR))
+  - Exclusão: NOT (unaccent(lower(c.<CAMPO1>)) = ANY (ARR) OR unaccent(lower(c.<CAMPO2>)) = ANY (ARR))
+  - Para substring: substitua “= ANY” por “ILIKE ANY (ARRAY['%%...%%']::text[])”.
+
+• Observações:
+  - Tipar sempre os arrays como ::text[].
+  - Se a extensão unaccent não estiver disponível, use apenas lower(c.<CAMPO>) e literais sem acento.
+  - Para evitar falsos positivos, prefira igualdade normalizada; use ILIKE apenas quando a intenção for substring.

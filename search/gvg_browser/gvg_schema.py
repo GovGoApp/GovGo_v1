@@ -109,6 +109,7 @@ CATEGORIA_FIELDS: Dict[str, FieldMeta] = {
 CONTRATACAO_TABLE = 'contratacao'
 CONTRATACAO_EMB_TABLE = 'contratacao_emb'
 CATEGORIA_TABLE = 'categoria'
+ITEM_CONTRATACAO_TABLE = 'item_contratacao'
 
 PRIMARY_KEY = 'numero_controle_pncp'
 EMB_VECTOR_FIELD = 'embeddings'
@@ -168,6 +169,53 @@ def build_category_similarity_select(embedding_param_placeholder: str = '%s') ->
     )
 
 
+# =============================
+# Schema – ITEM_CONTRATACAO (campos essenciais)
+# =============================
+ITEM_CONTRATACAO_FIELDS: Dict[str, FieldMeta] = {
+    'numero_controle_pncp': FieldMeta('numero_controle_pncp', 'numero_controle_pncp', 'text', 'FK para contratacao', ['pk','join','export']),
+    'numero_item': FieldMeta('numero_item', 'numero_item', 'text', 'Número do item', ['export','search']),
+    'descricao_item': FieldMeta('descricao_item', 'descricao_item', 'text', 'Descrição do item', ['export','search']),
+    'material_ou_servico': FieldMeta('material_ou_servico', 'material_ou_servico', 'text', 'Tipo (M/S)', ['export']),
+    'quantidade_item': FieldMeta('quantidade_item', 'quantidade_item', 'numeric', 'Quantidade', ['export']),
+    'unidade_medida': FieldMeta('unidade_medida', 'unidade_medida', 'text', 'Unidade de medida', ['export']),
+    'valor_unitario_estimado': FieldMeta('valor_unitario_estimado', 'valor_unitario_estimado', 'numeric', 'Valor unitário estimado', ['export']),
+    'valor_total_estimado': FieldMeta('valor_total_estimado', 'valor_total_estimado', 'numeric', 'Valor total estimado', ['export'])
+}
+
+# Ordem canônica de colunas para SELECT de itens
+ITEM_CONTRATACAO_ORDER: List[str] = [
+    'numero_controle_pncp', 'numero_item', 'descricao_item', 'material_ou_servico',
+    'quantidade_item', 'unidade_medida', 'valor_unitario_estimado', 'valor_total_estimado'
+]
+
+def get_item_contratacao_columns(alias: str = 'i') -> List[str]:
+    cols = []
+    for logical in ITEM_CONTRATACAO_ORDER:
+        meta = ITEM_CONTRATACAO_FIELDS[logical]
+        cols.append(f"{alias}.{meta.name}")
+    return cols
+
+def build_itens_by_pncp_select(limit_placeholder: str = '%s') -> str:
+    """SELECT de itens por numero_controle_pncp (com ORDER básico e LIMIT)."""
+    cols = ",\n  ".join(get_item_contratacao_columns('i'))
+    return (
+        "SELECT\n  " + cols + "\n"
+        f"FROM {ITEM_CONTRATACAO_TABLE} i\n"
+        "WHERE i.numero_controle_pncp = %s\n"
+    # ordenação: tenta numérica do numero_item, caindo para ordem lexical
+    "ORDER BY NULLIF(regexp_replace(i.numero_item,'[^0-9]','','g'),'')::int NULLS LAST, i.numero_item ASC\n"
+        f"LIMIT {limit_placeholder}"
+    )
+
+def normalize_item_contratacao_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    out = {}
+    for logical, meta in ITEM_CONTRATACAO_FIELDS.items():
+        if meta.name in row:
+            out[logical] = row[meta.name]
+    return out
+
+
 def normalize_contratacao_row(row: Dict[str, Any]) -> Dict[str, Any]:
     """Normaliza um dicionário de linha da contratacao para chaves lógicas.
     Assumimos que a query já selecionou nomes físicos (sem alias)."""
@@ -187,7 +235,9 @@ def project_result_for_output(normalized: Dict[str, Any]) -> Dict[str, Any]:
 __all__ = [
     'CONTRATACAO_TABLE','CONTRATACAO_EMB_TABLE','CATEGORIA_TABLE',
     'CONTRATACAO_FIELDS','CONTRATACAO_EMB_FIELDS','CATEGORIA_FIELDS',
+    'ITEM_CONTRATACAO_TABLE','ITEM_CONTRATACAO_FIELDS','ITEM_CONTRATACAO_ORDER',
     'FTS_SOURCE_FIELD','PRIMARY_KEY','EMB_VECTOR_FIELD','CATEGORY_VECTOR_FIELD',
     'get_contratacao_core_columns','build_core_select_clause','build_semantic_select',
-    'build_category_similarity_select','normalize_contratacao_row','project_result_for_output'
+    'build_category_similarity_select','build_itens_by_pncp_select','get_item_contratacao_columns',
+    'normalize_contratacao_row','normalize_item_contratacao_row','project_result_for_output'
 ]

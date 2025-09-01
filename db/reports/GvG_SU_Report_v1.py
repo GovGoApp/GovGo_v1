@@ -53,6 +53,11 @@ if not os.path.exists(REPORTS_PATH):
 
 # OpenAI configuration
 api_key = config.get('OPENAI_API_KEY')
+suffix_len = 4
+if api_key:
+    print(f"Últimos {suffix_len} caracteres da OpenAI API Key: {api_key[-suffix_len:]}")
+else:
+    print("OpenAI API Key não encontrada.")
 client = OpenAI(api_key=api_key)
 thread = client.beta.threads.create()
 
