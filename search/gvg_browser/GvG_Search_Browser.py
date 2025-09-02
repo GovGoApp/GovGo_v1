@@ -135,8 +135,8 @@ COLOR_ENC_EXPIRED = "#800080"  # roxo
 COLOR_ENC_LT3 = "#FF0000EE"      # vermelho escuro (<= 3 dias)
 COLOR_ENC_LT7 = "#FF6200"      # vermelho (<= 7 dias)
 COLOR_ENC_LT15 = "#FFBD21"     # laranja (<= 15 dias)
-COLOR_ENC_LT30 = "#00FF51C7"     # amarelo (<= 30 dias)
-COLOR_ENC_GT30 = "#188901"     # verde  (> 30 dias)
+COLOR_ENC_LT30 = "#BBFF00"     # amarelo (<= 30 dias)
+COLOR_ENC_GT30 = "#2BFF00"     # verde  (> 30 dias)
 
 
 # styles agora vem de gvg_css.styles
@@ -354,7 +354,6 @@ app.layout = html.Div([
     dcc.Store(id='store-cache-itens', data={}),
     dcc.Store(id='store-cache-docs', data={}),
     dcc.Store(id='store-cache-resumo', data={}),
-    dcc.Store(id='store-resumo-loading', data={}),
     dcc.Store(id='progress-store', data={'percent': 0, 'label': ''}),
     dcc.Interval(id='progress-interval', interval=400, n_intervals=0, disabled=True),
     dcc.Download(id='download-out'),
@@ -1456,13 +1455,7 @@ def render_details(results, last_query):
                     ),
                     html.Div(
                         id={'type': 'resumo-card', 'pncp': str(pncp_id)},
-                        children=[
-                            html.Div(
-                                html.I(className="fas fa-spinner fa-spin"),
-                                id={'type': 'resumo-spinner', 'pncp': str(pncp_id)},
-                                style={**styles['resumo_spinner_overlay'], 'display': 'none'}
-                            )
-                        ],
+                        children=[],
                         style=styles['details_content_base']
                     ),
                 ],
@@ -1637,8 +1630,8 @@ def load_itens_for_cards(n_clicks_list, active_map, results, cache_itens):
                 columns=cols,
                 page_action='none',
                 style_table={'overflowX': 'auto', 'minWidth': '100%'},
-                style_cell={'textAlign': 'left', 'fontSize': '12px', 'padding': '6px', 'fontFamily': "Segoe UI, Roboto, Arial, sans-serif"},
-                style_header={'backgroundColor': '#f8f9fa', 'fontWeight': 'bold', 'border': '1px solid #ddd', 'fontSize': '12px', 'fontFamily': "Segoe UI, Roboto, Arial, sans-serif"},
+                style_cell={'textAlign': 'left', 'fontSize': '12px', 'padding': '6px'},
+                style_header={'backgroundColor': '#f8f9fa', 'fontWeight': 'bold', 'border': '1px solid #ddd', 'fontSize': '13px'},
                 style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': '#f2f2f2'}],
                 css=[{'selector': '.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table', 'rule': 'font-size: 11px !important;'}]
             )
@@ -1729,8 +1722,8 @@ def load_docs_for_cards(n_clicks_list, active_map, results, cache_docs):
                 page_action='none',
                 markdown_options={'link_target': '_blank'},
                 style_table={'overflowX': 'auto', 'minWidth': '100%'},
-                style_cell={'textAlign': 'left', 'fontSize': '12px', 'padding': '6px', 'fontFamily': "Segoe UI, Roboto, Arial, sans-serif"},
-                style_header={'backgroundColor': '#f8f9fa', 'fontWeight': 'bold', 'border': '1px solid #ddd', 'fontSize': '12px', 'fontFamily': "Segoe UI, Roboto, Arial, sans-serif"},
+                style_cell={'textAlign': 'left', 'fontSize': '12px', 'padding': '6px'},
+                style_header={'backgroundColor': '#f8f9fa', 'fontWeight': 'bold', 'border': '1px solid #ddd', 'fontSize': '13px'},
                 style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': '#f2f2f2'}],
                 css=[{'selector': '.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table', 'rule': 'font-size: 11px !important;'}]
             )
@@ -1744,8 +1737,9 @@ def load_docs_for_cards(n_clicks_list, active_map, results, cache_docs):
     return children_out, style_out, btn_styles, updated_cache
 
 @app.callback(
-    Output({'type': 'resumo-card', 'pncp': ALL}, 'children'),
-    Output({'type': 'resumo-btn', 'pncp': ALL}, 'style'),
+    Output({'type': 'resumo-card', 'pncp': ALL}, 'children', allow_duplicate=True),
+    Output({'type': 'resumo-card', 'pncp': ALL}, 'style', allow_duplicate=True),
+    Output({'type': 'resumo-btn', 'pncp': ALL}, 'style', allow_duplicate=True),
     Output('store-cache-resumo', 'data', allow_duplicate=True),
     Input({'type': 'resumo-btn', 'pncp': ALL}, 'n_clicks'),
     Input('store-panel-active', 'data'),
@@ -1761,7 +1755,7 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
     """
     # Usar funções do pipeline de documentos do módulo gvg_documents (já importadas no topo)
     # DOCUMENTS_AVAILABLE é definido no início deste arquivo, com base nas imports de summarize_document/process_pncp_document
-    children_out, btn_styles = [], []
+    children_out, style_out, btn_styles = [], [], []
     # Debug início do callback
     try:
         from gvg_search_core import SQL_DEBUG
@@ -1771,7 +1765,7 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
         pass
     updated_cache = dict(cache_resumo or {})
     if not results or not isinstance(n_clicks_list, list):
-        return children_out, btn_styles, updated_cache
+        return children_out, style_out, btn_styles, updated_cache
 
     # Helper to pick main doc
     def pick_main_doc(docs: list) -> dict | None:
@@ -1828,9 +1822,14 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
         inverted_btn_style = styles['btn_pill_inverted']
         btn_styles.append(inverted_btn_style if is_open else normal_btn_style)
 
-    # estilo da janela é controlado por um callback leve separado
+        st = {
+            'position': 'absolute', 'top': '0', 'left': '0', 'right': '0', 'bottom': '0',
+            'display': 'block' if is_open else 'none', 'overflowY': 'auto',
+            'boxSizing': 'border-box'
+        }
+        style_out.append(st)
 
-    if is_open and pid and pid != 'N/A':
+        if is_open and pid and pid != 'N/A':
             try:
                 # Cache documentos para escolher principal rapidamente
                 docs = None
@@ -1840,6 +1839,16 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                     docs = fetch_documentos(pid) or []
             except Exception:
                 docs = []
+            # Se já existe summary no cache, evita recomputar e mostra direto
+            try:
+                if isinstance(cache_resumo, dict) and str(pid) in cache_resumo and isinstance(cache_resumo[str(pid)], dict) and 'summary' in cache_resumo[str(pid)]:
+                    cached_summary = cache_resumo[str(pid)]['summary']
+                    children_out.append([html.Div(dcc.Markdown(children=cached_summary, className='markdown-summary'), style=styles['details_content_inner'])])
+                    style_out[-1] = {**style_out[-1], 'display': 'block'}
+                    btn_styles[-1] = inverted_btn_style
+                    continue
+            except Exception:
+                pass
             try:
                 from gvg_search_core import SQL_DEBUG
                 if SQL_DEBUG:
@@ -1847,18 +1856,17 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
             except Exception:
                 pass
             if not docs:
-                children_out.append([html.Div('Nenhum documento encontrado para este processo.', style={'color': '#555'})])
+                children_out.append(html.Div('Nenhum documento encontrado para este processo.', style=styles['details_content_inner']))
+                style_out[-1] = {**style_out[-1], 'display': 'block'}
                 btn_styles[-1] = inverted_btn_style
-                # keep placeholder content
-                children_out[-1] = [html.Div([], style=styles['details_content_inner'])]
-                # proceed to next iteration implicitly
+                continue
 
             main_doc = pick_main_doc(docs)
             if not main_doc:
-                children_out.append([html.Div('Nenhum documento disponível para resumo.', style={'color': '#555'})])
+                children_out.append(html.Div('Nenhum documento disponível para resumo.', style=styles['details_content_inner']))
+                style_out[-1] = {**style_out[-1], 'display': 'block'}
                 btn_styles[-1] = inverted_btn_style
-                children_out[-1] = [html.Div([], style=styles['details_content_inner'])]
-                # proceed to next iteration implicitly
+                continue
 
             nome = main_doc.get('nome') or main_doc.get('titulo') or 'Documento'
             url = main_doc.get('url') or main_doc.get('uri') or ''
@@ -1884,6 +1892,17 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                     summary_text = cache_resumo[str(pid)]['summary']
             except Exception:
                 summary_text = None
+            # Enquanto processa, mostre spinner centralizado
+            children_out.append([
+                html.Div(
+                    html.Div(
+                        html.I(className="fas fa-spinner fa-spin", style={'color': '#FF5722', 'fontSize': '24px'}),
+                        style=styles['details_spinner_center']
+                    ),
+                    style={**styles['details_content_inner'], 'height': '100%'}
+                )
+            ])
+
             if DOCUMENTS_AVAILABLE:
                 try:
                     if summarize_document:
@@ -1922,55 +1941,64 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                 updated_cache[str(pid)] = {'docs': docs, 'summary': summary_text}
             except Exception:
                 pass
-            # Conteúdo do resumo com overlay (overlay oculto por padrão; será controlado via callback)
-            children_out.append([
-                html.Div(
-                    [
-                        html.Div(
-                            html.I(className="fas fa-spinner fa-spin"),
-                            id={'type': 'resumo-spinner', 'pncp': str(pid)},
-                            style={**styles['resumo_spinner_overlay'], 'display': 'none'}
-                        ),
-                        html.Div(dcc.Markdown(children=summary_text, className='markdown-summary'), style=styles['details_content_inner'])
-                    ],
-                    style={'height': '100%', 'position': 'relative'}
-                )
-            ])
-    else:
-        children_out.append([])
-    return children_out, btn_styles, updated_cache
+            # Substitui o spinner pelo conteúdo final (resumo)
+            children_out[-1] = [html.Div(dcc.Markdown(children=summary_text, className='markdown-summary'), style=styles['details_content_inner'])]
+        else:
+            children_out.append([])
+    return children_out, style_out, btn_styles, updated_cache
 
-# Mostrar/ocultar o spinner do resumo quando a aba Resumo for ativada/concluída
+# Callback rápido para exibir spinner imediatamente ao ativar o painel de Resumo
 @app.callback(
-    Output({'type': 'resumo-spinner', 'pncp': ALL}, 'style'),
+    Output({'type': 'resumo-card', 'pncp': ALL}, 'children', allow_duplicate=True),
+    Output({'type': 'resumo-card', 'pncp': ALL}, 'style', allow_duplicate=True),
+    Output({'type': 'resumo-btn', 'pncp': ALL}, 'style', allow_duplicate=True),
     Input('store-panel-active', 'data'),
-    Input('store-cache-resumo', 'data'),
     State('store-results-sorted', 'data'),
-    State({'type': 'resumo-spinner', 'pncp': ALL}, 'id'),
+    State('store-cache-resumo', 'data'),
+    prevent_initial_call=True,
 )
-def toggle_resumo_spinner(active_map, cache_resumo, results, spinner_ids):
-    styles_out = []
-    # Construir mapa pncp->active
-    active_map = active_map or {}
-    cache_resumo = cache_resumo or {}
+def show_resumo_spinner_when_active(active_map, results, cache_resumo):
+    children_out, style_out, btn_styles = [], [], []
+    if not results:
+        return children_out, style_out, btn_styles
     pncp_ids = []
-    for r in (results or []):
+    for r in results:
         d = (r or {}).get('details', {}) or {}
         pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
         pncp_ids.append(str(pid) if pid is not None else 'N/A')
-    # Gerar estilos por spinner
-    for sid in (spinner_ids or []):
-        pn = str(sid.get('pncp'))
-        # Mostrar spinner quando ativo e ainda sem resumo em cache
-        in_cache = False
-        try:
-            in_cache = (pn in cache_resumo) and isinstance(cache_resumo[pn], dict) and ('summary' in cache_resumo[pn]) and bool(cache_resumo[pn]['summary'])
-        except Exception:
-            in_cache = False
-        show = (active_map.get(pn) == 'resumo') and (not in_cache)
-        st = {**styles['resumo_spinner_overlay'], 'display': 'block' if show else 'none'}
-        styles_out.append(st)
-    return styles_out
+    for pid in pncp_ids:
+        is_open = (str(pid) in (active_map or {}) and (active_map or {}).get(str(pid)) == 'resumo')
+        st = {
+            'position': 'absolute', 'top': '0', 'left': '0', 'right': '0', 'bottom': '0',
+            'display': 'block' if is_open else 'none', 'overflowY': 'auto',
+            'boxSizing': 'border-box'
+        }
+        style_out.append(st)
+        if is_open:
+            # Se houver resumo em cache, mostra direto o conteúdo
+            cached = None
+            try:
+                if isinstance(cache_resumo, dict) and str(pid) in cache_resumo and isinstance(cache_resumo[str(pid)], dict):
+                    cached = cache_resumo[str(pid)].get('summary')
+            except Exception:
+                cached = None
+            if cached:
+                children_out.append([html.Div(dcc.Markdown(children=cached, className='markdown-summary'), style=styles['details_content_inner'])])
+                btn_styles.append(styles['btn_pill_inverted'])
+            else:
+                spinner = html.Div(
+                    html.Div(
+                        html.I(className="fas fa-spinner fa-spin", style={'color': '#FF5722', 'fontSize': '24px'}),
+                        style=styles['details_spinner_center']
+                    ),
+                    style={**styles['details_content_inner'], 'height': '100%'}
+                )
+                children_out.append([spinner])
+                btn_styles.append(styles['btn_pill_inverted'])
+        else:
+            children_out.append([])
+            btn_styles.append(styles['btn_pill'])
+    return children_out, style_out, btn_styles
 
 # Define painel ativo por PNCP ao clicar em qualquer botão (sem toggle de fechamento)
 @app.callback(
@@ -2013,6 +2041,32 @@ def set_active_panel(it_clicks, dc_clicks, rs_clicks, results, active_map):
         active_map.pop(pncp, None)
     return active_map
 
+# Atualiza ícones (seta para cima/baixo) após o texto dos botões conforme toggle
+@app.callback(
+    Output({'type': 'itens-btn', 'pncp': ALL}, 'children'),
+    Output({'type': 'docs-btn', 'pncp': ALL}, 'children'),
+    Output({'type': 'resumo-btn', 'pncp': ALL}, 'children'),
+    Input('store-panel-active', 'data'),
+    State('store-results-sorted', 'data'),
+    prevent_initial_call=True,
+)
+def update_button_icons(active_map, results):
+    itens_children, docs_children, resumo_children = [], [], []
+    pncp_ids = []
+    for r in (results or []):
+        d = (r or {}).get('details', {}) or {}
+        pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
+        pncp_ids.append(str(pid) if pid is not None else 'N/A')
+    for pid in pncp_ids:
+        active = (active_map or {}).get(str(pid))
+        def btn(label, is_active):
+            icon = html.I(className=("fas fa-chevron-up" if is_active else "fas fa-chevron-down"), style={'marginLeft': '6px'})
+            return [label, icon]
+        itens_children.append(btn('Itens', active == 'itens'))
+        docs_children.append(btn('Documentos', active == 'docs'))
+        resumo_children.append(btn('Resumo', active == 'resumo'))
+    return itens_children, docs_children, resumo_children
+
 # Mostrar wrapper apenas se alguma aba ativa existir para o PNCP correspondente
 @app.callback(
     Output({'type': 'panel-wrapper', 'pncp': ALL}, 'style'),
@@ -2037,30 +2091,6 @@ def toggle_panel_wrapper(active_map, results):
             base['display'] = 'block'
             base['border'] = '1px solid #FF5722'
         styles_out.append(base)
-    return styles_out
-
-# Mostrar/ocultar cada resumo-card imediatamente ao ativar a aba (sem depender do processamento)
-@app.callback(
-    Output({'type': 'resumo-card', 'pncp': ALL}, 'style', allow_duplicate=True),
-    Input('store-panel-active', 'data'),
-    State('store-results-sorted', 'data'),
-    prevent_initial_call=True,
-)
-def show_resumo_card_immediate(active_map, results):
-    styles_out = []
-    active_map = active_map or {}
-    pncp_ids = []
-    for r in (results or []):
-        d = (r or {}).get('details', {}) or {}
-        pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
-        pncp_ids.append(str(pid) if pid is not None else 'N/A')
-    for pid in pncp_ids:
-        st = {
-            'position': 'absolute', 'top': '0', 'left': '0', 'right': '0', 'bottom': '0',
-            'display': 'block' if (active_map.get(str(pid)) == 'resumo') else 'none',
-            'overflowY': 'auto', 'boxSizing': 'border-box'
-        }
-        styles_out.append(st)
     return styles_out
 
 ## Visibilidade dos painéis de resultado

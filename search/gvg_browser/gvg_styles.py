@@ -132,7 +132,7 @@ styles = {
         'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
         'cursor': 'default'
     },
-    # --- Progress ---
+    # --- Progress / Spinner ---
     'progress_bar_container': {
         'marginTop': '10px',
         'width': '260px',
@@ -239,15 +239,15 @@ styles = {
     # Inner container inside each details window (content padding + font)
     'details_content_inner': {
         'padding': '4px',
-        'position': 'relative',
         'fontFamily': "Segoe UI, Roboto, Arial, sans-serif",
         'fontSize': '12px'
     },
-    # Overlay spinner for resumo (centered)
-    'resumo_spinner_overlay': {
-        'position': 'absolute', 'left': '50%', 'top': '50%',
-        'transform': 'translate(-50%, -50%)', 'zIndex': 5,
-        'color': '#FF5722'
+    # Centered spinner container for details inner content
+    'details_spinner_center': {
+        'height': '100%',
+        'display': 'flex',
+        'alignItems': 'center',
+        'justifyContent': 'center'
     },
     # --- Text helpers ---
     'muted_text': {
@@ -321,21 +321,17 @@ BASE_CSS = """
 .dash-table-container .dash-spreadsheet-container th .column-header--sort:after { font-size: 18px; color: #FF5722; }
 
 #gvg-center-spinner { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; display: flex; flex-direction: column; align-items: center; width: 260px; }
-/* Center loading spinner for resumo area */
-.resumo-loading .dash-loading, .resumo-loading .dash-loading > div {
-    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-}
-/* Ensure spinner uses orange color */
-.resumo-loading .dash-loading > div svg {
-    color: #FF5722 !important; fill: #FF5722 !important;
-}
 """
 
 # Classe aplicada em dcc.Markdown(children=..., className='markdown-summary')
 MARKDOWN_CSS = (
-    "/** Tipografia unificada para o Resumo **/\n"
-    ".markdown-summary { font-family: 'Segoe UI, Roboto, Arial, sans-serif'; font-size: 12px; }\n"
-    ".markdown-summary h1, .markdown-summary h2, .markdown-summary h3, .markdown-summary h4, .markdown-summary h5, .markdown-summary h6 { font-size: 12px; font-weight: 700; line-height: 1.25; margin: 6px 0; }\n"
+    "/** Títulos menores para o resumo em Markdown **/\n"
+    ".markdown-summary h1 { font-size: 16px; line-height: 1.25; }\n"
+    ".markdown-summary h2 { font-size: 14px; line-height: 1.25; }\n"
+    ".markdown-summary h3 { font-size: 13px; line-height: 1.25; }\n"
+    ".markdown-summary h4 { font-size: 12px; line-height: 1.25; }\n"
+    ".markdown-summary h5 { font-size: 11px; line-height: 1.25; }\n"
+    ".markdown-summary h6 { font-size: 10px; line-height: 1.25; }\n"
 )
 
 CSS_ALL = BASE_CSS + "\n" + MARKDOWN_CSS
