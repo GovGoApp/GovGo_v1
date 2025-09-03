@@ -178,6 +178,36 @@ styles = {
     'history_item_row': {
         'display': 'flex', 'gap': '8px', 'alignItems': 'flex-start', 'marginBottom': '6px'
     },
+    # --- Favorites (bookmarks) ---
+    'fav_item_row': {
+        'display': 'flex', 'gap': '8px', 'alignItems': 'flex-start', 'marginBottom': '6px'
+    },
+    'fav_item_button': {
+        'backgroundColor': 'white',
+        'color': '#003A70',
+        'border': '1px solid #D0D7E2',
+        'borderRadius': '16px',
+        'display': 'block',
+        'width': '100%',
+        'textAlign': 'left',
+        'padding': '8px 12px',
+        'whiteSpace': 'normal',
+        'wordBreak': 'break-word',
+        'lineHeight': '1.25',
+        'cursor': 'pointer'
+    },
+    'fav_delete_btn': {
+        'width': '28px', 'height': '28px', 'minWidth': '28px',
+        'borderRadius': '50%', 'border': '1px solid #FF5722',
+        'backgroundColor': 'white', 'color': '#FF5722',
+        'cursor': 'pointer'
+    },
+    'bookmark_btn': {
+        'position': 'absolute', 'top': '10px', 'left': '40px',
+        'width': '24px', 'height': '24px', 'minWidth': '24px',
+        'border': 'none', 'backgroundColor': 'transparent', 'cursor': 'pointer',
+        'color': '#FF5722'
+    },
     # --- Buttons (pills) for details right panel ---
     'btn_pill': {
         'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none',
@@ -314,6 +344,11 @@ BASE_CSS = """
 .history-item-row .delete-btn { opacity: 0; transition: opacity 0.15s ease-in-out; }
 .history-item-row:hover .delete-btn { opacity: 1; }
 .history-item-row .delete-btn:hover { background-color: #FDEDEC; }
+
+/* Favorites row hover: show delete button */
+.fav-item-row .delete-btn { opacity: 0; transition: opacity 0.15s ease-in-out; }
+.fav-item-row:hover .delete-btn { opacity: 1; }
+.fav-item-row .delete-btn:hover { background-color: #FDEDEC; }
 
 /* Bigger sort arrows in DataTable header and orange color */
 .dash-table-container .dash-spreadsheet-container th .column-header--sort { margin-left: 6px; }

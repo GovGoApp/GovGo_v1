@@ -14,8 +14,6 @@ CREATE TABLE public.categoria (
   cod_nv3 text,
   nom_nv3 text,
   cat_embeddings USER-DEFINED,
-  -- cat_embedding é uma array de 3072 dimensoes que está guardada como nesse  exemplo: [-0.020492394,0.02138223,-0.0023472689,0.0011384663,0.0021771532,...]
-  
   created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT categoria_pkey PRIMARY KEY (id_categoria)
 );
@@ -91,11 +89,8 @@ CREATE TABLE public.contratacao_emb (
   metadata jsonb,
   created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
   top_categories ARRAY,
-  -- top_categories está no nesse formato:  ["S09291515615156","S08350101501015","S09112438424384","S08310831900086","S08330833220060"]
   top_similarities ARRAY,
-  -- top_similarities está guardad no formato: ["0.441","0.3971","0.3929","0.3912","0.3907"]
   embeddings USER-DEFINED,
-  -- embedding é uma array de 3072 dimensoes que está guardada como nesse  exemplo: [-0.020492394,0.02138223,-0.0023472689,0.0011384663,0.0021771532,...]
   CONSTRAINT contratacao_emb_pkey PRIMARY KEY (id_contratacao_emb)
 );
 CREATE TABLE public.contrato (
@@ -197,7 +192,28 @@ CREATE TABLE public.user_prompts (
   title text,
   text text,
   embedding USER-DEFINED,
+  search_type smallint DEFAULT 1,
+  search_approach smallint DEFAULT 3,
+  relevance_level smallint DEFAULT 2,
+  sort_mode smallint DEFAULT 1,
+  max_results integer DEFAULT 30,
+  top_categories_count integer DEFAULT 10,
+  filter_expired boolean DEFAULT true,
   CONSTRAINT user_prompts_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.user_results (
+  id bigint NOT NULL DEFAULT nextval('user_results_id_seq'::regclass),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  user_id uuid NOT NULL,
+  prompt_id bigint NOT NULL,
+  numero_controle_pncp text NOT NULL,
+  rank integer NOT NULL,
+  similarity numeric,
+  valor numeric,
+  data_encerramento_proposta text,
+  CONSTRAINT user_results_pkey PRIMARY KEY (id),
+  CONSTRAINT user_results_numero_controle_fkey FOREIGN KEY (numero_controle_pncp) REFERENCES public.contratacao(numero_controle_pncp),
+  CONSTRAINT user_results_prompt_fkey FOREIGN KEY (prompt_id) REFERENCES public.user_prompts(id)
 );
 CREATE TABLE public.user_settings (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -206,12 +222,9 @@ CREATE TABLE public.user_settings (
   CONSTRAINT user_settings_pkey PRIMARY KEY (id)
 );
 
-
-TABLE public.system_config (key -> value)
-| key                      | value    | description                                          |
-| ------------------------ | -------- | ---------------------------------------------------- | 
-| last_processed_date      | 20250815 | Última data processada pelo script de download PNCP  | 
-| last_embedding_date      | 20250815 | Última data processada para geração de embeddings    | 
-| last_categorization_date | 20250815 | Última data processada para categorização automática | 
-
-
+CREATE TABLE IF NOT EXISTS public.user_bookmarks (
+  id BIGSERIAL PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  user_id TEXT NOT NULL,
+  numero_controle_pncp TEXT NOT NULL
+);

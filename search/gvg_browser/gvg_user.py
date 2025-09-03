@@ -341,3 +341,183 @@ def save_user_results(prompt_id: int, results: List[Dict[str, Any]]) -> bool:
             if cur: cur.close()
         finally:
             if conn: conn.close()
+
+
+# ==========================
+# Favoritos (Bookmarks)
+# ==========================
+def fetch_bookmarks(limit: int = 100) -> List[Dict[str, Any]]:
+    """Lista favoritos do usuário atual.
+
+    Retorna itens como { 'numero_controle_pncp': str, 'titulo': str }
+    titulo é composto a partir de contratacao (órgão + objeto), se disponível.
+    """
+    user = get_current_user(); uid = user['uid']
+    conn = None; cur = None
+    try:
+        conn = create_connection()
+        if not conn:
+            return []
+        cur = conn.cursor()
+        # Debug flag (env or global SQL_DEBUG)
+        debug = (os.getenv('GVG_SQL_DEBUG') in ('1','true','TRUE')) or (os.getenv('GVG_BROWSER_DEBUG') in ('1','true','TRUE'))
+        try:
+            from gvg_search_core import SQL_DEBUG  # type: ignore
+            debug = bool(debug or SQL_DEBUG)
+        except Exception:
+            pass
+        # Verificar existência da tabela
+        try:
+            cur.execute(
+                """
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema='public' AND table_name='user_bookmarks'
+                """
+            )
+            if not cur.fetchone():
+                if debug:
+                    try:
+                        print(f"[gvg_user.fetch_bookmarks] Tabela user_bookmarks não existe. uid={uid}")
+                    except Exception:
+                        pass
+                return []
+        except Exception:
+            if debug:
+                try:
+                    print(f"[gvg_user.fetch_bookmarks] Erro ao verificar tabela user_bookmarks. uid={uid}")
+                except Exception:
+                    pass
+            return []
+        # SELECT com contratacao: retorna campos para exibir 4 linhas na UI
+        sql = (
+            "SELECT "
+            "ub.id, "
+            "ub.numero_controle_pncp, "
+            "c.objeto_compra, "
+            "c.orgao_entidade_razao_social, "
+            "c.unidade_orgao_municipio_nome, "
+            "c.unidade_orgao_uf_sigla, "
+            "c.data_encerramento_proposta "
+            "FROM public.user_bookmarks ub, public.contratacao c "
+            "WHERE ub.user_id = %s "
+            "AND c.numero_controle_pncp = ub.numero_controle_pncp "
+            "ORDER BY ub.created_at DESC NULLS LAST, ub.id DESC "
+            "LIMIT %s"
+        )
+        if debug:
+            try:
+                print("[gvg_user.fetch_bookmarks] SQL:", sql)
+                print("[gvg_user.fetch_bookmarks] params:", (uid, limit))
+            except Exception:
+                pass
+        cur.execute(sql, (uid, limit))
+        rows_db = cur.fetchall() or []
+        if debug:
+            try:
+                print(f"[gvg_user.fetch_bookmarks] fetched_rows={len(rows_db)}")
+                print("[gvg_user.fetch_bookmarks] sample:", rows_db[:3])
+            except Exception:
+                pass
+        out: List[Dict[str, Any]] = []
+        for row in rows_db:
+            # row: (id, numero_controle_pncp, objeto_compra, orgao_entidade_razao_social, municipio, uf, data_enc)
+            pncp = row[1]
+            item = {
+                'numero_controle_pncp': pncp,
+                'objeto_compra': row[2],
+                'orgao_entidade_razao_social': row[3],
+                'unidade_orgao_municipio_nome': row[4],
+                'unidade_orgao_uf_sigla': row[5],
+                'data_encerramento_proposta': row[6],
+            }
+            out.append(item)
+        if debug:
+            try:
+                print(f"[gvg_user.fetch_bookmarks] out_len={len(out)} out_sample={[ (x['numero_controle_pncp'], x['titulo'][:50]) for x in out[:3] ]}")
+            except Exception:
+                pass
+        return out
+    except Exception:
+        return []
+    finally:
+        try:
+            if cur:
+                cur.close()
+        finally:
+            if conn:
+                conn.close()
+
+
+def add_bookmark(numero_controle_pncp: str) -> bool:
+    """Adiciona um favorito (ignora duplicatas)."""
+    if not numero_controle_pncp:
+        return False
+    user = get_current_user(); uid = user['uid']
+    conn = None; cur = None
+    try:
+        conn = create_connection()
+        if not conn:
+            return False
+        cur = conn.cursor()
+        # Garante tabela existente
+        try:
+            cur.execute("""
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema='public' AND table_name='user_bookmarks'
+            """)
+            if not cur.fetchone():
+                return False
+        except Exception:
+            return False
+        # Dedup simples
+        cur.execute(
+            "DELETE FROM public.user_bookmarks WHERE user_id = %s AND numero_controle_pncp = %s",
+            (uid, numero_controle_pncp)
+        )
+        cur.execute(
+            "INSERT INTO public.user_bookmarks (user_id, numero_controle_pncp) VALUES (%s, %s)",
+            (uid, numero_controle_pncp)
+        )
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            if conn: conn.rollback()
+        except Exception:
+            pass
+        return False
+    finally:
+        try:
+            if cur: cur.close()
+        finally:
+            if conn: conn.close()
+
+
+def remove_bookmark(numero_controle_pncp: str) -> bool:
+    """Remove um favorito."""
+    if not numero_controle_pncp:
+        return False
+    user = get_current_user(); uid = user['uid']
+    conn = None; cur = None
+    try:
+        conn = create_connection()
+        if not conn:
+            return False
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM public.user_bookmarks WHERE user_id = %s AND numero_controle_pncp = %s",
+            (uid, numero_controle_pncp)
+        )
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            if conn: conn.rollback()
+        except Exception:
+            pass
+        return False
+    finally:
+        try:
+            if cur: cur.close()
+        finally:
+            if conn: conn.close()

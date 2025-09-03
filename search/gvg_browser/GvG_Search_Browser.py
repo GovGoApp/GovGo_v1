@@ -72,6 +72,9 @@ from gvg_user import (
     add_prompt,
     save_user_results,
     delete_prompt,
+    fetch_bookmarks,
+    add_bookmark,
+    remove_bookmark,
 )
 
 
@@ -274,7 +277,7 @@ controls_panel = html.Div([
     ),
 
     html.Div([
-        html.Div('Histórico', style=styles['card_title']),
+        html.Div('Histórico de Consultas', style=styles['card_title']),
         html.Button(
             html.I(className="fas fa-chevron-down"),
             id='history-toggle-btn',
@@ -287,6 +290,21 @@ controls_panel = html.Div([
             html.Div(id='history-list')
         ], id='history-card', style=styles['controls_group']),
         id='history-collapse', is_open=True
+    ),
+    html.Div([
+        html.Div('Favoritos', style=styles['card_title']),
+        html.Button(
+            html.I(className="fas fa-chevron-down"),
+            id='favorites-toggle-btn',
+            title='Mostrar/ocultar favoritos',
+            style={**styles['arrow_button_small'], 'marginRight': '12px'}
+        ),
+    ], style=styles['row_header']),
+    dbc.Collapse(
+        html.Div([
+            html.Div(id='favorites-list')
+        ], id='favorites-card', style=styles['controls_group']),
+        id='favorites-collapse', is_open=True
     )
 ], style=styles['left_panel'])
 
@@ -346,6 +364,8 @@ app.layout = html.Div([
     dcc.Store(id='store-last-query', data=""),
     dcc.Store(id='store-history', data=[]),
     dcc.Store(id='store-history-open', data=True),
+    dcc.Store(id='store-favorites', data=[]),
+    dcc.Store(id='store-favorites-open', data=True),
     dcc.Store(id='processing-state', data=False),
     dcc.Store(id='store-config-open', data=True),
     dcc.Store(id='store-items', data={}),
@@ -1363,12 +1383,7 @@ def render_details(results, last_query):
         except Exception:
             pass
         return []
-    try:
-        from gvg_search_core import SQL_DEBUG
-        if SQL_DEBUG:
-            print(f"[GSB][render_details] Renderizando {len(results)} cards de detalhe...")
-    except Exception:
-        pass
+
     cards = []
     # Título do painel de detalhes (aparece junto com os cartões)
     cards.append(html.Div('Detalhes', style=styles['card_title']))
@@ -1417,7 +1432,7 @@ def render_details(results, last_query):
             html.Div([
                 html.Span('Datas: ', style={'fontWeight': 'bold'}),
                 html.Span(f"Abertura: {data_ab} | Encerramento: "),
-                html.Span(str(data_en), style={'color': enc_color})
+                html.Span(str(data_en), style={'color': enc_color, 'fontWeight': 'bold'})
             ]),
             html.Div([
                 html.Span('Link: ', style={'fontWeight': 'bold'}), html.A(link_text, href=link, target='_blank', style=styles['link_break_all']) if link else html.Span('N/A')
@@ -1469,16 +1484,24 @@ def render_details(results, last_query):
         # Debug por card
         try:
             from gvg_search_core import SQL_DEBUG
-            if SQL_DEBUG:
-                print(f"[GSB][render_details] Card rank={r.get('rank')} pncp={pncp_id} pronto.")
+            #if SQL_DEBUG:
+            #    print(f"[GSB][render_details] Card rank={r.get('rank')} pncp={pncp_id} pronto.")
         except Exception:
             pass
+        # Botão bookmark ao lado do número do card
+        bookmark_btn = html.Button(
+            html.I(className="far fa-bookmark"),
+            id={'type': 'bookmark-btn', 'pncp': str(pncp_id)},
+            title='Salvar/Remover favorito',
+            style=styles['bookmark_btn']
+        )
         cards.append(html.Div([
             html.Div([
                 left_panel,
                 right_panel
             ], style={'display': 'flex', 'gap': '10px', 'alignItems': 'stretch'}),
-            html.Div(str(r.get('rank')), style=styles['result_number'])
+            html.Div(str(r.get('rank')), style=styles['result_number']),
+            bookmark_btn
         ], style=_card_style))
     return cards
 
@@ -1757,12 +1780,7 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
     # DOCUMENTS_AVAILABLE é definido no início deste arquivo, com base nas imports de summarize_document/process_pncp_document
     children_out, style_out, btn_styles = [], [], []
     # Debug início do callback
-    try:
-        from gvg_search_core import SQL_DEBUG
-        if SQL_DEBUG:
-            print(f"[GSB][RESUMO] Callback acionado. clicks={n_clicks_list if isinstance(n_clicks_list,list) else 'N/A'} results={len(results) if isinstance(results,list) else 'N/A'}")
-    except Exception:
-        pass
+
     updated_cache = dict(cache_resumo or {})
     if not results or not isinstance(n_clicks_list, list):
         return children_out, style_out, btn_styles, updated_cache
@@ -1813,8 +1831,8 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
         is_open = (str(pid) in (active_map or {}) and (active_map or {}).get(str(pid)) == 'resumo')
         try:
             from gvg_search_core import SQL_DEBUG
-            if SQL_DEBUG:
-                print(f"[GSB][RESUMO] index={i} pncp={pid} clicks={clicks} -> {'abrir' if is_open else 'fechar'}")
+            #if SQL_DEBUG:
+            #    print(f"[GSB][RESUMO] index={i} pncp={pid} clicks={clicks} -> {'abrir' if is_open else 'fechar'}")
         except Exception:
             pass
 
@@ -2207,6 +2225,329 @@ def delete_history_item(n_clicks_list, history):
         del items[idx]
     save_history(items)
     return items
+
+
+# ==========================
+# Favoritos (UI e callbacks)
+# ==========================
+@app.callback(
+    Output('store-favorites', 'data'),
+    Input('store-favorites', 'data'),
+    prevent_initial_call=False,
+)
+def init_favorites(favs):
+    # Inicializa a Store de favoritos na primeira renderização (mesmo padrão do histórico)
+    if favs:
+        return favs
+    try:
+        return fetch_bookmarks(limit=200)
+    except Exception:
+        return []
+
+@app.callback(
+    Output('store-favorites', 'data', allow_duplicate=True),
+    Input('store-meta', 'data'),
+    prevent_initial_call=True,
+)
+def load_favorites_on_results(meta):
+    try:
+        favs = fetch_bookmarks(limit=200)
+        try:
+            from gvg_search_core import SQL_DEBUG
+            if SQL_DEBUG:
+                print(f"[GSB][FAV] load_favorites_on_results: carregados={len(favs)}")
+        except Exception:
+            pass
+        return favs
+    except Exception:
+        return []
+
+
+
+@app.callback(
+    Output('store-favorites-open', 'data'),
+    Input('favorites-toggle-btn', 'n_clicks'),
+    State('store-favorites-open', 'data'),
+    prevent_initial_call=True,
+)
+def toggle_favorites(n_clicks, is_open):
+    if not n_clicks:
+        raise PreventUpdate
+    return not bool(is_open)
+
+
+@app.callback(
+    Output('favorites-collapse', 'is_open'),
+    Input('store-favorites-open', 'data')
+)
+def reflect_favorites_collapse(is_open):
+    return bool(is_open)
+
+
+@app.callback(
+    Output('favorites-toggle-btn', 'children'),
+    Input('store-favorites-open', 'data')
+)
+def update_favorites_icon(is_open):
+    icon = 'fa-chevron-up' if is_open else 'fa-chevron-down'
+    return html.I(className=f"fas {icon}")
+
+
+@app.callback(
+    Output('favorites-list', 'children'),
+    Input('store-favorites', 'data')
+)
+def render_favorites_list(favs):
+
+    items = []
+    for i, f in enumerate(favs or []):
+        pncp = f.get('numero_controle_pncp') or 'N/A'
+        orgao = f.get('orgao_entidade_razao_social') or ''
+        mun = f.get('unidade_orgao_municipio_nome') or ''
+        uf = f.get('unidade_orgao_uf_sigla') or ''
+        local = f"{mun}/{uf}".strip('/') if (mun or uf) else ''
+        desc = f.get('objeto_compra') or ''
+        if isinstance(desc, str) and len(desc) > 100:
+            desc = desc[:100]
+        raw_enc = f.get('data_encerramento_proposta')
+        enc_txt = _format_br_date(raw_enc)
+        _enc_status, enc_color = _enc_status_and_color(raw_enc)
+        body = html.Div([
+            html.Div(orgao),
+            html.Div(local),
+            html.Div(desc),
+            html.Div(enc_txt, style={'color': enc_color})
+        ], style={'textAlign': 'left', 'display': 'flex', 'flexDirection': 'column'})
+        row = html.Div([
+            # Evitar ocupar 100% da largura para não cobrir a lixeira; usar flex elástico
+            html.Button(
+                body,
+                id={'type': 'favorite-item', 'index': i},
+                style={**styles['history_item_button'], 'whiteSpace': 'normal', 'textAlign': 'left', 'width': 'auto', 'flex': '1 1 auto'}
+            ),
+            html.Button(
+                html.I(className='fas fa-trash'),
+                id={'type': 'favorite-delete', 'index': i},
+                className='delete-btn',
+                style=styles['history_delete_btn']
+            )
+        ], className='history-item-row', style=styles['history_item_row'])
+        items.append(row)
+    if not items:
+        items = [html.Div('Sem favoritos.', style={'color': '#555'})]
+    return items
+
+
+# Clique em bookmark no card: alterna estado e persiste
+@app.callback(
+    Output({'type': 'bookmark-btn', 'pncp': ALL}, 'children', allow_duplicate=True),
+    Output('store-favorites', 'data', allow_duplicate=True),
+    Input({'type': 'bookmark-btn', 'pncp': ALL}, 'n_clicks'),
+    State('store-results-sorted', 'data'),
+    State('store-favorites', 'data'),
+    prevent_initial_call=True,
+)
+def toggle_bookmark(n_clicks_list, results, favs):
+
+    fav_set = {str(x.get('numero_controle_pncp')) for x in (favs or [])}
+    pncp_ids = []
+    for r in (results or []):
+        d = (r or {}).get('details', {}) or {}
+        pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
+        pncp_ids.append(str(pid) if pid is not None else 'N/A')
+
+    # Determine if a click occurred and which index
+    ctx = callback_context
+    clicked_pid = None
+    clicked_idx = None
+    if ctx and ctx.triggered:
+        try:
+            id_str = ctx.triggered[0]['prop_id'].split('.')[0]
+            import json as _json
+            t = _json.loads(id_str)
+            clicked_pid = str(t.get('pncp'))
+            # localizar índice correspondente ao pncp para checar n_clicks
+            for i, pid in enumerate(pncp_ids):
+                if str(pid) == clicked_pid:
+                    clicked_idx = i
+                    break
+        except Exception:
+            clicked_pid = None
+            clicked_idx = None
+
+    # Persist toggle somente em clique real (n_clicks > 0)
+    updated_favs = list(favs or [])
+    # Se foi disparado pela criação dos componentes (n_clicks None/0), não faz nada
+    if clicked_pid and clicked_pid != 'N/A' and clicked_idx is not None and (n_clicks_list[clicked_idx] or 0) > 0:
+        if clicked_pid in fav_set:
+            try:
+                remove_bookmark(clicked_pid)
+            except Exception:
+                pass
+            # Otimista local
+            updated_favs = [x for x in updated_favs if str(x.get('numero_controle_pncp')) != clicked_pid]
+            try:
+                from gvg_search_core import SQL_DEBUG
+                if SQL_DEBUG:
+                    print(f"[GSB][BMK] toggle_bookmark: REMOVE {clicked_pid}")
+            except Exception:
+                pass
+        else:
+            try:
+                add_bookmark(clicked_pid)
+            except Exception:
+                pass
+            # Otimista local (adiciona no topo) com os mesmos campos exibidos no card de detalhes
+            fav_item = {'numero_controle_pncp': clicked_pid}
+            try:
+                # Obter o resultado correspondente e extrair campos como no card de detalhes
+                r = (results or [])[clicked_idx] if clicked_idx is not None else None
+                d = (r or {}).get('details', {}) or {}
+                orgao = (
+                    d.get('orgaoentidade_razaosocial')
+                    or d.get('orgaoEntidade_razaosocial')
+                    or d.get('nomeorgaoentidade')
+                    or ''
+                )
+                municipio = (
+                    d.get('unidadeorgao_municipionome')
+                    or d.get('unidadeOrgao_municipioNome')
+                    or d.get('municipioentidade')
+                    or ''
+                )
+                uf = (
+                    d.get('unidadeorgao_ufsigla')
+                    or d.get('unidadeOrgao_ufSigla')
+                    or d.get('uf')
+                    or ''
+                )
+                descricao = (
+                    d.get('descricaocompleta')
+                    or d.get('descricaoCompleta')
+                    or d.get('objeto')
+                    or ''
+                )
+                if isinstance(descricao, str) and len(descricao) > 100:
+                    descricao = descricao[:100]
+                raw_en = (
+                    d.get('dataencerramentoproposta')
+                    or d.get('dataEncerramentoProposta')
+                    or d.get('dataEncerramento')
+                )
+                data_en = _format_br_date(raw_en)
+                fav_item.update({
+                    'orgao_entidade_razao_social': orgao,
+                    'unidade_orgao_municipio_nome': municipio,
+                    'unidade_orgao_uf_sigla': uf,
+                    'objeto_compra': descricao,
+                    'data_encerramento_proposta': data_en,
+                })
+            except Exception:
+                pass
+            updated_favs = ([fav_item] + [x for x in updated_favs if str(x.get('numero_controle_pncp')) != clicked_pid])
+            try:
+                from gvg_search_core import SQL_DEBUG
+                if SQL_DEBUG:
+                    print(f"[GSB][BMK] toggle_bookmark: ADD {clicked_pid}")
+            except Exception:
+                pass
+        # Sem recarregar do BD aqui: mantemos atualização otimista no UI
+    # Ícones imediatos (com base no updated_favs)
+    fav_set_after = {str(x.get('numero_controle_pncp')) for x in (updated_favs or [])}
+    children_out = []
+    for pid in pncp_ids:
+        icon_class = 'fas fa-bookmark' if pid in fav_set_after else 'far fa-bookmark'
+        children_out.append(html.I(className=icon_class))
+
+    return children_out, updated_favs
+
+
+@app.callback(
+    Output({'type': 'bookmark-btn', 'pncp': ALL}, 'children', allow_duplicate=True),
+    Input('store-favorites', 'data'),
+    State('store-results-sorted', 'data'),
+    prevent_initial_call=True,
+)
+def sync_bookmark_icons(favs, results):
+    fav_set = {str(x.get('numero_controle_pncp')) for x in (favs or [])}
+    pncp_ids = []
+    for r in (results or []):
+        d = (r or {}).get('details', {}) or {}
+        pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
+        pncp_ids.append(str(pid) if pid is not None else 'N/A')
+    children_out = []
+    for pid in pncp_ids:
+        is_fav = pid in fav_set
+        icon_class = 'fas fa-bookmark' if is_fav else 'far fa-bookmark'
+        children_out.append(html.I(className=icon_class))
+
+    return children_out
+
+
+# Clique em um favorito: filtra a lista para destacá-lo (por ora, só preenche consulta)
+@app.callback(
+    Output('query-input', 'value', allow_duplicate=True),
+    Input({'type': 'favorite-item', 'index': ALL}, 'n_clicks'),
+    State('store-favorites', 'data'),
+    prevent_initial_call=True,
+)
+def select_favorite(n_clicks_list, favs):
+    if not n_clicks_list or not any(n_clicks_list):
+        raise PreventUpdate
+    idx = None
+    for i, n in enumerate(n_clicks_list):
+        if n:
+            idx = i
+            break
+    if idx is None:
+        raise PreventUpdate
+    try:
+        item = (favs or [])[idx]
+    except Exception:
+        item = None
+    if not item:
+        raise PreventUpdate
+    pncp = item.get('numero_controle_pncp')
+    return f"pncp:{pncp}"
+
+
+# Remover um favorito via lista
+@app.callback(
+    Output('store-favorites', 'data', allow_duplicate=True),
+    Input({'type': 'favorite-delete', 'index': ALL}, 'n_clicks'),
+    State('store-favorites', 'data'),
+    prevent_initial_call=True,
+)
+def delete_favorite(n_clicks_list, favs):
+    if not n_clicks_list or not any(n_clicks_list):
+        raise PreventUpdate
+    # Localiza o primeiro índice clicado (mesma lógica do histórico)
+    idx = None
+    for i, n in enumerate(n_clicks_list):
+        if n:
+            idx = i
+            break
+    if idx is None:
+        raise PreventUpdate
+    # Resolve o PNCP a partir do array atual de favoritos
+    try:
+        item = (favs or [])[idx]
+        pid = str(item.get('numero_controle_pncp')) if item else None
+    except Exception:
+        pid = None
+    if not pid:
+        raise PreventUpdate
+    # Diagnóstico mínimo sempre visível
+    print(f"[GSB][FAV] delete_favorite fired idx={idx} pid={pid}")
+    # Remove no BD (best-effort)
+    try:
+        remove_bookmark(pid)
+    except Exception:
+        pass
+    # Remove da Store localmente
+    updated = [x for x in (favs or []) if str(x.get('numero_controle_pncp')) != pid]
+
+    return updated
 
 
 # Exportações

@@ -11,6 +11,7 @@ Este documento resume e explica a arquitetura do módulo `gvg_browser` e, em esp
   - Painéis de resultados com tabelas e cards de detalhes (ordenação, cores por proximidade da data de encerramento, botões de Itens/Documentos/Resumo).
   - Exportação: JSON, XLSX, CSV, PDF e HTML.
   - Integração de documentos PNCP com conversão para Markdown (Docling) e resumo (OpenAI), com cache mínimo local em pastas `files/` e `reports/`.
+   - UX aprimorada para janelas de Itens/Documentos/Resumo: padding e fonte uniformes, spinner laranja centralizado no Resumo e toggle com ícones nos botões.
 
 ## Módulos e responsabilidades
 
@@ -52,6 +53,10 @@ Este documento resume e explica a arquitetura do módulo `gvg_browser` e, em esp
 
 - `gvg_styles.py` e `gvg_css.py`
   - Dicionário `styles` usado no layout e CSS adicional (inclui CSS para Markdown do resumo). OBS: `gvg_css.py` está vazio; o projeto usa `gvg_styles.py`.
+  - Destaques recentes:
+    - `details_content_base`: wrapper absoluto (posiciona/oculta as janelas).
+    - `details_content_inner`: padding/fonte uniformes do conteúdo das janelas (padding 4px; fonte base 12px).
+    - `details_spinner_center`: centraliza spinner (flex, alinhado no centro H/V).
 
 ## Fluxos principais
 
@@ -73,6 +78,10 @@ Este documento resume e explica a arquitetura do módulo `gvg_browser` e, em esp
   - Itens: lê itens do processo via `fetch_itens_contratacao` (em `gvg_search_core`, vindo do DB) e gera tabela (com bagulho de totalização).
   - Documentos: lista documentos do processo via `fetch_documentos` (DB ou API) e cria DataTable com links.
   - Resumo: escolhe “documento principal” (heurísticas por nome/URL) e chama `summarize_document`/`process_pncp_document` para baixar, converter e sumarizar. Resultado é exibido em Markdown.
+  - Toggle entre janelas: o estado por PNCP é guardado em `store-panel-active`; somente a janela ativa fica com `display: 'block'` (as outras ficam `display: 'none'`). O wrapper (`panel-wrapper`) só aparece se houver uma janela ativa para aquele PNCP.
+  - Ícones nos botões: os três botões exibem chevron para cima (ativo) ou para baixo (inativo), atualizados por callback conforme o toggle.
+  - Spinner no Resumo: ao ativar “Resumo”, mostra um spinner laranja centralizado (usando `details_spinner_center`) enquanto o sumário é gerado; ao terminar, o spinner é substituído pelo texto.
+  - Cache por PNCP: Resumo é processado apenas uma vez por sessão. O texto é salvo em `store-cache-resumo[pid]` e reapresentado instantaneamente nas próximas aberturas. Itens (`store-cache-itens`) e Documentos (`store-cache-docs`) também usam cache.
 
 3) Exportações
 - Botões no painel “Exportar” geram arquivos em `reports/`: JSON, XLSX, CSV, PDF (se reportlab instalado) e HTML.
@@ -115,6 +124,14 @@ Este documento resume e explica a arquitetura do módulo `gvg_browser` e, em esp
 - Estilo e cores (cards, botões, tabelas) vêm de `gvg_styles.styles`.
 - Ícones via FontAwesome (por meio do Bootstrap theme referenciado).
 - Cores da Data Encerramento variam por proximidade (roxo para vencidos; verde para > 30 dias).
+
+### Layout dos detalhes e janelas laterais
+
+- Largura dos painéis no card de detalhes: esquerda (detalhes do processo) 50% e direita (janelas Itens/Documentos/Resumo) 50%.
+- Cada janela é composta por:
+  - `details_content_base` (wrapper absoluto, controla visibilidade e scroll)
+  - `details_content_inner` (container interno com padding de 4px e fonte base 12px)
+- O spinner do Resumo é centralizado horizontal e verticalmente aplicando `details_spinner_center` dentro de um `details_content_inner` com `height: 100%`.
 
 ### Política de Estilos (obrigatória)
 
@@ -181,4 +198,4 @@ Atenção:
 
 ---
 
-Última atualização: auto‑gerado a partir do código em 2025‑09‑01.
+Última atualização: auto‑gerado a partir do código em 2025‑09‑02.
