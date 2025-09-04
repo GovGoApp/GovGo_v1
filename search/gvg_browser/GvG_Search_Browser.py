@@ -1044,7 +1044,9 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
         }
     except Exception:
         session_event = None
-    return results, categories, meta, query, session_event, False
+    # Importante: evitar escrever diretamente nas stores globais (results/categories/meta/last_query)
+    # para não competir com sync_active_session. Apenas emitir o evento de sessão e encerrar o processamento.
+    return dash.no_update, dash.no_update, dash.no_update, dash.no_update, session_event, False
 
 
 # ========================= Abas de resultados (sessões) =========================
@@ -1158,6 +1160,13 @@ def on_tab_click(_activates, _closes, active, sessions):
     if not ctx.triggered:
         raise PreventUpdate
     trig = ctx.triggered[0]['prop_id']
+    # Ignore synthetic triggers when components are created (n_clicks is None/0)
+    try:
+        clicks = int(ctx.triggered[0].get('value') or 0)
+    except Exception:
+        clicks = 0
+    if clicks <= 0:
+        raise PreventUpdate
     # Estrutura de id é dict; usamos substring
     if 'tab-close' in trig:
         # fechar
@@ -2839,7 +2848,7 @@ def sync_bookmark_icons(favs, results):
     return children_out
 
 
-# Clique em um favorito: filtra a lista para destacá-lo (por ora, só preenche consulta)
+# Clique em um favorito: não altera o campo de consulta (apenas outras ações usam este clique)
 @app.callback(
     Output('query-input', 'value', allow_duplicate=True),
     Input({'type': 'favorite-item', 'index': ALL}, 'n_clicks'),
@@ -2862,8 +2871,8 @@ def select_favorite(n_clicks_list, favs):
         item = None
     if not item:
         raise PreventUpdate
-    pncp = item.get('numero_controle_pncp')
-    return f"pncp:{pncp}"
+    # Não preenche mais o campo de consulta
+    return dash.no_update
 
 
 # Remover um favorito via lista
@@ -2995,6 +3004,50 @@ app.index_string = '''
                                     }
                                 }
                             }, true);
+                        })();
+                        </script>
+                        <script>
+                        // Auto-scroll tabs bar to the end when a new tab is added
+                        (function() {
+                            function setupObserverFor(el) {
+                                if (!el || el.dataset.gvgTabsObserved) return;
+                                el.dataset.gvgTabsObserved = '1';
+                                var lastCount = el.children ? el.children.length : 0;
+                                try {
+                                    var obs = new MutationObserver(function(mutations) {
+                                        var count = el.children ? el.children.length : 0;
+                                        if (count > lastCount) {
+                                            // new tab(s) added -> scroll to end
+                                            el.scrollLeft = el.scrollWidth;
+                                        }
+                                        lastCount = count;
+                                    });
+                                    obs.observe(el, { childList: true });
+                                } catch (e) {
+                                    // MutationObserver not available or failed
+                                }
+                                // Initial scroll to end (useful on first render with many tabs)
+                                setTimeout(function(){ try { el.scrollLeft = el.scrollWidth; } catch(_) {} }, 0);
+                            }
+
+                            function ensureObserver() {
+                                var el = document.getElementById('tabs-bar');
+                                if (el) setupObserverFor(el);
+                            }
+
+                            if (document.readyState === 'loading') {
+                                document.addEventListener('DOMContentLoaded', ensureObserver);
+                            } else {
+                                ensureObserver();
+                            }
+
+                            // Also watch for DOM updates that might replace the tabs container
+                            try {
+                                var rootObs = new MutationObserver(function() { ensureObserver(); });
+                                rootObs.observe(document.body, { childList: true, subtree: true });
+                            } catch (e) {
+                                // Ignore
+                            }
                         })();
                         </script>
         </footer>
