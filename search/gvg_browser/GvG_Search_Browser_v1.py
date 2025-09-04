@@ -18,13 +18,12 @@ import re
 import io
 import json
 from datetime import datetime
-import hashlib
 from typing import List, Dict, Any, Tuple
 
 import pandas as pd
 import dash
 import dash_bootstrap_components as dbc
-from dash import html, dcc, dash_table, Input, Output, State, callback_context, ALL
+from dash import html, dcc, dash_table, Input, Output, State, callback_context, ALL, MATCH
 from dash.exceptions import PreventUpdate
 
 # =====================================================================================
@@ -54,6 +53,7 @@ from gvg_search_core import (
     get_top_categories_for_query,
     correspondence_search as categories_correspondence_search,
     category_filtered_search as categories_category_filtered_search,
+    fetch_contratacao_by_pncp,
 )
 from gvg_exporters import (
     export_results_json,
@@ -312,48 +312,42 @@ controls_panel = html.Div([
 
 # Painel de resultados (direita)
 results_panel = html.Div([
-    html.Div(id='tabs-bar', style=styles['tabs_bar']),
-    html.Div(id='status-bar', style={**styles['result_card'], 'display': 'none'}),
-    # Spinner central durante processamento (idêntico ao botão de busca em modo cálculo)
-    html.Div(
-        [
-            # Barra de progresso fina sob o spinner
-            html.Div(
-                [
-                    html.Div(
-                        id='progress-fill',
-            style={**styles['progress_fill'], 'width': '0%'}
-                    )
-                ],
-                id='progress-bar',
-        style={**styles['progress_bar_container'], 'display': 'none'}
-            ),
-            # Rótulo/percentual abaixo da barra
-            html.Div(
-                id='progress-label',
-                children='',
-        style={**styles['progress_label'], 'display': 'none'}
-            )
-        ],
-        id='gvg-center-spinner',
-    style=styles['center_spinner']
-    ),
-    html.Div([
+        # Barra de abas (abas)
+        html.Div(id='tabs-bar', style={**styles['result_card'], **styles['tabs_bar'], 'display': 'none'}),
+        # Conteúdo das abas: query vs pncp
         html.Div([
-            html.Div('Exportar', style=styles['card_title']),
-            html.Button('JSON', id='export-json', style={**styles['submit_button'], 'width': '120px'}),
-            html.Button('XLSX', id='export-xlsx', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
-            html.Button('CSV', id='export-csv', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
-            html.Button('PDF', id='export-pdf', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
-            html.Button('HTML', id='export-html', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
-    ], style=styles['export_row'])
-    ], id='export-panel', style={**styles['result_card'], 'display': 'none'}),
-    html.Div(id='categories-table', style={**styles['result_card'], 'display': 'none'}),
-    html.Div([
-        html.Div('Resultados', style=styles['card_title']),
-        html.Div(id='results-table-inner')
-    ], id='results-table', style={**styles['result_card'], 'display': 'none'}),
-    html.Div(id='results-details')
+            # Painel de consulta (query)
+            html.Div([
+                html.Div(id='status-bar', style={**styles['result_card'], 'display': 'none'}),
+                # Spinner central durante processamento (mostrado apenas quando a aba ativa está processando)
+                html.Div(
+                    [
+                        html.Div([
+                            html.Div(id='progress-fill', style={**styles['progress_fill'], 'width': '0%'})
+                        ], id='progress-bar', style={**styles['progress_bar_container'], 'display': 'none'}),
+                        html.Div(id='progress-label', children='', style={**styles['progress_label'], 'display': 'none'})
+                    ], id='gvg-center-spinner', style=styles['center_spinner']
+                ),
+                html.Div([
+                    html.Div([
+                        html.Div('Exportar', style=styles['card_title']),
+                        html.Button('JSON', id='export-json', style={**styles['submit_button'], 'width': '120px'}),
+                        html.Button('XLSX', id='export-xlsx', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
+                        html.Button('CSV', id='export-csv', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
+                        html.Button('PDF', id='export-pdf', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
+                        html.Button('HTML', id='export-html', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
+                    ], style=styles['export_row'])
+                ], id='export-panel', style={**styles['result_card'], 'display': 'none'}),
+                html.Div(id='categories-table', style={**styles['result_card'], 'display': 'none'}),
+                html.Div([
+                    html.Div('Resultados', style=styles['card_title']),
+                    html.Div(id='results-table-inner')
+                ], id='results-table', style={**styles['result_card'], 'display': 'none'}),
+                html.Div(id='results-details')
+            ], id='query-panel', style={'display': 'none'}),
+            # Painel PNCP
+            html.Div(id='pncp-panel', style={'display': 'none'})
+        ], id='tab-content', style={'display': 'none', 'backgroundColor': 'transparent'})
 ], style=styles['right_panel'])
 
 
@@ -361,9 +355,6 @@ results_panel = html.Div([
 app.layout = html.Div([
     dcc.Store(id='store-results', data=[]),
     dcc.Store(id='store-results-sorted', data=[]),
-    dcc.Store(id='store-result-sessions', data={}),
-    dcc.Store(id='store-active-session', data=None),
-    dcc.Store(id='store-session-event', data=None),
     dcc.Store(id='store-categories', data=[]),
     dcc.Store(id='store-meta', data={}),
     dcc.Store(id='store-last-query', data=""),
@@ -382,6 +373,11 @@ app.layout = html.Div([
     dcc.Store(id='progress-store', data={'percent': 0, 'label': ''}),
     dcc.Interval(id='progress-interval', interval=400, n_intervals=0, disabled=True),
     dcc.Download(id='download-out'),
+    # Stores de sessões (abas/tabs)
+    dcc.Store(id='store-sessions', data={}),  # {session_id: {type: 'query'|'pncp', title: str, created: ts}}
+    dcc.Store(id='store-active-session', data=None),
+    dcc.Store(id='store-processing-session', data=None),
+    dcc.Store(id='store-session-data', data={}),  # {sid: {results:[], categories:[], meta:{}, query:str}}
 
     header,
     html.Div([
@@ -752,50 +748,6 @@ def _format_money(value) -> str:
     return f"{f:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 
-# =========================
-# Assinaturas de sessões (deduplicação)
-# =========================
-def _extract_pncp_id_from_result(r: dict) -> str:
-    try:
-        d = (r or {}).get('details', {}) or {}
-        pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
-        return str(pid) if pid is not None else ''
-    except Exception:
-        return ''
-
-
-def _make_query_signature(query: str, meta: dict, results: list, max_ids: int = 20) -> str:
-    """Cria uma assinatura estável da sessão de busca para evitar duplicação de abas.
-
-    Usa: query normalizada, parâmetros de meta principais e primeiros N ids PNCP.
-    """
-    q_norm = (query or '').strip().lower()
-    try:
-        ids = []
-        for r in (results or [])[:max_ids]:
-            rid = _extract_pncp_id_from_result(r)
-            if rid:
-                ids.append(rid)
-    except Exception:
-        ids = []
-    payload = {
-        'q': q_norm,
-        'search': (meta or {}).get('search'),
-        'approach': (meta or {}).get('approach'),
-        'relevance': (meta or {}).get('relevance'),
-        'order': (meta or {}).get('order'),
-        'filter_expired': bool((meta or {}).get('filter_expired')),
-        'max_results': (meta or {}).get('max_results'),
-        'top_categories': (meta or {}).get('top_categories'),
-        'ids': ids,
-    }
-    try:
-        blob = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode('utf-8')
-        return hashlib.sha1(blob).hexdigest()
-    except Exception:
-        return f"fallback:{q_norm}:{len(ids)}:{(meta or {}).get('order')}"
-
-
 # Sanitização de limites vindos da UI
 def _sanitize_limit(value, default=DEFAULT_MAX_RESULTS, min_v=5, max_v=1000) -> int:
     try:
@@ -834,7 +786,6 @@ def save_history(history: list, max_items: int = 50):
     Output('store-categories', 'data'),
     Output('store-meta', 'data'),
     Output('store-last-query', 'data'),
-    Output('store-session-event', 'data', allow_duplicate=True),
     Output('processing-state', 'data', allow_duplicate=True),
     Input('processing-state', 'data'),
     State('query-input', 'value'),
@@ -855,7 +806,7 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
     # Resetar e iniciar progresso
     try:
         progress_reset()
-        progress_set(10, 'Iniciando')
+        progress_set(2, 'Iniciando')
     except Exception:
         pass
 
@@ -1028,296 +979,7 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
         progress_reset()
     except Exception:
         pass
-    # Evento de sessão (gatilho único para criar/ativar aba)
-    try:
-        sign = _make_query_signature(query, meta, results)
-        session_event = {
-            'token': int(time.time()*1000),
-            'type': 'query',
-            'title': (query or '').strip(),
-            'signature': sign,
-            'payload': {
-                'results': results or [],
-                'categories': categories or [],
-                'meta': meta or {},
-            }
-        }
-    except Exception:
-        session_event = None
-    return results, categories, meta, query, session_event, False
-
-
-# ========================= Abas de resultados (sessões) =========================
-
-"""
-Criação/ativação de sessões com deduplicação por assinatura.
-Fluxo: run_search emite store-session-event; este callback consome e cria/ativa aba.
-"""
-@app.callback(
-    Output('store-result-sessions', 'data', allow_duplicate=True),
-    Output('store-active-session', 'data', allow_duplicate=True),
-    Input('store-session-event', 'data'),
-    State('store-result-sessions', 'data'),
-    State('store-active-session', 'data'),
-    prevent_initial_call=True,
-)
-def create_or_update_session(session_event, sessions, active):
-    if not session_event:
-        raise PreventUpdate
-    try:
-        sessions = dict(sessions or {})
-        sign = session_event.get('signature')
-        title = (session_event.get('title') or '').strip() or 'Consulta'
-        s_type = session_event.get('type') or 'query'
-        payload = session_event.get('payload') or {}
-        # Tenta encontrar sessão existente pela assinatura
-        for sid, sess in sessions.items():
-            if sess.get('signature') and sign and sess.get('signature') == sign:
-                # Já existe: apenas ativar
-                return sessions, sid
-        # Limite de 100 abas (remove a mais antiga não ativa)
-        keys = list(sessions.keys())
-        if len(keys) >= 100:
-            for k in keys:
-                if k != active:
-                    sessions.pop(k, None)
-                    break
-        import time as _t
-        sid = (('p-' if s_type == 'pncp' else 'q-') + str(int(_t.time()*1000)))
-        sessions[sid] = {
-            'type': s_type,
-            'title': title,
-            'results': payload.get('results') or [],
-            'categories': payload.get('categories') or [],
-            'meta': payload.get('meta') or {},
-            'sort': None,
-            'signature': sign,
-        }
-        return sessions, sid
-    except Exception:
-        raise PreventUpdate
-
-
-# Renderiza barra de abas
-@app.callback(
-    Output('tabs-bar', 'children'),
-    Input('store-result-sessions', 'data'),
-    Input('store-active-session', 'data'),
-)
-def render_tabs_bar(sessions, active):
-    sessions = sessions or {}
-    out = []
-    for sid, sess in sessions.items():
-        is_active = (sid == active)
-        # Use current tab style keys from gvg_styles.py
-        base_style = dict(styles['tab_button_base'])
-        if sess.get('type') == 'pncp':
-            base_style.update(styles['tab_button_pncp'])
-        else:
-            base_style.update(styles['tab_button_query'])
-        if is_active:
-            base_style.update(styles['tab_button_active'])
-        label_full = sess.get('title') or sid
-        label = label_full
-        if isinstance(label, str) and len(label) > 50:
-            label = label[:47] + '...'
-        # Left icon based on tab type
-        icon = html.I(className=("fas fa-bookmark" if sess.get('type') == 'pncp' else "fas fa-search"))
-        out.append(html.Div([
-            icon,
-            html.Span(label, title=label_full),
-            html.Button(html.I(className='fas fa-times'), id={'type': 'tab-close', 'sid': sid}, style=styles['tab_close_btn'], title='Fechar')
-        ], id={'type': 'tab-activate', 'sid': sid}, style=base_style))
-    return out
-
-
-# Oculta/mostra a barra de abas conforme existência de sessões
-@app.callback(
-    Output('tabs-bar', 'style'),
-    Input('store-result-sessions', 'data'),
-)
-def toggle_tabs_bar_style(sessions):
-    if not sessions:
-        return {'display': 'none'}
-    return styles['tabs_bar']
-
-
-# Ativar/fechar abas
-@app.callback(
-    Output('store-active-session', 'data', allow_duplicate=True),
-    Output('store-result-sessions', 'data', allow_duplicate=True),
-    Input({'type': 'tab-activate', 'sid': ALL}, 'n_clicks'),
-    Input({'type': 'tab-close', 'sid': ALL}, 'n_clicks'),
-    State('store-active-session', 'data'),
-    State('store-result-sessions', 'data'),
-    prevent_initial_call=True,
-)
-def on_tab_click(_activates, _closes, active, sessions):
-    sessions = sessions or {}
-    ctx = callback_context
-    if not ctx.triggered:
-        raise PreventUpdate
-    trig = ctx.triggered[0]['prop_id']
-    # Estrutura de id é dict; usamos substring
-    if 'tab-close' in trig:
-        # fechar
-        try:
-            import json
-            sid = json.loads(trig.split('.')[0]).get('sid')
-        except Exception:
-            sid = None
-        if not sid:
-            raise PreventUpdate
-        sessions.pop(sid, None)
-        # Se fechou ativo, escolher outro (último da lista) ou None
-        if active == sid:
-            active = next(iter(sessions.keys()), None)
-        return active, sessions
-    else:
-        try:
-            import json
-            sid = json.loads(trig.split('.')[0]).get('sid')
-        except Exception:
-            sid = None
-        if not sid or sid not in sessions:
-            raise PreventUpdate
-        return sid, sessions
-
-
-# Sincroniza sessão ativa com stores legadas (results/categories/meta/last_query)
-@app.callback(
-    Output('store-results', 'data', allow_duplicate=True),
-    Output('store-results-sorted', 'data', allow_duplicate=True),
-    Output('store-categories', 'data', allow_duplicate=True),
-    Output('store-meta', 'data', allow_duplicate=True),
-    Output('store-last-query', 'data', allow_duplicate=True),
-    Input('store-active-session', 'data'),
-    State('store-result-sessions', 'data'),
-    prevent_initial_call=True,
-)
-def sync_active_session(active, sessions):
-    sessions = sessions or {}
-    sess = sessions.get(active) if active else None
-    if not sess:
-        raise PreventUpdate
-    results = sess.get('results') or []
-    meta = sess.get('meta') or {}
-    categories = sess.get('categories') or []
-    # last_query deve refletir a aba ativa (para o card de resumo)
-    last_query = (sess.get('title') or '') if (sess.get('type') == 'query') else ''
-    # results-sorted será recalculado pelo callback existente compute_sorted_results
-    return results, [], categories, meta, last_query
-
-
-# Clique em favorito: além de preencher pncp:<id>, abre uma aba PNCP
-@app.callback(
-    Output('store-result-sessions', 'data', allow_duplicate=True),
-    Output('store-active-session', 'data', allow_duplicate=True),
-    Input({'type': 'favorite-item', 'index': ALL}, 'n_clicks'),
-    State('store-favorites', 'data'),
-    State('store-result-sessions', 'data'),
-    State('store-active-session', 'data'),
-    prevent_initial_call=True,
-)
-def open_pncp_tab_from_favorite(n_clicks_list, favs, sessions, active):
-    if not n_clicks_list or not any(n_clicks_list):
-        raise PreventUpdate
-    idx = None
-    for i, n in enumerate(n_clicks_list):
-        if n:
-            idx = i; break
-    if idx is None:
-        raise PreventUpdate
-    try:
-        item = (favs or [])[idx]
-        pid = str(item.get('numero_controle_pncp')) if item else None
-    except Exception:
-        pid = None
-    if not pid:
-        raise PreventUpdate
-    sessions = sessions or {}
-    # Reutiliza sessão existente via assinatura
-    pncp_sign = f"pncp:{pid}"
-    for sid, sess in sessions.items():
-        if sess.get('signature') == pncp_sign:
-            return sessions, sid
-    # Criar nova sessão PNCP buscando detalhes completos do BD
-    # Preferir descrição como título da aba PNCP; fallback para "PNCP <id>"
-    # Tenta usar a descrição já presente no item de favoritos
-    try:
-        title = (
-            (item.get('descricaocompleta') if item else None)
-            or (item.get('descricaoCompleta') if item else None)
-            or (item.get('objeto') if item else None)
-            or (item.get('descricao') if item else None)
-        )
-        title = title.strip() if isinstance(title, str) else None
-    except Exception:
-        title = None
-    details = {'numerocontrolepncp': pid}
-    try:
-        from gvg_database import create_connection
-        from gvg_schema import get_contratacao_core_columns, PRIMARY_KEY
-        from gvg_search_core import _augment_aliases
-        conn = create_connection()
-        cur = conn.cursor() if conn else None
-        if cur:
-            cols = get_contratacao_core_columns('c')
-            sql = "SELECT\n  " + ",\n  ".join(cols) + f"\nFROM contratacao c\nWHERE c.{PRIMARY_KEY} = %s LIMIT 1"
-            cur.execute(sql, (pid,))
-            row = cur.fetchone()
-            if row is not None:
-                colnames = [d[0] for d in cur.description]
-                rec = dict(zip(colnames, row))
-                # usa todas as colunas core em snake_case
-                details = {k: rec.get(k) for k in colnames}
-                _augment_aliases(details)
-                # Título preferencial com descrição
-                try:
-                    desc = (
-                        details.get('descricaocompleta')
-                        or details.get('descricaoCompleta')
-                        or details.get('objeto')
-                        or details.get('descricao')
-                    )
-                    if isinstance(desc, str) and desc.strip():
-                        title = desc.strip()
-                except Exception:
-                    pass
-        if cur:
-            try:
-                cur.close()
-            except Exception:
-                pass
-        if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
-    except Exception:
-        # mantém details mínimo (com id) como fallback
-        pass
-
-    mock_result = {'id': pid, 'numero_controle': pid, 'similarity': 1.0, 'rank': 1, 'details': details}
-    import time as _t
-    sid = f"p-{int(_t.time()*1000)}"
-    # Limite 100
-    keys = list(sessions.keys())
-    if len(keys) >= 100:
-        for k in keys:
-            if k != active:
-                sessions.pop(k, None)
-                break
-    sessions[sid] = {
-        'type': 'pncp',
-        'title': (title or f"PNCP {pid}"),
-        'results': [mock_result],
-        'categories': [],
-    'meta': {'order': 1, 'count': 1},
-    'sort': None,
-    'signature': pncp_sign,
-    }
-    return sessions, sid
+    return results, categories, meta, query, False
 
 
 # Callback: seta/spinner do botão de envio no estilo Reports
@@ -1339,9 +1001,8 @@ def update_submit_button(is_processing):
     Input('processing-state', 'data')
 )
 def toggle_center_spinner(is_processing):
-    if is_processing:
-        return {'display': 'block'}
-    return {'display': 'none'}
+    # Controlado por callback abaixo com base na sessão ativa
+    return dash.no_update
 
 
 # Habilita/desabilita o Interval do progresso conforme o processamento
@@ -1410,10 +1071,15 @@ def reflect_progress_bar(data, is_processing):
     Output('store-cache-docs', 'data', allow_duplicate=True),
     Output('store-cache-resumo', 'data', allow_duplicate=True),
     Input('processing-state', 'data'),
+    State('store-active-session', 'data'),
+    State('store-processing-session', 'data'),
     prevent_initial_call=True,
 )
-def clear_results_content_on_start(is_processing):
+def clear_results_content_on_start(is_processing, active_sid, processing_sid):
     if not is_processing:
+        raise PreventUpdate
+    # Only clear if the active tab is the one processing
+    if not active_sid or not processing_sid or active_sid != processing_sid:
         raise PreventUpdate
     # Esvazia conteúdos imediatamente
     return [], [], [], [], {}, {}, {}, {}
@@ -1440,18 +1106,96 @@ def hide_result_panels_during_processing(is_processing):
 # Callback: define estado de processamento quando clicar seta
 @app.callback(
     Output('processing-state', 'data', allow_duplicate=True),
+    Output('store-processing-session', 'data', allow_duplicate=True),
     Input('submit-button', 'n_clicks'),
     State('query-input', 'value'),
     State('processing-state', 'data'),
+    State('store-active-session', 'data'),
     prevent_initial_call=True,
 )
-def set_processing_state(n_clicks, query, is_processing):
+def set_processing_state(n_clicks, query, is_processing, active_sid):
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
     if is_processing or not query or not query.strip():
         raise PreventUpdate
-    return True
+    return True, active_sid
+
+
+# ==========================
+# Abas/Tabs: helpers
+# ==========================
+def _session_title_for_query(query: str) -> str:
+    q = (query or '').strip().replace('\n', ' ')
+    return (q[:60] + '...') if len(q) > 60 else q or 'Consulta'
+
+def _session_title_for_pncp(pncp_id: str) -> str:
+    return f"PNCP {pncp_id}"
+
+def _build_tab_progress():
+    return html.Div([
+        html.Div([html.Div(id='progress-fill', style={**styles['progress_fill'], 'width': '0%'})], id='progress-bar', style={**styles['progress_bar_container'], 'display': 'none'}),
+        html.Div(id='progress-label', children='', style={**styles['progress_label'], 'display': 'none'})
+    ], style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center', 'justifyContent': 'center', 'height': '120px'})
+
+def _render_query_tab_skeleton(session_id: str, title: str):
+    # Conteúdo inicial: apenas o progress bar central durante processamento
+    return html.Div([
+        html.Div(id={'type': 'status-bar', 'sid': session_id}, style={**styles['result_card'], 'display': 'none'}),
+        html.Div(id={'type': 'export-panel', 'sid': session_id}, style={**styles['result_card'], 'display': 'none'}),
+        html.Div(id={'type': 'categories-table', 'sid': session_id}, style={**styles['result_card'], 'display': 'none'}),
+        html.Div([
+            html.Div('Resultados', style=styles['card_title']),
+            html.Div(id={'type': 'results-table-inner', 'sid': session_id})
+        ], id={'type': 'results-table', 'sid': session_id}, style={**styles['result_card'], 'display': 'none'}),
+        html.Div(id={'type': 'results-details', 'sid': session_id}),
+        _build_tab_progress()
+    ], id={'type': 'tab-content', 'sid': session_id})
+
+def _render_pncp_tab_content(session_id: str, pncp_id: str, details: dict):
+    # Renderiza único card de detalhe, idêntico ao card dos resultados
+    r = {'rank': 1, 'details': details}
+    # Reutiliza render de um único card criando a estrutura do card
+    d = details or {}
+    descricao_full = d.get('descricaocompleta') or d.get('descricaoCompleta') or d.get('objeto') or ''
+    destaque = descricao_full
+    valor = format_currency(d.get('valortotalestimado') or d.get('valorTotalEstimado') or d.get('valorfinal') or d.get('valorFinal') or 0)
+    data_inc = _format_br_date(d.get('datainclusao') or d.get('dataInclusao') or d.get('dataassinatura') or d.get('dataAssinatura'))
+    data_ab = _format_br_date(d.get('dataaberturaproposta') or d.get('dataAberturaProposta'))
+    raw_en = d.get('dataencerramentoproposta') or d.get('dataEncerramentoProposta') or d.get('dataEncerramento')
+    data_en = _format_br_date(raw_en)
+    _enc_status, enc_color = _enc_status_and_color(raw_en)
+    orgao = d.get('orgaoentidade_razaosocial') or d.get('orgaoEntidade_razaosocial') or d.get('nomeorgaoentidade') or 'N/A'
+    unidade = d.get('unidadeorgao_nomeunidade') or d.get('unidadeOrgao_nomeUnidade') or 'N/A'
+    municipio = d.get('unidadeorgao_municipionome') or d.get('unidadeOrgao_municipioNome') or d.get('municipioentidade') or 'N/A'
+    uf = d.get('unidadeorgao_ufsigla') or d.get('unidadeOrgao_ufSigla') or d.get('uf') or ''
+    local = f"{municipio}/{uf}" if uf else municipio
+    link = d.get('linksistemaorigem') or d.get('linkSistemaOrigem')
+    pncp_id_txt = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or pncp_id
+    link_text = link or 'N/A'
+    if link and len(link_text) > 100:
+        link_text = link_text[:97] + '...'
+    body = html.Div([
+        html.Div([html.Span('Órgão: ', style={'fontWeight': 'bold'}), html.Span(orgao)]),
+        html.Div([html.Span('Unidade: ', style={'fontWeight': 'bold'}), html.Span(unidade)]),
+        html.Div([html.Span('ID PNCP: ', style={'fontWeight': 'bold'}), html.Span(str(pncp_id_txt))]),
+        html.Div([html.Span('Local: ', style={'fontWeight': 'bold'}), html.Span(local)]),
+        html.Div([html.Span('Valor: ', style={'fontWeight': 'bold'}), html.Span(valor)]),
+        html.Div([html.Span('Datas: ', style={'fontWeight': 'bold'}), html.Span(f"Abertura: {data_ab} | Encerramento: "), html.Span(str(data_en), style={'color': enc_color, 'fontWeight': 'bold'})]),
+        html.Div([html.Span('Link: ', style={'fontWeight': 'bold'}), html.A(link_text, href=link, target='_blank', style=styles['link_break_all']) if link else html.Span('N/A')], style={'marginBottom': '8px'}),
+        html.Div([html.Span('Descrição: ', style={'fontWeight': 'bold'}), html.Div(dcc.Markdown(children=destaque))])
+    ], style=styles['details_body'])
+    left_panel = html.Div(body, style=styles['details_left_panel'])
+    right_panel = html.Div([], style=styles['details_right_panel'])
+    _card_style = dict(styles['result_card']); _card_style['marginBottom'] = '6px'
+    card = html.Div([
+        html.Div([left_panel, right_panel], style={'display': 'flex', 'gap': '10px', 'alignItems': 'stretch'}),
+        html.Div('1', style=styles['result_number'])
+    ], style=_card_style)
+    return html.Div([
+        html.Div('Detalhes', style=styles['card_title']),
+        card
+    ], id={'type': 'tab-content', 'sid': session_id})
 
 
 # Toggle config collapse open/close and icon
@@ -1534,6 +1278,128 @@ def init_history(history):
     if history:
         return history
     return load_history()
+
+
+# ==========================
+# Abas/Tabs: criação/ativação/fechamento
+# ==========================
+@app.callback(
+    Output('store-sessions', 'data', allow_duplicate=True),
+    Output('store-active-session', 'data', allow_duplicate=True),
+    Output('store-processing-session', 'data', allow_duplicate=True),
+    Output('tabs-bar', 'style', allow_duplicate=True),
+    Output('tabs-bar', 'children', allow_duplicate=True),
+    Input('processing-state', 'data'),  # quando inicia processamento de consulta
+    State('query-input', 'value'),
+    State('store-sessions', 'data'),
+    State('store-active-session', 'data'),
+    prevent_initial_call=True,
+)
+def create_query_tab_on_processing(is_processing, query_value, sessions, active_sid):
+    if not is_processing or not query_value or not query_value.strip():
+        raise PreventUpdate
+    # Cria sessão para consulta imediatamente
+    sessions = dict(sessions or {})
+    import time, uuid
+    sid = str(uuid.uuid4())
+    title = _session_title_for_query(query_value)
+    sessions[sid] = {'type': 'query', 'title': title, 'created': time.time(), 'query': query_value}
+    # limite 100 abas: remove a mais antiga não ativa
+    if len(sessions) > 100:
+        # remove a mais antiga por created (exceto ativa)
+        oldest = sorted([(k, v.get('created', 0.0)) for k, v in sessions.items()], key=lambda x: x[1])
+        for k, _ in oldest:
+            if k != active_sid:
+                sessions.pop(k, None)
+                break
+    # Render tabs bar e conteúdo
+    tabs = _render_tabs_bar(sessions, sid)
+    bar_style = {**styles['result_card'], **styles['tabs_bar'], 'display': 'flex'}
+    return sessions, sid, sid, bar_style, tabs
+
+
+def _render_tabs_bar(sessions: dict, active_sid: str):
+    buttons = []
+    for sid, meta in sessions.items():
+        t = meta.get('type')
+        title = meta.get('title') or ''
+        base = dict(styles['tab_button_base'])
+        if t == 'query':
+            base.update(styles['tab_button_query'])
+        else:
+            base.update(styles['tab_button_pncp'])
+        if sid == active_sid:
+            base.update(styles['tab_button_active'])
+        btn = html.Div([
+            html.Span(title, title=title, style={'overflow': 'hidden', 'textOverflow': 'ellipsis'}),
+            html.Button('x', id={'type': 'tab-close', 'sid': sid}, style=styles['tab_close_btn'])
+        ], id={'type': 'tab-btn', 'sid': sid}, n_clicks=0, style=base)
+        buttons.append(btn)
+    return buttons
+
+def _render_tabs_contents(sessions: dict, active_sid: str):
+    # Nesta versão, usamos um conteúdo compartilhado; retornamos vazio e controlamos visibilidade com 'tab-content'
+    return []
+
+
+@app.callback(
+    Output('store-active-session', 'data', allow_duplicate=True),
+    Output('tabs-bar', 'children', allow_duplicate=True),
+    Input({'type': 'tab-btn', 'sid': ALL}, 'n_clicks'),
+    State('store-sessions', 'data'),
+    State('store-active-session', 'data'),
+    prevent_initial_call=True,
+)
+def activate_tab(n_clicks_list, sessions, active_sid):
+    if not n_clicks_list:
+        raise PreventUpdate
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    try:
+        id_str = ctx.triggered[0]['prop_id'].split('.')[0]
+        import json as _json
+        btn_id = _json.loads(id_str)
+    except Exception:
+        raise PreventUpdate
+    sid = btn_id.get('sid')
+    if not sid or sid not in (sessions or {}):
+        raise PreventUpdate
+    return sid, _render_tabs_bar(sessions, sid)
+
+
+@app.callback(
+    Output('store-sessions', 'data', allow_duplicate=True),
+    Output('store-active-session', 'data', allow_duplicate=True),
+    Output('tabs-bar', 'children', allow_duplicate=True),
+    Input({'type': 'tab-close', 'sid': ALL}, 'n_clicks'),
+    State('store-sessions', 'data'),
+    State('store-active-session', 'data'),
+    prevent_initial_call=True,
+)
+def close_tab(n_clicks_list, sessions, active_sid):
+    if not n_clicks_list or not any(n_clicks_list):
+        raise PreventUpdate
+    ctx = callback_context
+    try:
+        id_str = ctx.triggered[0]['prop_id'].split('.')[0]
+        import json as _json
+        t = _json.loads(id_str)
+        sid_to_close = t.get('sid')
+    except Exception:
+        raise PreventUpdate
+    sessions = dict(sessions or {})
+    if sid_to_close not in sessions:
+        raise PreventUpdate
+    sessions.pop(sid_to_close, None)
+    new_active = active_sid
+    if not sessions:
+        # Sem abas
+        return {}, None, []
+    if sid_to_close == active_sid:
+        # escolhe a mais recente
+        new_active = sorted([(k, v.get('created', 0.0)) for k, v in sessions.items()], key=lambda x: x[1])[-1][0]
+    return sessions, new_active, _render_tabs_bar(sessions, new_active)
 
 @app.callback(
     Output('history-list', 'children'),
@@ -2461,34 +2327,151 @@ def toggle_panel_wrapper(active_map, results):
     Input('store-meta', 'data'),
     Input('store-results', 'data'),
     Input('store-categories', 'data'),
-    State('store-active-session', 'data'),
-    State('store-result-sessions', 'data'),
     prevent_initial_call=True,
 )
-def toggle_results_visibility(meta, results, categories, active, sessions):
+def toggle_results_visibility(meta, results, categories):
     base = styles['result_card'].copy()
     hidden = {**base, 'display': 'none'}
     show = base
-    # Detecta tipo de sessão ativa
-    sess_type = None
-    try:
-        sess_type = (sessions or {}).get(active, {}).get('type')
-    except Exception:
-        sess_type = None
     status_style = show if meta else hidden
     cats_style = show if categories else hidden
     show_results = bool(results)
     export_style = show if show_results else hidden
     table_style = show if show_results else hidden
     details_style = show if show_results else hidden
-    # Em abas PNCP, exibir somente o card de detalhe
-    if sess_type == 'pncp':
-        status_style = hidden
-        cats_style = hidden
-        export_style = hidden
-        table_style = hidden
-        details_style = show if show_results else hidden
     return status_style, cats_style, export_style, table_style, details_style
+
+
+# ==========================
+# Render dentro da aba ativa (consulta)
+# ==========================
+@app.callback(
+    Output({'type': 'status-bar', 'sid': MATCH}, 'children'),
+    Output({'type': 'categories-table', 'sid': MATCH}, 'children'),
+    Output({'type': 'export-panel', 'sid': MATCH}, 'style'),
+    Output({'type': 'results-table', 'sid': MATCH}, 'style'),
+    Output({'type': 'results-details', 'sid': MATCH}, 'style'),
+    Input('store-meta', 'data'),
+    Input('store-categories', 'data'),
+    State('store-active-session', 'data'),
+    prevent_initial_call=True,
+)
+def reflect_active_tab_visibility(meta, categories, active_sid):
+    # Mostra controles apenas dentro da aba ativa
+    base = styles['result_card'].copy(); hidden = {**base, 'display': 'none'}; show = base
+    if not meta:
+        return dash.no_update, dash.no_update, hidden, hidden, hidden
+    cats_children = dash.no_update
+    if categories:
+        cats_children = dash.no_update  # já renderizado no callback de status acima
+    show_results = meta.get('count', 0) > 0
+    return dash.no_update, cats_children, (show if show_results else hidden), (show if show_results else hidden), (show if show_results else hidden)
+
+
+"""
+Tabs/Session wiring:
+- Show tabs bar when sessions exist
+- Switch query-panel vs pncp-panel based on active session type
+- Render PNCP card inside pncp-panel using session details
+- Show center spinner only when processing and the active session is the one processing
+- Persist search outputs per session and restore when switching tabs
+"""
+@app.callback(
+    Output('tabs-bar', 'style'),
+    Output('tab-content', 'style'),
+    Input('store-sessions', 'data')
+)
+def toggle_tabs_bar(sessions):
+    if sessions:
+        return {**styles['result_card'], **styles['tabs_bar'], 'display': 'flex'}, {'display': 'block', 'backgroundColor': 'transparent'}
+    return {**styles['result_card'], **styles['tabs_bar'], 'display': 'none'}, {'display': 'none'}
+
+
+# Conteúdo de tabs: seleção da aba ativa (mostra apenas a ativa)
+@app.callback(
+    Output('gvg-center-spinner', 'style', allow_duplicate=True),
+    Input('processing-state', 'data'),
+    State('store-active-session', 'data'),
+    State('store-processing-session', 'data'),
+    prevent_initial_call=True,
+)
+def show_spinner_in_active_tab(is_processing, active_sid, processing_sid):
+    # Show only if processing and the active tab is the one processing
+    if is_processing and active_sid and processing_sid and active_sid == processing_sid:
+        return {'display': 'block'}
+    return {'display': 'none'}
+
+
+# Switch content panels based on active session
+@app.callback(
+    Output('query-panel', 'style'),
+    Output('pncp-panel', 'style'),
+    Output('pncp-panel', 'children', allow_duplicate=True),
+    Input('store-active-session', 'data'),
+    State('store-sessions', 'data'),
+    prevent_initial_call=True,
+)
+def switch_active_tab_content(active_sid, sessions):
+    sessions = sessions or {}
+    if not active_sid or active_sid not in sessions:
+        return {'display': 'none'}, {'display': 'none'}, dash.no_update
+    meta = sessions.get(active_sid) or {}
+    if meta.get('type') == 'pncp':
+        # Render PNCP card
+        details = meta.get('details') or {}
+        pncp_id = meta.get('pncp_id') or ''
+        return {'display': 'none'}, {'display': 'block'}, _render_pncp_tab_content(active_sid, pncp_id, details)
+    # query tab
+    return {'display': 'block'}, {'display': 'none'}, dash.no_update
+
+
+# Persist results data per session on search completion and restore when switching tabs
+@app.callback(
+    Output('store-session-data', 'data', allow_duplicate=True),
+    Output('store-processing-session', 'data', allow_duplicate=True),
+    Input('store-results', 'data'),
+    Input('store-categories', 'data'),
+    Input('store-meta', 'data'),
+    State('store-active-session', 'data'),
+    State('store-session-data', 'data'),
+    prevent_initial_call=True,
+)
+def persist_data_to_session(results, categories, meta, active_sid, session_data):
+    session_data = dict(session_data or {})
+    if not active_sid:
+        raise PreventUpdate
+    # On first results/meta after starting a search, persist into the active session
+    data = session_data.get(active_sid, {})
+    changed = False
+    if results is not None:
+        data['results'] = results
+        changed = True
+    if categories is not None:
+        data['categories'] = categories
+        changed = True
+    if meta is not None:
+        data['meta'] = meta
+        changed = True
+    session_data[active_sid] = data
+    if changed:
+        return session_data, None
+    raise PreventUpdate
+
+
+@app.callback(
+    Output('store-results', 'data', allow_duplicate=True),
+    Output('store-categories', 'data', allow_duplicate=True),
+    Output('store-meta', 'data', allow_duplicate=True),
+    Input('store-active-session', 'data'),
+    State('store-session-data', 'data'),
+    prevent_initial_call=True,
+)
+def restore_data_when_switching_tabs(active_sid, session_data):
+    # When switching to a query tab, restore its data into the shared stores
+    data = (session_data or {}).get(active_sid) or {}
+    if not data:
+        raise PreventUpdate
+    return data.get('results', []), data.get('categories', []), data.get('meta', {})
 
 
 # Atualiza histórico quando uma busca termina com sucesso
@@ -2863,7 +2846,47 @@ def select_favorite(n_clicks_list, favs):
     if not item:
         raise PreventUpdate
     pncp = item.get('numero_controle_pncp')
-    return f"pncp:{pncp}"
+    # Criar uma aba PNCP imediatamente
+    raise PreventUpdate
+
+
+@app.callback(
+    Output('store-sessions', 'data', allow_duplicate=True),
+    Output('store-active-session', 'data', allow_duplicate=True),
+    Output('tabs-bar', 'children', allow_duplicate=True),
+    Input({'type': 'favorite-item', 'index': ALL}, 'n_clicks'),
+    State('store-favorites', 'data'),
+    State('store-sessions', 'data'),
+    State('store-active-session', 'data'),
+    prevent_initial_call=True,
+)
+def open_pncp_tab_from_favorite(n_clicks_list, favs, sessions, active_sid):
+    if not n_clicks_list or not any(n_clicks_list):
+        raise PreventUpdate
+    # discover which index
+    idx = None
+    for i, n in enumerate(n_clicks_list):
+        if n:
+            idx = i; break
+    if idx is None:
+        raise PreventUpdate
+    item = (favs or [])[idx]
+    pncp = item.get('numero_controle_pncp')
+    if not pncp:
+        raise PreventUpdate
+    # Fetch detalhes completos para evitar N/A
+    details = fetch_contratacao_by_pncp(pncp) or {}
+    sessions = dict(sessions or {})
+    import time, uuid
+    sid = str(uuid.uuid4())
+    title = _session_title_for_pncp(pncp)
+    sessions[sid] = {'type': 'pncp', 'title': title, 'created': time.time(), 'pncp_id': pncp, 'details': details}
+    # limite 100
+    if len(sessions) > 100:
+        oldest = sorted([(k, v.get('created', 0.0)) for k, v in sessions.items()], key=lambda x: x[1])
+        sessions.pop(oldest[0][0], None)
+    tabs = _render_tabs_bar(sessions, sid)
+    return sessions, sid, tabs
 
 
 # Remover um favorito via lista
@@ -3006,10 +3029,4 @@ app.index_string = '''
 if __name__ == '__main__':
     # Porta padrão diferente do Reports para evitar conflito
     # Desativar hot-reload para evitar resets durante processamento pesado de documentos
-    app.run_server(
-        debug=True, port=8060, 
-        dev_tools_hot_reload=True, 
-        dev_tools_props_check=False, 
-        dev_tools_ui=False,
-        dev_tools_hot_reload_interval=0.5, 
-        use_reloader=True )
+    app.run_server(debug=True, port=8060, dev_tools_hot_reload=False, dev_tools_props_check=False, dev_tools_ui=False)

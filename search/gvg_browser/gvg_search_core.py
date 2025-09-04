@@ -1179,7 +1179,7 @@ __all__ = [
 	'apply_relevance_filter','set_relevance_filter_level','toggle_relevance_filter','get_relevance_filter_status',
 	'toggle_intelligent_processing','get_intelligent_status','set_sql_debug',
 	'get_top_categories_for_query','correspondence_search','category_filtered_search',
-	'fetch_itens_contratacao'
+	'fetch_itens_contratacao','fetch_contratacao_by_pncp'
 ]
 
 
@@ -1215,5 +1215,45 @@ def fetch_itens_contratacao(numero_controle_pncp: str, limit: int = 500) -> List
 		except Exception:
 			pass
 		return []
+	finally:
+		_safe_close(cur, conn)
+
+
+def fetch_contratacao_by_pncp(numero_controle_pncp: str) -> Optional[Dict[str, Any]]:
+	"""Busca um único registro de contratacao por numero_controle_pncp com colunas core.
+
+	Retorna dict normalizado com aliases para compatibilidade do card de detalhes.
+	"""
+	if not numero_controle_pncp:
+		return None
+	conn = None; cur = None
+	try:
+		conn = create_connection()
+		if not conn:
+			return None
+		cur = conn.cursor()
+		core_cols = get_contratacao_core_columns('c')
+		sql = (
+			"SELECT "
+			+ ",\n  ".join(core_cols)
+			+ f"\nFROM {CONTRATACAO_TABLE} c\nWHERE c.{PRIMARY_KEY} = %s LIMIT 1"
+		)
+		_debug_sql('fetch_by_pncp', sql, [numero_controle_pncp])
+		cur.execute(sql, (numero_controle_pncp,))
+		row = cur.fetchone()
+		if not row:
+			return None
+		cols = [d[0] for d in cur.description]
+		rec = dict(zip(cols, row))
+		_augment_aliases(rec)
+		return rec
+	except Exception as e:
+		if SQL_DEBUG:
+			print(f"[ERRO][fetch_contratacao_by_pncp] {e}")
+		try:
+			if conn: conn.rollback()
+		except Exception:
+			pass
+		return None
 	finally:
 		_safe_close(cur, conn)

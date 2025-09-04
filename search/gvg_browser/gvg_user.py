@@ -375,18 +375,10 @@ def fetch_bookmarks(limit: int = 100) -> List[Dict[str, Any]]:
                 """
             )
             if not cur.fetchone():
-                if debug:
-                    try:
-                        print(f"[gvg_user.fetch_bookmarks] Tabela user_bookmarks não existe. uid={uid}")
-                    except Exception:
-                        pass
+                
                 return []
         except Exception:
-            if debug:
-                try:
-                    print(f"[gvg_user.fetch_bookmarks] Erro ao verificar tabela user_bookmarks. uid={uid}")
-                except Exception:
-                    pass
+           
             return []
         # SELECT com contratacao: retorna campos para exibir 4 linhas na UI
         sql = (
@@ -404,20 +396,10 @@ def fetch_bookmarks(limit: int = 100) -> List[Dict[str, Any]]:
             "ORDER BY ub.created_at DESC NULLS LAST, ub.id DESC "
             "LIMIT %s"
         )
-        if debug:
-            try:
-                print("[gvg_user.fetch_bookmarks] SQL:", sql)
-                print("[gvg_user.fetch_bookmarks] params:", (uid, limit))
-            except Exception:
-                pass
+
         cur.execute(sql, (uid, limit))
         rows_db = cur.fetchall() or []
-        if debug:
-            try:
-                print(f"[gvg_user.fetch_bookmarks] fetched_rows={len(rows_db)}")
-                print("[gvg_user.fetch_bookmarks] sample:", rows_db[:3])
-            except Exception:
-                pass
+ 
         out: List[Dict[str, Any]] = []
         for row in rows_db:
             # row: (id, numero_controle_pncp, objeto_compra, orgao_entidade_razao_social, municipio, uf, data_enc)
@@ -431,11 +413,6 @@ def fetch_bookmarks(limit: int = 100) -> List[Dict[str, Any]]:
                 'data_encerramento_proposta': row[6],
             }
             out.append(item)
-        if debug:
-            try:
-                print(f"[gvg_user.fetch_bookmarks] out_len={len(out)} out_sample={[ (x['numero_controle_pncp'], x['titulo'][:50]) for x in out[:3] ]}")
-            except Exception:
-                pass
         return out
     except Exception:
         return []

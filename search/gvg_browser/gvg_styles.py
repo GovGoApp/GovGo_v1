@@ -37,6 +37,42 @@ styles = {
     'height': 'calc(100vh - 100px)',
     'position': 'relative'
     },
+    # --- Tabs (abas) ---
+    'tabs_bar': {
+    'display': 'flex', 'gap': '6px', 'alignItems': 'center', 'padding': '4px',
+        'backgroundColor': 'white', 'borderRadius': '16px', 'marginBottom': '8px',
+    'overflowX': 'auto', 'whiteSpace': 'nowrap', 'flexWrap': 'nowrap'
+    },
+    'tab_button_base': {
+    'display': 'inline-flex', 'alignItems': 'center', 'gap': '6px',
+    'borderRadius': '16px', 'borderTopRightRadius': '18px', 'borderBottomRightRadius': '18px',
+    'padding': '2px 2px 2px 8px', 'cursor': 'pointer',
+    'border': '1px solid #D0D7E2', 'backgroundColor': 'white', 'color': '#003A70',
+    'overflow': 'hidden', 'textOverflow': 'ellipsis', 'whiteSpace': 'nowrap',
+    'fontSize': '10px', 'flex': '0 0 auto'
+    },
+    'tab_button_active': {
+    'borderColor': '#FF5722',
+    'backgroundColor': '#FF5722', 'color': 'white', 'fontWeight': '600'
+    },
+    'tab_button_query': {
+    'borderColor': '#003A70', 'color': '#003A70', 'backgroundColor': "#E4E6F8"
+    },
+    'tab_button_pncp': {
+    'borderColor': '#2E7D32', 'color': '#2E7D32', 'backgroundColor': "#DDF5DF"
+    },
+    'tab_close_btn': {
+    'width': '14px', 'height': '14px', 'minWidth': '14px',
+    'borderRadius': '50%', 'border': '1px solid #888888', 'backgroundColor': 'white',
+    'color': '#888888', 'cursor': 'pointer',
+    'display': 'inline-flex', 'alignItems': 'center', 'justifyContent': 'center',
+    'lineHeight': '0', 'padding': '2px', 'fontSize': '10px',
+    'boxSizing': 'border-box', 'marginRight': '0px', 'marginLeft': '4px',
+    'transform': 'translateY(0.5px)'
+    },
+    'tabs_content': {
+        'backgroundColor': 'transparent'
+    },
     'controls_group': {
         'padding': '10px',
         'backgroundColor': 'white',
@@ -151,6 +187,7 @@ styles = {
     'progress_label': {
         'marginTop': '6px', 'textAlign': 'center', 'color': '#FF5722', 'fontSize': '12px'
     },
+    # Container do spinner central dentro do conteúdo da aba de consulta
     'center_spinner': {
         'display': 'none'
     },

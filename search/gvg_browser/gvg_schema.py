@@ -53,7 +53,7 @@ class FieldMeta:
     roles: Iterable[str]      # marcadores de uso (ex: search, export, category)
 
 
-# Campos mínimos necessários para a experiência atual (Prompt_v3)
+# Campos mínimos necessários para a experiência atual 
 CONTRATACAO_FIELDS: Dict[str, FieldMeta] = {
     'numero_controle_pncp': FieldMeta('numero_controle_pncp', 'numero_controle_pncp', 'text', 'Identificador único do processo', ['pk','search','export']),
     'ano_compra': FieldMeta('ano_compra', 'ano_compra', 'text', 'Ano da compra', ['search']),

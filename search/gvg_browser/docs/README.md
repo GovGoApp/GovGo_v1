@@ -96,6 +96,21 @@ Este documento resume e explica a arquitetura do módulo `gvg_browser` e, em esp
 
 - Conexão: variáveis `SUPABASE_HOST/PORT/USER/PASSWORD/DBNAME` via `.env` (ou `supabase_v1.env`).
 
+### Esquema do Banco (BDS1)
+
+- Referência: `db/BDS1.txt` (apenas contexto, não executar diretamente).
+- Tabelas relevantes e uso no app:
+  - `public.contratacao`: fonte principal para UI e buscas (ex.: `orgao_entidade_razao_social`, `unidade_orgao_municipio_nome`, `unidade_orgao_uf_sigla`, `objeto_compra`, `data_encerramento_proposta`, `link_sistema_origem`).
+  - `public.contratacao_emb`: embeddings, `top_categories`, `top_similarities` (pgvector) — usado nas buscas semânticas.
+  - `public.item_contratacao`: itens por processo — usado no painel “Itens”.
+  - `public.categoria`: taxonomia; suporte às buscas por/filtradas por categoria.
+  - `public.user_prompts`, `public.user_results`: histórico do usuário.
+  - `public.user_bookmarks`: favoritos (persiste apenas `user_id` e `numero_controle_pncp`).
+
+- Observações:
+  - Muitas datas estão como TEXT; conversões/parsing são feitos no SQL ou na UI quando necessário.
+  - A leitura dos favoritos usa JOIN entre `user_bookmarks` e `contratacao` por `numero_controle_pncp` para exibir campos ricos na lista.
+
 ## OpenAI e Assistants
 
 - `OPENAI_API_KEY` obrigatório para: embeddings, pré‑processamento da query, filtro de relevância, resumo de documentos.
@@ -103,6 +118,18 @@ Este documento resume e explica a arquitetura do módulo `gvg_browser` e, em esp
   - `GVG_PREPROCESSING_QUERY_v1` (pré-processamento) — obrigatório para “inteligente”.
   - `GVG_RELEVANCE_FLEXIBLE` e `GVG_RELEVANCE_RESTRICTIVE` (níveis 2/3) — opcionais.
 - Modelos: default `text-embedding-3-large`; chat para sumário/documentos configurado como `gpt-4o` no módulo de documentos.
+
+### Arquivos de Assistants (prompts)
+
+- Localização: `search/gvg_browser/assistant/*.md` (prompts versionados usados pelos Assistants).
+- Principais arquivos e funções:
+  - `GVG_PREPROCESSING_QUERY_v1.md` — Regras do pré-processamento da consulta (gera search_terms, negative_terms, sql_conditions, casting seguro de datas e defaults).
+  - `GVG_PREPROCESSING_QUERY_v0.md` — Versão anterior/base do pré-processamento (fallback e histórico de evolução).
+  - `GVG_RELEVANCE_FLEXIBLE.md` — Prompt para filtro de relevância nível Flexível (tolera ruído, mantém mais resultados).
+  - `GVG_RELEVANCE_RESTRICTIVE.md` — Prompt para filtro de relevância nível Restritivo (mais rigoroso, reduz a lista).
+  - `GVG_SUMMARY_DOCUMENT_v1.md` — Estrutura do resumo de documentos PNCP (formato e critérios).
+- Configuração:
+  - IDs dos Assistants e `OPENAI_API_KEY` devem estar no `.env` do app (não commitá-los).
 
 ## Documentos PNCP (Docling)
 
@@ -118,6 +145,35 @@ Este documento resume e explica a arquitetura do módulo `gvg_browser` e, em esp
 - Se `user_prompts` e `user_results` existirem no DB, o app salva consultas e resultados:
   - `add_prompt(...)` insere e retorna `prompt_id` (com embedding do prompt opcionalmente)
   - `save_user_results(prompt_id, results)` insere rank/similaridade/valor/data por resultado
+
+## Favoritos do usuário
+
+- O painel “Favoritos” lista marcações salvas por usuário. Cada item mostra 4 linhas:
+  - Órgão (orgao_entidade_razao_social)
+  - Local (Município/UF)
+  - Descrição (objeto_compra) truncada em 100 caracteres
+  - Data de Encerramento (DD/MM/YYYY) com cor conforme proximidade
+- Fluxo principal:
+  - Inicialização: na primeira renderização, a Store de favoritos é preenchida a partir do banco via `fetch_bookmarks(limit=200)`.
+  - Adicionar/remover via botão bookmark no card de detalhes:
+    - Ao adicionar, o app insere na Store (UI) um item com os mesmos valores que estão no card (órgão, município, UF, descrição truncada, data de encerramento formatada) — atualização otimista, sem aguardar o BD.
+    - Em paralelo, persiste no BD apenas `(user_id, numero_controle_pncp)` com `add_bookmark(...)` (sem campos extras).
+    - Ao remover, chama `remove_bookmark(...)` e filtra a Store pelo PNCP.
+  - Ícones dos cartões são atualizados imediatamente com base na Store e sincronizados quando a Store muda.
+  - Clicar num favorito preenche a consulta com `pncp:<id>`.
+  - Após cada busca concluída, a lista de favoritos pode ser recarregada do BD.
+
+Formato do item em `store-favorites` (UI):
+
+- numero_controle_pncp: string
+- orgao_entidade_razao_social: string
+- unidade_orgao_municipio_nome: string
+- unidade_orgao_uf_sigla: string
+- objeto_compra: string (máx. 100 chars)
+- data_encerramento_proposta: string (DD/MM/YYYY)
+
+Observação de UX:
+- A lixeira do item deve permanecer clicável; o botão do item não ocupa 100% da largura (usa flex) para não sobrepor o botão de exclusão.
 
 ## Estilos e UX
 
@@ -139,6 +195,19 @@ Este documento resume e explica a arquitetura do módulo `gvg_browser` e, em esp
 - O app principal (`GvG_Search_Browser.py`) deve apenas referenciar chaves do dicionário `styles` e não inserir estilos inline, salvo raras exceções utilitárias já padronizadas em `gvg_styles`.
 - Se precisar de um novo estilo, crie uma chave em `styles` (ou reutilize uma existente) e aplique-a nos componentes. Evite duplicação de dicionários de estilo dentro do layout/callbacks.
 - Benefícios: consistência visual, manutenção mais simples, e possibilidade de ajustes globais sem varrer o código.
+
+### Stores e estado da UI
+
+Principais Stores e seus formatos:
+
+- `store-results`: lista de resultados “brutos” (cada item possui `details` com os campos do processo).
+- `store-results-sorted`: lista ordenada para UI; o campo `rank` é recalculado após ordenação.
+- `store-sort`: objeto `{ field: 'orgao'|'municipio'|'uf'|'similaridade'|'valor'|'data', direction: 'asc'|'desc' }` refletindo a ordenação ativa.
+- `store-history`: array de strings (consultas anteriores do usuário).
+- `store-favorites`: array de objetos (formato descrito na seção Favoritos).
+- `store-panel-active`: mapeia `{ [pncp]: 'itens'|'docs'|'resumo' }` para controlar a janela ativa por cartão.
+- `store-cache-itens` / `store-cache-docs` / `store-cache-resumo`: caches por PNCP; para Resumo, o valor é `{ docs: [...], summary: '...' }`.
+- `processing-state` + `progress-store`/`progress-interval`: controle do spinner central e da barra de progresso (percent/label) durante a busca.
 
 ## Como executar
 
@@ -168,6 +237,7 @@ Atenção:
 - Ative `--debug` para imprimir SQL de busca e etapas do pipeline no console.
 - Em `gvg_search_core.set_sql_debug(True)` também ativa prints internos.
 - Progresso de busca é refletido no spinner central e numa barra de progresso (percent/label).
+ - Para diagnosticar interações da UI (favoritos, histórico, janelas Itens/Docs/Resumo), verifique se o modo debug está ativo para observar mensagens no console.
 
 ## Estrutura de pastas (dentro de `gvg_browser`)
 
