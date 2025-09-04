@@ -2,29 +2,93 @@
 gvg_user.py
 Funções auxiliares de usuário e histórico de prompts por usuário.
 
-Por ora, assume um usuário fixo (autenticação será integrada depois).
+Agora usa usuário dinâmico quando há token/sessão; fallback anônimo apenas para compatibilidade.
 """
 from __future__ import annotations
 
 import os
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
+import datetime as _dt
 from gvg_database import create_connection
 
-# Usuário atual (mock até integrar autenticação)
+# Tenta importar auth para obter usuário da sessão (token em cookies)
+try:
+    from gvg_auth import get_user_from_token  # type: ignore
+except Exception:
+    get_user_from_token = None  # type: ignore
+
+# Usuário atual em memória (anônimo por padrão; será preenchido ao logar)
 _CURRENT_USER = {
-    'uid': '5d3b153a-3854-4d70-8039-9ba34a698d67',
-    'email': 'hdaduraes@gmail.com',
-    'name': 'Haroldo Durães',
+    'uid': '',
+    'email': '',
+    'name': 'Usuário',
 }
+
+# Permite injetar token (por camada Flask) em tempo de execução
+_ACCESS_TOKEN: Optional[str] = None
+
+
+def set_access_token(token: Optional[str]):
+    global _ACCESS_TOKEN
+    _ACCESS_TOKEN = token
+    try:
+        if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
+            print(f"[{_dt.datetime.now()}][gvg_user.set_access_token] token set len={(len(token) if token else 0)}", flush=True)
+    except Exception:
+        pass
 
 
 def get_current_user() -> Dict[str, str]:
+    """Retorna usuário atual.
+    - Se houver token válido via Supabase, usa-o;
+    - Senão, retorna usuário anônimo (compatibilidade temporária).
+    """
+    global _CURRENT_USER
+    token = _ACCESS_TOKEN or os.getenv('GVG_ACCESS_TOKEN')
+    if token and get_user_from_token:
+        info = None
+        try:
+            info = get_user_from_token(token)
+        except Exception:
+            info = None
+        if info and info.get('uid'):
+            # Atualiza o usuário corrente em memória
+            _CURRENT_USER = {
+                'uid': info['uid'],
+                'email': info.get('email') or '',
+                'name': info.get('name') or (info.get('email') or 'Usuário'),
+            }
+            return dict(_CURRENT_USER)
+    try:
+        if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
+            print(f"[{_dt.datetime.now()}][gvg_user.get_current_user] returning uid={_CURRENT_USER.get('uid')} email={_CURRENT_USER.get('email')}", flush=True)
+    except Exception:
+        pass
     return dict(_CURRENT_USER)
 
-
-def set_current_user(uid: str, email: str, name: str):
+def set_current_user(user_or_uid: Union[Dict[str, str], str], email: Optional[str] = None, name: Optional[str] = None):
+    """Define o usuário atual.
+    Aceita um dicionário {'uid','email','name'} ou os três campos separados.
+    """
     global _CURRENT_USER
-    _CURRENT_USER = {'uid': uid, 'email': email, 'name': name}
+    if isinstance(user_or_uid, dict):
+        u = user_or_uid
+        _CURRENT_USER = {
+            'uid': str(u.get('uid') or u.get('id') or ''),
+            'email': str(u.get('email') or ''),
+            'name': str(u.get('name') or u.get('full_name') or u.get('email') or 'Usuário'),
+        }
+    else:
+        _CURRENT_USER = {
+            'uid': str(user_or_uid or ''),
+            'email': str(email or ''),
+            'name': str(name or 'Usuário'),
+        }
+    try:
+        if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
+            print(f"[{_dt.datetime.now()}][gvg_user.set_current_user] uid={_CURRENT_USER.get('uid')} email={_CURRENT_USER.get('email')}", flush=True)
+    except Exception:
+        pass
 
 
 def get_user_initials(name: Optional[str]) -> str:

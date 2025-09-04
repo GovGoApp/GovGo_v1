@@ -69,6 +69,7 @@ from gvg_styles import styles, CSS_ALL
 from gvg_user import (
     get_current_user,
     get_user_initials,
+    set_current_user,
     fetch_prompt_texts,
     add_prompt,
     save_user_results,
@@ -77,6 +78,31 @@ from gvg_user import (
     add_bookmark,
     remove_bookmark,
 )
+
+# Autenticação (Supabase)
+try:
+    from gvg_auth import (
+        sign_in,
+        sign_up_with_metadata,
+        verify_otp,
+        reset_password,
+        sign_out,
+        resend_otp,
+    )
+except Exception:
+    # Permite rodar sem pacote instalado (até instalar requirements)
+    def sign_in(*args, **kwargs):
+        return False, None, "Auth indisponível"
+    def sign_up_with_metadata(*args, **kwargs):
+        return False, "Auth indisponível"
+    def verify_otp(*args, **kwargs):
+        return False, None, "Auth indisponível"
+    def reset_password(*args, **kwargs):
+        return False, "Auth indisponível"
+    def sign_out(*args, **kwargs):
+        return False
+    def resend_otp(*args, **kwargs):
+        return False, "Auth indisponível"
 
 
 try:
@@ -153,11 +179,13 @@ app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 app.title = 'GovGo Search'
 
 # Parse argumentos --debug e --markdown (ex: python GvG_Search_Browser.py --debug --markdown)
+AUTH_INIT = {'status': 'unauth', 'user': None}
 try:
     import argparse
     _parser = argparse.ArgumentParser(add_help=False)
     _parser.add_argument('--debug', action='store_true')
     _parser.add_argument('--markdown', action='store_true')
+    _parser.add_argument('--pass', dest='auto_pass', action='store_true')
     _known, _ = _parser.parse_known_args()
     if _known and getattr(_known, 'debug', False):
         set_sql_debug(True)
@@ -166,6 +194,21 @@ try:
             set_markdown_enabled(True)
         except Exception:
             pass
+    # Bypass de autenticação com usuário hardcoded quando --pass for usado
+    if _known and getattr(_known, 'auto_pass', False):
+        try:
+            _bypass_user = {
+                'uid': '5d3b153a-3854-4d70-8039-9ba34a698d67',
+                'name': 'Haroldo Durães',
+                'email': 'hdaduraes@gmail.com',
+            }
+            AUTH_INIT = {'status': 'auth', 'user': _bypass_user}
+            try:
+                set_current_user(_bypass_user)
+            except Exception:
+                pass
+        except Exception:
+            AUTH_INIT = {'status': 'unauth', 'user': None}
 except Exception:
     pass
 
@@ -209,11 +252,70 @@ header = html.Div([
     html.Div([
         html.Div(
             _USER_INITIALS,
+            id='header-user-badge',
             title=f"{_USER.get('name','Usuário')} ({_USER.get('email','')})",
-        style=styles['header_user_badge']
-        )
+            style=styles['header_user_badge']
+        ),
+        html.Button('Sair', id='auth-logout', title='Encerrar sessão', style={**styles['btn_pill_inverted'], 'marginLeft': '10px'})
     ], style=styles['header_right'])
 ], style=styles['header'])
+
+# ------------------ Overlay de Autenticação (bloqueia UI até autenticar) ------------------
+catchy_lines = [
+    "Inteligência para compras públicas.",
+    "Busque, analise e acompanhe licitações em minutos.",
+    "Resultados objetivos. Oportunidades reais.",
+]
+auth_overlay = html.Div([
+    html.Div([
+        html.Img(src=LOGO_PATH, style=styles['auth_logo']),
+        html.H3("GovGo Search", style=styles['auth_title']),
+        html.Div([html.Div(line, style=styles['auth_subtitle']) for line in catchy_lines]),
+        html.Div(id='auth-error', style={'display': 'none', **styles['auth_error']}),
+        html.Div([
+            html.Label('E-mail', className='gvg-form-label'),
+            dcc.Input(id='auth-email', type='email', placeholder='seu@email.com', style=styles['auth_input']),
+            html.Label('Senha', className='gvg-form-label', style={'marginTop': '8px'}),
+            dcc.Input(id='auth-password', type='password', placeholder='••••••••', style=styles['auth_input']),
+            html.Div([
+                dcc.Checklist(id='auth-show-pass', options=[{'label': ' Mostrar senha', 'value': 'show'}], value=[], style={'marginTop': '6px'}),
+                dcc.Checklist(id='auth-remember', options=[{'label': ' Lembrar e-mail e senha neste navegador', 'value': 'yes'}], value=[], style={'marginTop': '4px'})
+            ], style={'display': 'flex', 'flexDirection': 'column'}),
+            html.Button('Esqueci minha senha', id='auth-forgot', style={**styles['auth_btn_secondary'], 'marginTop': '8px'}),
+            html.Div([
+                html.Button('Entrar', id='auth-login', style=styles['auth_btn_primary']),
+                html.Button('Cadastrar', id='auth-switch-signup', style=styles['auth_btn_secondary'])
+            ], style=styles['auth_actions'])
+        ], id='auth-view-login', style={'display': 'block'}),
+        html.Div([
+            html.Label('Nome completo', className='gvg-form-label'),
+            dcc.Input(id='auth-fullname', type='text', placeholder='Seu nome', style=styles['auth_input']),
+            html.Label('Telefone', className='gvg-form-label', style={'marginTop': '8px'}),
+            dcc.Input(id='auth-phone', type='text', placeholder='(DDD) 90000-0000', style=styles['auth_input']),
+            html.Label('E-mail', className='gvg-form-label', style={'marginTop': '8px'}),
+            dcc.Input(id='auth-email-sign', type='email', placeholder='seu@email.com', style=styles['auth_input']),
+            html.Label('Senha', className='gvg-form-label', style={'marginTop': '8px'}),
+            dcc.Input(id='auth-password-sign', type='password', placeholder='••••••••', style=styles['auth_input']),
+            dcc.Checklist(id='auth-show-pass-sign', options=[{'label': ' Mostrar senha', 'value': 'show'}], value=[], style={'marginTop': '6px'}),
+            dcc.Checklist(id='auth-terms', options=[{'label': ' Aceito os Termos de Contratação', 'value': 'ok'}], value=[], style={'marginTop': '8px'}),
+            html.Div([
+                html.Button('Cadastrar', id='auth-signup', style=styles['auth_btn_primary']),
+                html.Button('Voltar', id='auth-switch-login', style=styles['auth_btn_secondary'])
+            ], style=styles['auth_actions'])
+        ], id='auth-view-signup', style={'display': 'none'}),
+        html.Div([
+            html.Div('Confirme o seu e-mail', style=styles['card_title']),
+            html.Div(id='auth-confirm-text', style=styles['auth_subtitle']),
+            html.Label('Código de confirmação', className='gvg-form-label', style={'marginTop': '8px'}),
+            dcc.Input(id='auth-otp', type='text', placeholder='Código recebido por e-mail', style=styles['auth_input']),
+            html.Div([
+                html.Button('Confirmar', id='auth-confirm', style=styles['auth_btn_primary']),
+                html.Button('Voltar', id='auth-switch-login-2', style=styles['auth_btn_secondary']),
+                html.Button('Reenviar código', id='auth-resend-link', style=styles['auth_btn_secondary'])
+            ], style=styles['auth_actions'])
+        ], id='auth-view-confirm', style={'display': 'none'}),
+    ], style=styles['auth_card'])
+], id='auth-overlay', style=styles['auth_overlay'])
 
 
 # Painel de controles (esquerda)
@@ -359,6 +461,12 @@ results_panel = html.Div([
 
 # Layout principal
 app.layout = html.Div([
+    dcc.Store(id='store-auth', data=AUTH_INIT),
+    dcc.Store(id='store-auth-view', data='login'),
+    dcc.Store(id='store-auth-error', data=''),
+    dcc.Store(id='store-auth-pending-email', data=''),
+    dcc.Store(id='store-auth-remember', data={'email': '', 'password': '', 'remember': False}, storage_type='local'),
+    dcc.Store(id='store-app-init', data={'initializing': False}),
     dcc.Store(id='store-results', data=[]),
     dcc.Store(id='store-results-sorted', data=[]),
     dcc.Store(id='store-result-sessions', data={}),
@@ -384,11 +492,481 @@ app.layout = html.Div([
     dcc.Download(id='download-out'),
 
     header,
+    auth_overlay,
     html.Div([
         controls_panel,
         results_panel,
     ], style=styles['container'])
 ])
+
+
+# =====================================================================================
+# Autenticação: callbacks de overlay, views e ações
+# =====================================================================================
+@app.callback(
+    Output('header-user-badge', 'children'),
+    Output('header-user-badge', 'title'),
+    Input('store-auth', 'data')
+)
+def reflect_header_badge(auth_data):
+    data = auth_data or {}
+    user = data.get('user') or {}
+    name = (user.get('name') or '').strip() or 'Usuário'
+    email = (user.get('email') or '').strip()
+    # Construir iniciais: primeira letra do primeiro nome + primeira letra do último sobrenome
+    initials = ''
+    try:
+        parts = [p for p in name.split() if p]
+        if len(parts) >= 2:
+            initials = (parts[0][0] + parts[-1][0]).upper()
+        elif len(parts) == 1:
+            initials = parts[0][:2].upper()
+        else:
+            initials = 'US'
+    except Exception:
+        initials = 'US'
+    title = f"{name} ({email})" if email else name
+    return initials, title
+
+
+# Inicialização pós-login e limpeza no logout
+@app.callback(
+    Output('store-app-init', 'data', allow_duplicate=True),
+    Output('processing-state', 'data', allow_duplicate=True),
+    Output('store-history', 'data', allow_duplicate=True),
+    Output('store-favorites', 'data', allow_duplicate=True),
+    Output('query-input', 'value', allow_duplicate=True),
+    Output('store-results', 'data', allow_duplicate=True),
+    Output('store-results-sorted', 'data', allow_duplicate=True),
+    Output('store-categories', 'data', allow_duplicate=True),
+    Output('store-meta', 'data', allow_duplicate=True),
+    Output('store-last-query', 'data', allow_duplicate=True),
+    Output('store-result-sessions', 'data', allow_duplicate=True),
+    Output('store-active-session', 'data', allow_duplicate=True),
+    Output('store-panel-active', 'data', allow_duplicate=True),
+    Output('store-cache-itens', 'data', allow_duplicate=True),
+    Output('store-cache-docs', 'data', allow_duplicate=True),
+    Output('store-cache-resumo', 'data', allow_duplicate=True),
+    Input('store-auth', 'data'),
+    prevent_initial_call=True,
+)
+def on_auth_changed(auth_data):
+    data = auth_data or {}
+    status = data.get('status')
+    # Valores padrão para limpeza
+    empty_results = []
+    empty_categories = []
+    empty_meta = {}
+    empty_sessions = {}
+    empty_panel = {}
+    empty_cache = {}
+    if status == 'auth':
+        # Entrando: ligar spinner e iniciar fase de inicialização
+        return (
+            {'initializing': True},  # store-app-init
+            True,                    # processing-state
+            [],                      # store-history (limpa rápido)
+            [],                      # store-favorites (limpa rápido)
+            '',                      # query-input vazio
+            empty_results,
+            [],                      # store-results-sorted
+            empty_categories,
+            empty_meta,
+            '',                      # store-last-query
+            empty_sessions,
+            None,                    # store-active-session
+            empty_panel,
+            empty_cache,
+            empty_cache,
+            empty_cache,
+        )
+    # Saindo: desligar spinner e limpar tudo da UI
+    return (
+        {'initializing': False},
+        False,
+        [],
+        [],
+    '',
+        empty_results,
+        [],
+        empty_categories,
+        empty_meta,
+        '',
+        empty_sessions,
+        None,
+        empty_panel,
+        empty_cache,
+        empty_cache,
+        empty_cache,
+    )
+
+
+@app.callback(
+    Output('store-app-init', 'data', allow_duplicate=True),
+    Output('processing-state', 'data', allow_duplicate=True),
+    Output('store-history', 'data', allow_duplicate=True),
+    Output('store-favorites', 'data', allow_duplicate=True),
+    Input('store-app-init', 'data'),
+    prevent_initial_call=True,
+)
+def perform_initial_load(init_state):
+    state = init_state or {}
+    if not state.get('initializing'):
+        raise PreventUpdate
+    # Carregar dados do usuário atual
+    try:
+        hist = load_history(max_items=50) or []
+    except Exception:
+        hist = []
+    try:
+        favs = fetch_bookmarks(limit=100) if 'fetch_bookmarks' in globals() else []  # type: ignore
+    except Exception:
+        favs = []
+    # Concluir inicialização
+    return {'initializing': False}, False, hist, favs
+@app.callback(
+    Output('auth-overlay', 'style'),
+    Input('store-auth', 'data')
+)
+def toggle_auth_overlay(auth_data):
+    try:
+        is_auth = (auth_data or {}).get('status') == 'auth'
+        if is_auth:
+            st = dict(styles['auth_overlay'])
+            st.update({'display': 'none'})
+            return st
+        return styles['auth_overlay']
+    except Exception:
+        return styles['auth_overlay']
+
+
+@app.callback(
+    Output('auth-view-login', 'style'),
+    Output('auth-view-signup', 'style'),
+    Output('auth-view-confirm', 'style'),
+    Output('auth-confirm-text', 'children'),
+    Output('auth-error', 'children'),
+    Output('auth-error', 'style'),
+    Input('store-auth-view', 'data'),
+    Input('store-auth-error', 'data'),
+    Input('store-auth-pending-email', 'data'),
+)
+def reflect_auth_view(view, err_text, pending_email):
+    v = (view or 'login')
+    show = {'display': 'block'}
+    hide = {'display': 'none'}
+    login_st = show if v == 'login' else hide
+    signup_st = show if v == 'signup' else hide
+    confirm_st = show if v == 'confirm' else hide
+    try:
+        confirm_txt = f"Enviamos um código para {pending_email}. Confira sua caixa de entrada." if (pending_email or '').strip() else "Digite o código enviado para o seu e-mail."
+    except Exception:
+        confirm_txt = "Digite o código enviado para o seu e-mail."
+    # Aceita string ou componente no erro
+    err_children = None
+    show_err = False
+    try:
+        if isinstance(err_text, str):
+            err_children = err_text.strip()
+            show_err = bool(err_children)
+        else:
+            err_children = err_text
+            show_err = err_text is not None
+    except Exception:
+        err_children = ''
+        show_err = False
+    err_style = {**styles['auth_error'], 'display': ('block' if show_err else 'none')}
+    return login_st, signup_st, confirm_st, confirm_txt, err_children, err_style
+
+
+@app.callback(
+    Output('store-auth-view', 'data'),
+    Input('auth-switch-signup', 'n_clicks'),
+    Input('auth-switch-login', 'n_clicks'),
+    Input('auth-switch-login-2', 'n_clicks'),
+    prevent_initial_call=True,
+)
+def switch_auth_view(n_signup, n_login1, n_login2):
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    trig = ctx.triggered[0]['prop_id']
+    try:
+        # Debug de navegação entre views do overlay de auth
+        if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
+            print(f"[GvG_Browser.switch_auth_view] triggered_by={trig}", flush=True)
+    except Exception:
+        pass
+    if 'auth-switch-signup' in trig:
+        return 'signup'
+    return 'login'
+
+
+@app.callback(
+    Output('store-auth', 'data', allow_duplicate=True),
+    Output('store-auth-error', 'data', allow_duplicate=True),
+    Output('store-auth-view', 'data', allow_duplicate=True),
+    Output('store-auth-remember', 'data', allow_duplicate=True),
+    Output('store-auth-pending-email', 'data', allow_duplicate=True),
+    Input('auth-login', 'n_clicks'),
+    State('auth-email', 'value'),
+    State('auth-password', 'value'),
+    State('auth-remember', 'value'),
+    prevent_initial_call=True,
+)
+def do_login(n_clicks, email, password, remember_values):
+    if not n_clicks:
+        raise PreventUpdate
+    email = (email or '').strip()
+    password = password or ''
+    if not email or not password:
+        return dash.no_update, 'Informe e-mail e senha.', dash.no_update, dash.no_update, dash.no_update
+    ok, session, err = False, None, None
+    try:
+        ok, session, err = sign_in(email, password)
+        try:
+            if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
+                print(f"[GvG_Browser.do_login] sign_in ok={ok} err={err} session_keys={list((session or {}).keys())}", flush=True)
+        except Exception:
+            pass
+    except Exception as e:
+        ok, session, err = False, None, f"Erro ao autenticar: {e}"
+    if not ok or not session or not session.get('user'):
+        # Se e-mail não confirmado, direcionar para view de confirmação e preparar reenvio
+        raw = (err or '')
+        if isinstance(raw, str) and ('Email not confirmed' in raw or 'email not confirmed' in raw.lower()):
+            pending = (email or '').strip()
+            msg = f"Seu e-mail não foi confirmado. Informe o código enviado ou clique em 'Reenviar código'."
+            return dash.no_update, msg, 'confirm', dash.no_update, pending
+        # Caso geral: mensagem amigável
+        msg = err or 'Falha no login.'
+        return dash.no_update, msg, dash.no_update, dash.no_update, dash.no_update
+    # Usuário autenticado
+    try:
+        set_current_user(session.get('user'))
+    except Exception:
+        pass
+    auth_state = {
+        'status': 'auth',
+        'user': session.get('user'),
+        'access_token': session.get('access_token'),
+        'refresh_token': session.get('refresh_token'),
+    }
+    remember_on = isinstance(remember_values, (list, tuple)) and ('yes' in (remember_values or []))
+    remember_payload = {'email': email if remember_on else '', 'password': password if remember_on else '', 'remember': bool(remember_on)}
+    return auth_state, '', 'login', remember_payload, dash.no_update
+
+
+@app.callback(
+    Output('store-auth-view', 'data', allow_duplicate=True),
+    Output('store-auth-error', 'data', allow_duplicate=True),
+    Output('store-auth-pending-email', 'data', allow_duplicate=True),
+    Input('auth-signup', 'n_clicks'),
+    State('auth-fullname', 'value'),
+    State('auth-phone', 'value'),
+    State('auth-email-sign', 'value'),
+    State('auth-password-sign', 'value'),
+    State('auth-terms', 'value'),
+    prevent_initial_call=True,
+)
+def do_signup(n_clicks, fullname, phone, email, password, terms):
+    if not n_clicks:
+        raise PreventUpdate
+    email = (email or '').strip()
+    password = password or ''
+    if 'ok' not in (terms or []):
+        try:
+            if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
+                print(f"[GvG_Browser.do_signup] terms not accepted | email={email}", flush=True)
+        except Exception:
+            pass
+        return dash.no_update, 'Você precisa aceitar os Termos de Contratação.', dash.no_update
+    if not email or not password or not (fullname or '').strip():
+        try:
+            if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
+                print(f"[GvG_Browser.do_signup] missing fields | email_set={bool(email)} name_set={bool((fullname or '').strip())} phone_set={bool((phone or '').strip())}", flush=True)
+        except Exception:
+            pass
+        return dash.no_update, 'Preencha nome, e-mail e senha.', dash.no_update
+    ok, msg = False, 'Erro ao cadastrar.'
+    try:
+        try:
+            if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
+                print(f"[GvG_Browser.do_signup] calling sign_up_with_metadata | email={email} has_phone={bool((phone or '').strip())}", flush=True)
+        except Exception:
+            pass
+        ok, msg = sign_up_with_metadata(email=email, password=password, full_name=(fullname or '').strip(), phone=(phone or '').strip())
+    except Exception as e:
+        ok, msg = False, f"Erro ao cadastrar: {e}"
+    try:
+        if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
+            print(f"[GvG_Browser.do_signup] result ok={ok} msg={msg}", flush=True)
+    except Exception:
+        pass
+    if not ok:
+        return dash.no_update, (msg or 'Falha ao cadastrar.'), dash.no_update
+    try:
+        if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
+            print(f"[GvG_Browser.do_signup] moving to confirm | pending_email={email}", flush=True)
+    except Exception:
+        pass
+    return 'confirm', '', email
+
+
+@app.callback(
+    Output('store-auth', 'data', allow_duplicate=True),
+    Output('store-auth-error', 'data', allow_duplicate=True),
+    Output('store-auth-view', 'data', allow_duplicate=True),
+    Input('auth-confirm', 'n_clicks'),
+    State('store-auth-pending-email', 'data'),
+    State('auth-otp', 'value'),
+    prevent_initial_call=True,
+)
+def do_confirm(n_clicks, email, otp):
+    if not n_clicks:
+        raise PreventUpdate
+    email = (email or '').strip()
+    otp = (otp or '').strip()
+    if not email or not otp:
+        return dash.no_update, 'Informe o código recebido por e-mail.', dash.no_update
+    ok, session, err = False, None, None
+    try:
+        try:
+            if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
+                masked = (('*' * max(0, len(otp) - 2)) + otp[-2:]) if otp else ''
+                print(f"[GvG_Browser.do_confirm] calling verify_otp | email={email} otp_masked={masked}", flush=True)
+        except Exception:
+            pass
+        ok, session, err = verify_otp(email=email, token=otp, type_='signup')
+    except Exception as e:
+        ok, session, err = False, None, f"Erro na confirmação: {e}"
+    try:
+        if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
+            print(f"[GvG_Browser.do_confirm] result ok={ok} err={err} session_keys={list((session or {}).keys())}", flush=True)
+    except Exception:
+        pass
+    if not ok or not session or not session.get('user'):
+        # Mensagem amigável; detalhes ficam no console quando debug ativo
+        # Instruir usuário a usar o botão fixo "Reenviar código"
+        email_safe = email
+        msg = f"Código inválido ou expirado. Clique em 'Reenviar código' para {email_safe}."
+        return dash.no_update, msg, dash.no_update
+    try:
+        set_current_user(session.get('user'))
+    except Exception:
+        pass
+    auth_state = {
+        'status': 'auth',
+        'user': session.get('user'),
+        'access_token': session.get('access_token'),
+        'refresh_token': session.get('refresh_token'),
+    }
+    return auth_state, '', 'login'
+
+
+@app.callback(
+    Output('store-auth-error', 'data', allow_duplicate=True),
+    Input('auth-forgot', 'n_clicks'),
+    State('auth-email', 'value'),
+    prevent_initial_call=True,
+)
+def do_forgot(n_clicks, email):
+    if not n_clicks:
+        raise PreventUpdate
+    email = (email or '').strip()
+    if not email:
+        return 'Informe seu e-mail para recuperar a senha.'
+    ok, msg = False, 'Não foi possível iniciar a recuperação.'
+    try:
+        ok, msg = reset_password(email)
+    except Exception as e:
+        ok, msg = False, f"Erro ao solicitar recuperação: {e}"
+    return (msg or 'Verifique seu e-mail.')
+
+
+# Reenvio de OTP (link na tela de confirmação)
+@app.callback(
+    Output('store-auth-error', 'data', allow_duplicate=True),
+    Input('auth-resend-link', 'n_clicks'),
+    State('store-auth-pending-email', 'data'),
+    prevent_initial_call=True,
+)
+def do_resend_otp(n_clicks, email):
+    if not n_clicks:
+        raise PreventUpdate
+    email = (email or '').strip()
+    if not email:
+        return 'Informe o e-mail novamente e solicite cadastro.'
+    ok, msg = resend_otp(email, type_='signup')
+    if ok:
+        return f'Enviamos um novo código para {email}.'
+    # Mensagem amigável sempre; detalhes no console via debug
+    return 'Não foi possível reenviar o código. Tente novamente em instantes.'
+
+
+@app.callback(
+    Output('store-auth', 'data'),
+    Input('auth-logout', 'n_clicks'),
+    State('store-auth', 'data'),
+    prevent_initial_call=True,
+)
+def do_logout(n_clicks, auth_data):
+    if not n_clicks:
+        raise PreventUpdate
+    try:
+        rt = (auth_data or {}).get('refresh_token')
+        try:
+            sign_out(rt)
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return {'status': 'unauth', 'user': None}
+
+
+# Mostrar/ocultar senha (login)
+@app.callback(
+    Output('auth-password', 'type'),
+    Input('auth-show-pass', 'value')
+)
+def show_hide_login_password(values):
+    try:
+        return 'text' if ('show' in (values or [])) else 'password'
+    except Exception:
+        return 'password'
+
+
+# Mostrar/ocultar senha (signup)
+@app.callback(
+    Output('auth-password-sign', 'type'),
+    Input('auth-show-pass-sign', 'value')
+)
+def show_hide_signup_password(values):
+    try:
+        return 'text' if ('show' in (values or [])) else 'password'
+    except Exception:
+        return 'password'
+
+
+# Prefill de e-mail/senha com base no store local (quando voltar para a view login)
+@app.callback(
+    Output('auth-email', 'value'),
+    Output('auth-password', 'value'),
+    Output('auth-remember', 'value'),
+    Input('store-auth-view', 'data'),
+    State('store-auth-remember', 'data'),
+    prevent_initial_call=True,
+)
+def prefill_login_fields(view, remember):
+    if (view or 'login') != 'login':
+        raise PreventUpdate
+    try:
+        rem = remember or {}
+        if rem.get('remember'):
+            return rem.get('email', ''), rem.get('password', ''), ['yes']
+    except Exception:
+        pass
+    return '', '', []
 
 
 # =====================================================================================

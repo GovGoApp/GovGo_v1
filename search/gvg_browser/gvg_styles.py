@@ -326,6 +326,25 @@ styles = {
     'link_break_all': {
         'wordBreak': 'break-all'
     },
+    # --- Auth overlay ---
+    'auth_overlay': {
+        'position': 'fixed', 'top': 0, 'left': 0, 'right': 0, 'bottom': 0,
+        'backgroundColor': 'rgba(224,234,249,0.95)', 'zIndex': 2000,
+        'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+        'padding': '20px'
+    },
+    'auth_card': {
+        'backgroundColor': 'white', 'borderRadius': '18px', 'padding': '20px',
+        'width': '100%', 'maxWidth': '520px', 'boxShadow': '0 4px 16px rgba(0,0,0,0.12)'
+    },
+    'auth_logo': { 'height': '48px', 'marginBottom': '10px' },
+    'auth_title': { 'color': '#003A70', 'fontWeight': 'bold', 'fontSize': '18px', 'marginTop': '4px' },
+    'auth_subtitle': { 'color': '#003A70', 'fontSize': '12px', 'marginTop': '6px' },
+    'auth_input': { 'width': '100%', 'height': '36px', 'borderRadius': '16px', 'border': '1px solid #D0D7E2', 'padding': '6px 10px', 'fontSize': '12px' },
+    'auth_btn_primary': { 'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none', 'borderRadius': '16px', 'height': '32px', 'padding': '0 14px', 'cursor': 'pointer' },
+    'auth_btn_secondary': { 'backgroundColor': 'white', 'color': '#FF5722', 'border': '1px solid #FF5722', 'borderRadius': '16px', 'height': '32px', 'padding': '0 14px', 'cursor': 'pointer' },
+    'auth_actions': { 'display': 'flex', 'gap': '8px', 'marginTop': '10px' },
+    'auth_error': { 'color': '#D32F2F', 'fontSize': '12px', 'marginTop': '6px' },
 }
 
 styles['result_number'] = {
