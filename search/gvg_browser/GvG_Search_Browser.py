@@ -1119,10 +1119,36 @@ def render_tabs_bar(sessions, active):
             base_style.update(styles['tab_button_query'])
         if is_active:
             base_style.update(styles['tab_button_active'])
-        label_full = sess.get('title') or sid
+        # Define o label conforme o tipo da sessão
+        if sess.get('type') == 'pncp':
+            # Usar exatamente os campos do item de favorito (Local: Municipio/UF)
+            municipio = ''
+            uf = ''
+            try:
+                first = (sess.get('results') or [None])[0] or {}
+                details = (first.get('details') or {}) if isinstance(first, dict) else {}
+                municipio = details.get('unidade_orgao_municipio_nome') or ''
+                uf = details.get('unidade_orgao_uf_sigla') or ''
+            except Exception:
+                municipio, uf = '', ''
+            loc = f"{municipio}/{uf}".strip('/')
+            if loc:
+                label_full = loc
+            else:
+                # Fallback para "PNCP <id>"
+                try:
+                    pid = (details.get('numerocontrolepncp') if details else None) or (details.get('numero_controle_pncp') if details else None) or (first.get('id') if isinstance(first, dict) else None) or ''
+                except Exception:
+                    pid = ''
+                label_full = f"PNCP {pid}".strip()
+        else:
+            # Query: "CONSULTA: " + query[:47] + "..."
+            q = sess.get('title') or ''
+            q_short = (q[:40] + '...') if isinstance(q, str) else '...'
+            label_full = f"CONSULTA: {q_short}"
+        # Truncamento defensivo para caber na aba (além do ellipsis via CSS)
         label = label_full
-        if isinstance(label, str) and len(label) > 50:
-            label = label[:47] + '...'
+
         # Left icon based on tab type
         icon = html.I(className=("fas fa-bookmark" if sess.get('type') == 'pncp' else "fas fa-search"))
         out.append(html.Div([
