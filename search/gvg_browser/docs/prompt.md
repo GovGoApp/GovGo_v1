@@ -58,7 +58,7 @@
   - Init carrega do BD (JOIN com `contratacao`).
   - Ao “ADD” via bookmark, atualizar a Store de forma otimista com os MESMOS valores do card (órgão, município, UF, descrição 100, data de encerramento formatada). Persistência no BD continua só com `(user_id, numero_controle_pncp)`.
   - Remoção: remove do BD e da Store; ícones sincronizados pela Store.
-  - Clique em item: preenche `pncp:<id>`.
+  - Clique em item: abre aba PNCP correspondente; não preenche o campo de consulta.
 - Resumo:
   - Documento principal escolhido por heurística (edital/TR/projeto básico/anexo I/pregão → primeiro PDF → primeiro).
   - Spinner laranja imediato; uma geração por PNCP por sessão (cache).
@@ -66,6 +66,7 @@
 - UI/UX:
   - Três janelas por card com toggle e chevrons.
   - Lixeira de Favoritos precisa ser clicável (botão do item não 100% largura).
+  - Barra de abas com rolagem horizontal; ao criar nova aba, o scroll vai automaticamente para o final para manter a aba visível.
   - Ordenação custom (similaridade/data/valor) e rank recalculado.
 
 ## Execução local

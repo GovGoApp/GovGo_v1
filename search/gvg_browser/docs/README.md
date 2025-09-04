@@ -160,7 +160,7 @@ Este documento resume e explica a arquitetura do módulo `gvg_browser` e, em esp
     - Em paralelo, persiste no BD apenas `(user_id, numero_controle_pncp)` com `add_bookmark(...)` (sem campos extras).
     - Ao remover, chama `remove_bookmark(...)` e filtra a Store pelo PNCP.
   - Ícones dos cartões são atualizados imediatamente com base na Store e sincronizados quando a Store muda.
-  - Clicar num favorito preenche a consulta com `pncp:<id>`.
+  - Clicar num favorito abre uma aba PNCP com o processo; não altera o campo de consulta.
   - Após cada busca concluída, a lista de favoritos pode ser recarregada do BD.
 
 Formato do item em `store-favorites` (UI):
@@ -180,6 +180,11 @@ Observação de UX:
 - Estilo e cores (cards, botões, tabelas) vêm de `gvg_styles.styles`.
 - Ícones via FontAwesome (por meio do Bootstrap theme referenciado).
 - Cores da Data Encerramento variam por proximidade (roxo para vencidos; verde para > 30 dias).
+
+### Barra de abas (Sessões)
+
+- Abas com rolagem horizontal (sem encolher). Quando uma nova aba é criada, o scroll é movido automaticamente para o final, mantendo a aba recém‑criada visível.
+- Ícones: busca para abas de consulta e bookmark sólido para abas PNCP. Títulos truncados para caber com reticências.
 
 ### Layout dos detalhes e janelas laterais
 
@@ -268,4 +273,4 @@ Atenção:
 
 ---
 
-Última atualização: auto‑gerado a partir do código em 2025‑09‑02.
+Última atualização: auto‑gerado a partir do código em 2025‑09‑03.
