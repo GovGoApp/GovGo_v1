@@ -335,15 +335,21 @@ styles = {
     },
     'auth_card': {
         'backgroundColor': 'white', 'borderRadius': '18px', 'padding': '20px',
-        'width': '100%', 'maxWidth': '520px', 'boxShadow': '0 4px 16px rgba(0,0,0,0.12)'
+        'width': '100%', 'maxWidth': '470px', 'boxShadow': '0 4px 16px rgba(0,0,0,0.12)'
     },
     'auth_logo': { 'height': '48px', 'marginBottom': '10px' },
     'auth_title': { 'color': '#003A70', 'fontWeight': 'bold', 'fontSize': '18px', 'marginTop': '4px' },
     'auth_subtitle': { 'color': '#003A70', 'fontSize': '12px', 'marginTop': '6px' },
     'auth_input': { 'width': '100%', 'height': '36px', 'borderRadius': '16px', 'border': '1px solid #D0D7E2', 'padding': '6px 10px', 'fontSize': '12px' },
+    'auth_input_group': { 'display': 'flex', 'alignItems': 'center', 'gap': '6px' },
+    'auth_input_eye': { 'width': '100%', 'height': '36px', 'borderRadius': '16px', 'border': '1px solid #D0D7E2', 'padding': '6px 10px', 'fontSize': '12px', 'flex': '1' },
+    'auth_eye_button': { 'backgroundColor': 'white', 'color': '#003A70', 'border': '1px solid #D0D7E2', 'borderRadius': '16px', 'height': '32px', 'minWidth': '36px', 'padding': '0 10px', 'cursor': 'pointer' },
     'auth_btn_primary': { 'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none', 'borderRadius': '16px', 'height': '32px', 'padding': '0 14px', 'cursor': 'pointer' },
     'auth_btn_secondary': { 'backgroundColor': 'white', 'color': '#FF5722', 'border': '1px solid #FF5722', 'borderRadius': '16px', 'height': '32px', 'padding': '0 14px', 'cursor': 'pointer' },
-    'auth_actions': { 'display': 'flex', 'gap': '8px', 'marginTop': '10px' },
+    'auth_actions': { 'display': 'flex', 'gap': '8px', 'marginTop': '16px' },
+    'auth_actions_center': { 'display': 'flex', 'gap': '8px', 'marginTop': '16px', 'justifyContent': 'center' },
+    'auth_row_between': { 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginTop': '6px' },
+    'auth_link': { 'color': '#FF5722', 'textDecoration': 'underline', 'cursor': 'pointer', 'backgroundColor': 'transparent', 'border': 'none', 'padding': '0', 'height': 'auto', 'fontSize': '11px' },
     'auth_error': { 'color': '#D32F2F', 'fontSize': '12px', 'marginTop': '6px' },
 }
 

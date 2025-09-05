@@ -269,23 +269,25 @@ catchy_lines = [
 auth_overlay = html.Div([
     html.Div([
         html.Img(src=LOGO_PATH, style=styles['auth_logo']),
-        html.H3("GovGo Search", style=styles['auth_title']),
-        html.Div([html.Div(line, style=styles['auth_subtitle']) for line in catchy_lines]),
+        #html.H3("GovGo Search", style=styles['auth_title']),
+        #html.Div([html.Div(line, style=styles['auth_subtitle']) for line in catchy_lines]),
         html.Div(id='auth-error', style={'display': 'none', **styles['auth_error']}),
         html.Div([
             html.Label('E-mail', className='gvg-form-label'),
-            dcc.Input(id='auth-email', type='email', placeholder='seu@email.com', style=styles['auth_input']),
+            dcc.Input(id='auth-email', type='email', placeholder='seu@email.com', autoComplete='username', style=styles['auth_input']),
             html.Label('Senha', className='gvg-form-label', style={'marginTop': '8px'}),
-            dcc.Input(id='auth-password', type='password', placeholder='••••••••', style=styles['auth_input']),
             html.Div([
-                dcc.Checklist(id='auth-show-pass', options=[{'label': ' Mostrar senha', 'value': 'show'}], value=[], style={'marginTop': '6px'}),
-                dcc.Checklist(id='auth-remember', options=[{'label': ' Lembrar e-mail e senha neste navegador', 'value': 'yes'}], value=[], style={'marginTop': '4px'})
-            ], style={'display': 'flex', 'flexDirection': 'column'}),
-            html.Button('Esqueci minha senha', id='auth-forgot', style={**styles['auth_btn_secondary'], 'marginTop': '8px'}),
+                dcc.Input(id='auth-password', type='password', placeholder='••••••••', autoComplete='current-password', style=styles['auth_input_eye']),
+                html.Button(html.I(className='fas fa-eye'), id='auth-pass-toggle', title='Mostrar/ocultar senha', n_clicks=0, style=styles['auth_eye_button'])
+            ], style=styles['auth_input_group']),
+            html.Div([
+                html.Div(dcc.Checklist(id='auth-remember', options=[{'label': ' Lembrar e-mail e senha neste navegador', 'value': 'yes'}], value=[], style={'fontSize': '11px'}), style={'marginTop': '6px'}),
+                html.A('Esqueci minha senha', id='auth-forgot', n_clicks=0, style=styles['auth_link'])
+            ], style=styles['auth_row_between']),
             html.Div([
                 html.Button('Entrar', id='auth-login', style=styles['auth_btn_primary']),
                 html.Button('Cadastrar', id='auth-switch-signup', style=styles['auth_btn_secondary'])
-            ], style=styles['auth_actions'])
+            ], style=styles['auth_actions_center'])
         ], id='auth-view-login', style={'display': 'block'}),
         html.Div([
             html.Label('Nome completo', className='gvg-form-label'),
@@ -293,15 +295,17 @@ auth_overlay = html.Div([
             html.Label('Telefone', className='gvg-form-label', style={'marginTop': '8px'}),
             dcc.Input(id='auth-phone', type='text', placeholder='(DDD) 90000-0000', style=styles['auth_input']),
             html.Label('E-mail', className='gvg-form-label', style={'marginTop': '8px'}),
-            dcc.Input(id='auth-email-sign', type='email', placeholder='seu@email.com', style=styles['auth_input']),
+            dcc.Input(id='auth-email-sign', type='email', placeholder='seu@email.com', autoComplete='username', style=styles['auth_input']),
             html.Label('Senha', className='gvg-form-label', style={'marginTop': '8px'}),
-            dcc.Input(id='auth-password-sign', type='password', placeholder='••••••••', style=styles['auth_input']),
-            dcc.Checklist(id='auth-show-pass-sign', options=[{'label': ' Mostrar senha', 'value': 'show'}], value=[], style={'marginTop': '6px'}),
-            dcc.Checklist(id='auth-terms', options=[{'label': ' Aceito os Termos de Contratação', 'value': 'ok'}], value=[], style={'marginTop': '8px'}),
+            html.Div([
+                dcc.Input(id='auth-password-sign', type='password', placeholder='••••••••', autoComplete='new-password', style=styles['auth_input_eye']),
+                html.Button(html.I(className='fas fa-eye'), id='auth-pass-toggle-sign', title='Mostrar/ocultar senha', n_clicks=0, style=styles['auth_eye_button'])
+            ], style=styles['auth_input_group']),
+            dcc.Checklist(id='auth-terms', options=[{'label': ' Aceito os Termos de Contratação', 'value': 'ok'}], value=[], style={'marginTop': '8px', 'fontSize': '11px'}),
             html.Div([
                 html.Button('Cadastrar', id='auth-signup', style=styles['auth_btn_primary']),
                 html.Button('Voltar', id='auth-switch-login', style=styles['auth_btn_secondary'])
-            ], style=styles['auth_actions'])
+            ], style=styles['auth_actions_center'])
         ], id='auth-view-signup', style={'display': 'none'}),
         html.Div([
             html.Div('Confirme o seu e-mail', style=styles['card_title']),
@@ -924,28 +928,40 @@ def do_logout(n_clicks, auth_data):
     return {'status': 'unauth', 'user': None}
 
 
-# Mostrar/ocultar senha (login)
+# Mostrar/ocultar senha (login) via botão de olho
 @app.callback(
     Output('auth-password', 'type'),
-    Input('auth-show-pass', 'value')
+    Output('auth-pass-toggle', 'children'),
+    Input('auth-pass-toggle', 'n_clicks'),
+    State('auth-password', 'type'),
+    prevent_initial_call=False,
 )
-def show_hide_login_password(values):
+def toggle_login_password_eye(n_clicks, current_type):
     try:
-        return 'text' if ('show' in (values or [])) else 'password'
+        show = (current_type == 'password')
+        new_type = 'text' if show else 'password'
+        icon = html.I(className=('far fa-eye-slash' if show else 'far fa-eye'))
+        return new_type, icon
     except Exception:
-        return 'password'
+        return 'password', html.I(className='far fa-eye')
 
 
-# Mostrar/ocultar senha (signup)
+# Mostrar/ocultar senha (signup) via botão de olho
 @app.callback(
     Output('auth-password-sign', 'type'),
-    Input('auth-show-pass-sign', 'value')
+    Output('auth-pass-toggle-sign', 'children'),
+    Input('auth-pass-toggle-sign', 'n_clicks'),
+    State('auth-password-sign', 'type'),
+    prevent_initial_call=False,
 )
-def show_hide_signup_password(values):
+def toggle_signup_password_eye(n_clicks, current_type):
     try:
-        return 'text' if ('show' in (values or [])) else 'password'
+        show = (current_type == 'password')
+        new_type = 'text' if show else 'password'
+        icon = html.I(className=('far fa-eye-slash' if show else 'far fa-eye'))
+        return new_type, icon
     except Exception:
-        return 'password'
+        return 'password', html.I(className='far fa-eye')
 
 
 # Prefill de e-mail/senha com base no store local (quando voltar para a view login)
