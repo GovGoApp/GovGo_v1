@@ -417,7 +417,15 @@ BASE_CSS = """
 .dash-table-container .dash-spreadsheet-container th .column-header--sort .column-header--sort-icon { font-size: 18px; color: #FF5722; }
 .dash-table-container .dash-spreadsheet-container th .column-header--sort:after { font-size: 18px; color: #FF5722; }
 
+/* Place sort controls at the right side of the header title with spacing */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner .column-header-name { order: 1; flex: 1 1 auto; }
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner .column-header--sort { order: 2; margin-left: 8px; }
+
 #gvg-center-spinner { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; display: flex; flex-direction: column; align-items: center; width: 260px; }
+
+/* Smaller font for remember/terms checklists */
+#auth-remember label { font-size: 11px; }
+#auth-terms label { font-size: 11px; }
 """
 
 # Classe aplicada em dcc.Markdown(children=..., className='markdown-summary')
