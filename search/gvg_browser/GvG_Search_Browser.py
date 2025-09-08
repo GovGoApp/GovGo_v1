@@ -932,18 +932,21 @@ def render_boletins_list(data):
         freq = b.get('schedule_type')
         detail = b.get('schedule_detail') or {}
         channels = b.get('channels') or []
+        # Monta o parágrafo de configurações (itálico)
         if freq == 'MULTIDIARIO':
-            d_txt = ' / '.join(detail.get('slots') or []) or '-'
+            d_txt = 'Horários: ' + (' / '.join(detail.get('slots') or []) or '-')
         elif freq == 'SEMANAL':
-            d_txt = 'Dias: ' + ','.join(detail.get('days') or [])
+            d_txt = 'Dias: ' + (', '.join(detail.get('days') or []) or '-')
         else:
-            d_txt = 'Seg-Sex'
-        ch_txt = ','.join(channels)
-        label = f"{freq} | {d_txt} | {ch_txt}"
+            d_txt = 'Dias: Seg–Sex'
+        ch_txt = 'Canais: ' + (', '.join(channels) if channels else '-')
+        cfg_txt = f"{freq} | {d_txt} | {ch_txt}"
         items.append(
             html.Div([
-                html.Button(
-                    b.get('query_text','')[:80] + ('...' if len(b.get('query_text',''))>80 else '') + '\n' + label,
+                html.Button([
+                    html.Div(b.get('query_text','')[:160] + ('...' if len(b.get('query_text',''))>160 else ''), style=styles['boletim_query']),
+                    html.Div(cfg_txt, style=styles['boletim_config'])
+                ],
                     id={'type': 'boletim-item', 'id': b.get('id')},
                     style=styles['boletim_item_button']
                 ),

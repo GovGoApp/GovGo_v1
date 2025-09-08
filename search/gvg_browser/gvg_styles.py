@@ -419,7 +419,7 @@ styles['boletim_item_button'] = {
     'backgroundColor': 'white', 'color': '#003A70', 'border': '1px solid #D0D7E2',
     'borderRadius': '16px', 'display': 'block', 'width': '100%', 'textAlign': 'left',
     'padding': '8px 12px', 'whiteSpace': 'normal', 'wordBreak': 'break-word',
-    'lineHeight': '1.25', 'cursor': 'default', 'fontSize': '12px'
+    'lineHeight': '1.25', 'cursor': 'default'
 }
 styles['boletim_delete_btn'] = {
     'width': '28px', 'height': '28px', 'minWidth': '28px', 'borderRadius': '50%',
@@ -437,6 +437,14 @@ styles['boletim_section_header'] = {
 }
 styles['boletim_inline_group'] = {
     'display': 'flex', 'gap': '6px', 'flexWrap': 'wrap', 'alignItems': 'center'
+}
+
+# Texto da query (negrito) e bloco de configurações (itálico) nos itens de boletim
+styles['boletim_query'] = {
+    'fontWeight': 'bold', 'color': '#003A70'
+}
+styles['boletim_config'] = {
+    'fontStyle': 'italic', 'color': '#003A70', 'marginTop': '2px'
 }
 
 
