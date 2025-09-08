@@ -43,21 +43,6 @@ from gvg_preprocessing import (
 from gvg_ai_utils import (
     generate_keywords,
     get_embedding,
-    get_negation_embedding,
-    generate_contratacao_label,
-)
-from gvg_search_core import (
-    semantic_search,
-    keyword_search,
-    hybrid_search,
-    toggle_intelligent_processing,
-    set_sql_debug,
-    get_intelligent_status,
-    set_relevance_filter_level,
-    get_relevance_filter_status,
-    get_top_categories_for_query,
-    correspondence_search as categories_correspondence_search,
-    category_filtered_search as categories_category_filtered_search,
 )
 from gvg_exporters import (
     export_results_json,
@@ -66,12 +51,7 @@ from gvg_exporters import (
     export_results_pdf,
     export_results_html,
 )
-from gvg_documents import fetch_documentos
-
-from gvg_styles import styles, CSS_ALL
-
 from gvg_user import (
-    get_current_user,
     get_user_initials,
     set_current_user,
     fetch_prompt_texts,
@@ -83,10 +63,28 @@ from gvg_user import (
     remove_bookmark,
 )
 from gvg_boletim import (
-    fetch_user_boletins,
     create_user_boletim,
     deactivate_user_boletim,
+    fetch_user_boletins,
 )
+from gvg_styles import styles, CSS_ALL
+from gvg_user import get_current_user
+from gvg_search_core import (
+    set_sql_debug,
+    get_relevance_filter_status,
+    set_relevance_filter_level,
+    toggle_intelligent_processing,
+    get_top_categories_for_query,
+    semantic_search,
+    keyword_search,
+    hybrid_search,
+    correspondence_search,
+    category_filtered_search,
+    get_negation_embedding,
+    
+)
+from gvg_database import fetch_documentos
+from gvg_ai_utils import generate_contratacao_label
 
 # Autenticação (Supabase)
 try:
@@ -102,8 +100,6 @@ except Exception:
     # Permite rodar sem pacote instalado (até instalar requirements)
     def sign_in(*args, **kwargs):
         return False, None, "Auth indisponível"
-    def sign_up_with_metadata(*args, **kwargs):
-        return False, "Auth indisponível"
     def verify_otp(*args, **kwargs):
         return False, None, "Auth indisponível"
     def reset_password(*args, **kwargs):
@@ -377,43 +373,45 @@ controls_panel = html.Div([
             html.Div([
                 html.Div([
                     html.Label('Frequência', className='gvg-form-label'),
-                    dcc.RadioItems(
+                    dcc.Dropdown(
                         id='boletim-freq',
                         options=[
-                            {'label': ' Multidiário', 'value': 'MULTIDIARIO'},
-                            {'label': ' Diário (Seg-Sex)', 'value': 'DIARIO'},
-                            {'label': ' Semanal', 'value': 'SEMANAL'},
+                            {'label': '1 - Multidiário', 'value': 'MULTIDIARIO'},
+                            {'label': '2 - Diário (Seg-Sex)', 'value': 'DIARIO'},
+                            {'label': '3 - Semanal', 'value': 'SEMANAL'},
                         ],
                         value='MULTIDIARIO',
-                        labelStyle={'marginRight': '12px', 'fontSize': '12px'}
+                        clearable=False,
+                        style=styles['input_fullflex']
                     )
                 ], className='gvg-form-row'),
                 html.Div([
-                    html.Label('Horários / Dias', className='gvg-form-label'),
-                    html.Div([
-                        dcc.Checklist(
-                            id='boletim-multidiario-slots',
-                            options=[
-                                {'label': ' Manhã', 'value': 'manha'},
-                                {'label': ' Tarde', 'value': 'tarde'},
-                                {'label': ' Noite', 'value': 'noite'},
-                            ],
-                            value=['manha'],
-                            style={'fontSize': '12px'}
-                        ),
-                        dcc.Checklist(
-                            id='boletim-semanal-dias',
-                            options=[
-                                {'label': ' Seg', 'value': 'seg'},
-                                {'label': ' Ter', 'value': 'ter'},
-                                {'label': ' Qua', 'value': 'qua'},
-                                {'label': ' Qui', 'value': 'qui'},
-                                {'label': ' Sex', 'value': 'sex'},
-                            ],
-                            value=['seg'],
-                            style={'fontSize': '12px', 'marginLeft': '12px'}
-                        )
-                    ], style={'display': 'flex', 'alignItems': 'center'})
+                    html.Label('Horários', className='gvg-form-label'),
+                    dcc.Checklist(
+                        id='boletim-multidiario-slots',
+                        options=[
+                            {'label': ' Manhã', 'value': 'manha'},
+                            {'label': ' Tarde', 'value': 'tarde'},
+                            {'label': ' Noite', 'value': 'noite'},
+                        ],
+                        value=['manha','tarde','noite'],
+                        labelStyle={'display': 'inline-block', 'marginRight': '12px', 'fontSize': '12px'}
+                    )
+                ], className='gvg-form-row'),
+                html.Div([
+                    html.Label('Dias', className='gvg-form-label'),
+                    dcc.Checklist(
+                        id='boletim-semanal-dias',
+                        options=[
+                            {'label': ' Seg', 'value': 'seg'},
+                            {'label': ' Ter', 'value': 'ter'},
+                            {'label': ' Qua', 'value': 'qua'},
+                            {'label': ' Qui', 'value': 'qui'},
+                            {'label': ' Sex', 'value': 'sex'},
+                        ],
+                        value=['seg'],
+                        labelStyle={'display': 'inline-block', 'marginRight': '10px', 'fontSize': '12px'}
+                    )
                 ], className='gvg-form-row'),
                 html.Div([
                     html.Label('Canais', className='gvg-form-label'),
@@ -424,13 +422,19 @@ controls_panel = html.Div([
                             {'label': ' WhatsApp', 'value': 'whatsapp'},
                         ],
                         value=['email'],
-                        style={'fontSize': '12px'}
+                        labelStyle={'display': 'inline-block', 'marginRight': '12px', 'fontSize': '12px'}
                     )
                 ], className='gvg-form-row'),
                 html.Div([
-                    html.Button('Salvar Boletim', id='boletim-save-btn', style={**styles['submit_button'], 'width': '160px'}, disabled=True)
-                ], style={'marginTop': '4px'})
-            ], style=styles['boletim_config_panel'])
+                    html.Button(
+                        html.I(className='fas fa-plus'),
+                        id='boletim-save-btn',
+                        title='Salvar boletim',
+                        style=styles['arrow_button'],
+                        disabled=True
+                    )
+                ], style={'marginTop': '4px', 'display': 'flex', 'justifyContent': 'flex-end'})
+            ], style=styles['boletim_config_panel'], className='gvg-controls')
         ]),
         id='boletim-collapse', is_open=False
     ),
@@ -663,6 +667,26 @@ def enable_boletim_button(q, is_open):
     return (not enabled), style
 
 @app.callback(
+    Output('boletim-multidiario-slots', 'value'),
+    Output('boletim-multidiario-slots', 'disabled'),
+    Output('boletim-semanal-dias', 'value'),
+    Output('boletim-semanal-dias', 'disabled'),
+    Input('boletim-freq', 'value'),
+    prevent_initial_call=False
+)
+def sync_boletim_controls(freq):
+    # Defaults: todos os dias úteis
+    all_days = ['seg','ter','qua','qui','sex']
+    if freq == 'MULTIDIARIO':
+        # Horários habilitados; dias marcados e desabilitados
+        return ['manha','tarde','noite'], False, all_days, True
+    if freq == 'DIARIO':
+        # Horários desabilitados; dias marcados e desabilitados
+        return ['manha'], True, all_days, True
+    # SEMANAL: horários desabilitados; dias somente segunda habilitados
+    return ['manha'], True, ['seg'], False
+
+@app.callback(
     Output('boletim-collapse', 'is_open'),
     Output('store-boletim-open', 'data'),
     Input('boletim-toggle-btn', 'n_clicks'),
@@ -681,16 +705,78 @@ def toggle_boletim_panel(n, is_open):
     Input('boletim-multidiario-slots', 'value'),
     Input('boletim-semanal-dias', 'value'),
     Input('boletim-channels', 'value'),
+    Input('query-input', 'value'),
+    Input('store-boletins', 'data'),
     prevent_initial_call=False
 )
-def validate_boletim(freq, slots, dias, channels):
+def validate_boletim(freq, slots, dias, channels, query_text, boletins):
+    # Regras de desabilitação (True = desabilita)
+    q = (query_text or '').strip()
+    if len(q) < 3:
+        return True
     if not channels:
         return True
-    if freq == 'MULTIDIARIO':
-        return not (slots and len(slots) > 0)
-    if freq == 'SEMANAL':
-        return not (dias and len(dias) > 0)
+    # Requisitos por frequência
+    if freq == 'MULTIDIARIO' and not (slots and len(slots) > 0):
+        return True
+    if freq == 'SEMANAL' and not (dias and len(dias) > 0):
+        return True
+    # Duplicidade por texto (case-insensitive, trim)
+    try:
+        qn = q.lower()
+        for b in (boletins or []):
+            bt = ((b.get('query_text') or '').strip()).lower()
+            if bt == qn:
+                return True
+    except Exception:
+        pass
+    # Caso válido => habilita (False)
     return False
+
+@app.callback(
+    Output('boletim-save-btn', 'title'),
+    Output('boletim-save-btn', 'style'),
+    Input('boletim-freq', 'value'),
+    Input('boletim-multidiario-slots', 'value'),
+    Input('boletim-semanal-dias', 'value'),
+    Input('boletim-channels', 'value'),
+    Input('query-input', 'value'),
+    Input('store-boletins', 'data'),
+    prevent_initial_call=False
+)
+def refresh_boletim_save_visuals(freq, slots, dias, channels, query_text, boletins):
+    """Atualiza hint (title) e opacidade do botão '+' para indicar estado.
+
+    Mantém o estilo base e o ícone '+', apenas ajustando a opacidade.
+    """
+    base = dict(styles['arrow_button'])
+    q = (query_text or '').strip()
+    # Mensagens de orientação
+    if len(q) < 3:
+        base.update({'opacity': 0.4})
+        return 'Digite uma consulta (mín. 3 caracteres)', base
+    if not channels:
+        base.update({'opacity': 0.4})
+        return 'Selecione pelo menos um canal', base
+    if freq == 'MULTIDIARIO' and not (slots and len(slots) > 0):
+        base.update({'opacity': 0.4})
+        return 'Selecione ao menos um horário', base
+    if freq == 'SEMANAL' and not (dias and len(dias) > 0):
+        base.update({'opacity': 0.4})
+        return 'Selecione ao menos um dia', base
+    # Duplicado?
+    try:
+        qn = q.lower()
+        for b in (boletins or []):
+            bt = ((b.get('query_text') or '').strip()).lower()
+            if bt == qn:
+                base.update({'opacity': 0.4})
+                return 'Já salvo para esta consulta', base
+    except Exception:
+        pass
+    # Válido e não duplicado
+    base.update({'opacity': 1.0})
+    return 'Salvar boletim', base
 
 @app.callback(
     Output('store-boletins', 'data', allow_duplicate=True),
@@ -718,6 +804,15 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
         raise PreventUpdate
     if not channels:
         raise PreventUpdate
+    # Evita duplicados por texto de consulta (case-insensitive, trim)
+    try:
+        qn = (query or '').strip().lower()
+        for b in (current or []):
+            bt = ((b.get('query_text') or '').strip()).lower()
+            if bt == qn:
+                return dash.no_update, html.I(className='fas fa-plus')
+    except Exception:
+        pass
     schedule_detail = {}
     if freq == 'MULTIDIARIO':
         schedule_detail = {'slots': slots or []}
@@ -742,7 +837,8 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
         config_snapshot=config_snapshot,
     )
     if not boletim_id:
-        return dash.no_update, 'Erro'
+        # Mantém ícone '+'
+        return dash.no_update, html.I(className='fas fa-plus')
     item = {
         'id': boletim_id,
         'query_text': query.strip(),
@@ -754,7 +850,8 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
     data.insert(0, item)
     # Deduplicação defensiva
     data = _dedupe_boletins(data) if '_dedupe_boletins' in globals() else data
-    return data[:200], 'Salvo'
+    # Mantém o ícone '+'; desabilitará via validate_boletim (lista agora contém a query)
+    return data[:200], html.I(className='fas fa-plus')
 
 def _dedupe_boletins(items):
     """Remove duplicados por id; loga quantos removeu."""
@@ -859,6 +956,29 @@ def render_boletins_list(data):
             ], style=styles['boletim_item_row'])
         )
     return items
+
+
+# Toggle do painel de lista de Boletins (colapsar/expandir)
+@app.callback(
+    Output('boletins-collapse', 'is_open'),
+    Output('store-boletins-open', 'data'),
+    Input('boletins-toggle-btn', 'n_clicks'),
+    State('store-boletins-open', 'data'),
+    prevent_initial_call=True,
+)
+def toggle_boletins_collapse(n, is_open):
+    if not n:
+        raise PreventUpdate
+    new_state = not bool(is_open)
+    return new_state, new_state
+
+@app.callback(
+    Output('boletins-toggle-btn', 'children'),
+    Input('store-boletins-open', 'data')
+)
+def update_boletins_icon(is_open):
+    icon = 'fa-chevron-up' if is_open else 'fa-chevron-down'
+    return html.I(className=f"fas {icon}")
 
 
 # Inicialização pós-login e limpeza no logout
@@ -1891,7 +2011,7 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
                     progress_set(70, 'Executando busca por correspondência')
                 except Exception:
                     pass
-                results, confidence, _ = categories_correspondence_search(
+                results, confidence, _ = correspondence_search(
                     query_text=query,
                     top_categories=categories,
                     limit=safe_limit,
@@ -1904,7 +2024,7 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
                     progress_set(70, 'Executando busca filtrada por categoria')
                 except Exception:
                     pass
-                results, confidence, _ = categories_category_filtered_search(
+                results, confidence, _ = category_filtered_search(
                     query_text=query,
                     search_type=s_type,
                     top_categories=categories,
@@ -2484,7 +2604,8 @@ def reflect_collapse(is_open):
     Input('store-config-open', 'data')
 )
 def update_config_icon(is_open):
-    return html.I(className="fas fa-chevron-down") if is_open else html.I(className="fas fa-chevron-right")
+    icon = 'fa-chevron-up' if is_open else 'fa-chevron-down'
+    return html.I(className=f"fas {icon}")
 
 
 # Toggle collapse do Histórico
@@ -2513,7 +2634,8 @@ def reflect_history_collapse(is_open):
     Input('store-history-open', 'data')
 )
 def update_history_icon(is_open):
-    return html.I(className="fas fa-chevron-down") if is_open else html.I(className="fas fa-chevron-right")
+    icon = 'fa-chevron-up' if is_open else 'fa-chevron-down'
+    return html.I(className=f"fas {icon}")
 
 
 @app.callback(
