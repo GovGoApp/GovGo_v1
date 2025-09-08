@@ -47,13 +47,13 @@ styles = {
     'display': 'inline-flex', 'alignItems': 'center', 'gap': '6px',
     'borderRadius': '16px', 'borderTopRightRadius': '18px', 'borderBottomRightRadius': '18px',
     'padding': '2px 2px 2px 8px', 'cursor': 'pointer',
-    'border': '1px solid #D0D7E2', 'backgroundColor': 'white', 'color': '#003A70',
+    'border': '2px solid #D0D7E2', 'backgroundColor': 'white', 'color': '#003A70',
     'overflow': 'hidden', 'textOverflow': 'ellipsis', 'whiteSpace': 'nowrap',
-    'fontSize': '10px', 'flex': '0 0 auto'
+    'fontSize': '11px', 'flex': '0 0 auto'
     },
     'tab_button_active': {
-    'borderColor': '#FF5722',
-    'backgroundColor': '#FF5722', 'color': 'white', 'fontWeight': '600'
+    'borderColor': '#003A70',
+    'backgroundColor': '#003A70', 'color': 'white', 'fontWeight': '600'
     },
     'tab_button_query': {
     'borderColor': '#003A70', 'color': '#003A70', 'backgroundColor': "#E4E6F8"
@@ -437,6 +437,11 @@ styles['boletim_section_header'] = {
 }
 styles['boletim_inline_group'] = {
     'display': 'flex', 'gap': '6px', 'flexWrap': 'wrap', 'alignItems': 'center'
+}
+
+# Utilitário: esconder elemento mantendo no DOM
+styles['hidden'] = {
+    'display': 'none'
 }
 
 # Texto da query (negrito) e bloco de configurações (itálico) nos itens de boletim

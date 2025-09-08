@@ -165,13 +165,13 @@ RELEVANCE_LEVELS = {
 # =====================================================================================
 # Cores padronizadas para datas de encerramento (tabela e detalhes)
 # =====================================================================================
-COLOR_ENC_NA = "#8F8F8FB1"       # cinza (sem data)
+COLOR_ENC_NA = "#838383"       # cinza (sem data)
 COLOR_ENC_EXPIRED = "#800080"    # roxo
 COLOR_ENC_LT3 = "#FF0000EE"      # vermelho escuro (<= 3 dias)
 COLOR_ENC_LT7 = "#FF6200"        # laranja (<= 7 dias)
-COLOR_ENC_LT15 = "#FFBD21"       # amarelo (<= 15 dias)
-COLOR_ENC_LT30 = "#00FF517C"     # verde (<= 30 dias)
-COLOR_ENC_GT30 = "#0099FF9D"     # azul  ( > 30 dias)
+COLOR_ENC_LT15 = "#FFB200"       # amarelo (<= 15 dias)
+COLOR_ENC_LT30 = "#01B33A"     # verde (<= 30 dias)
+COLOR_ENC_GT30 = "#0099FF"     # azul  ( > 30 dias)
 
 
 # styles agora vem de gvg_styles
@@ -376,11 +376,10 @@ controls_panel = html.Div([
                     dcc.Dropdown(
                         id='boletim-freq',
                         options=[
-                            {'label': '1 - Multidiário', 'value': 'MULTIDIARIO'},
-                            {'label': '2 - Diário (Seg-Sex)', 'value': 'DIARIO'},
-                            {'label': '3 - Semanal', 'value': 'SEMANAL'},
+                            {'label': 'Diário (Seg-Sex)', 'value': 'DIARIO'},
+                            {'label': 'Semanal', 'value': 'SEMANAL'},
                         ],
-                        value='MULTIDIARIO',
+                        value='DIARIO',
                         clearable=False,
                         style=styles['input_fullflex']
                     )
@@ -394,10 +393,10 @@ controls_panel = html.Div([
                             {'label': ' Tarde', 'value': 'tarde'},
                             {'label': ' Noite', 'value': 'noite'},
                         ],
-                        value=['manha','tarde','noite'],
+                        value=['manha'],
                         labelStyle={'display': 'inline-block', 'marginRight': '12px', 'fontSize': '12px'}
                     )
-                ], className='gvg-form-row'),
+                ], className='gvg-form-row', style=styles['hidden']),
                 html.Div([
                     html.Label('Dias', className='gvg-form-label'),
                     dcc.Checklist(
@@ -424,7 +423,7 @@ controls_panel = html.Div([
                         value=['email'],
                         labelStyle={'display': 'inline-block', 'marginRight': '12px', 'fontSize': '12px'}
                     )
-                ], className='gvg-form-row'),
+                ], className='gvg-form-row', style=styles['hidden']),
                 html.Div([
                     html.Button(
                         html.I(className='fas fa-plus'),
@@ -675,15 +674,11 @@ def enable_boletim_button(q, is_open):
     prevent_initial_call=False
 )
 def sync_boletim_controls(freq):
-    # Defaults: todos os dias úteis
+    # UI simplificada: horários e canais escondidos; aqui apenas garantimos defaults coerentes.
     all_days = ['seg','ter','qua','qui','sex']
-    if freq == 'MULTIDIARIO':
-        # Horários habilitados; dias marcados e desabilitados
-        return ['manha','tarde','noite'], False, all_days, True
     if freq == 'DIARIO':
-        # Horários desabilitados; dias marcados e desabilitados
         return ['manha'], True, all_days, True
-    # SEMANAL: horários desabilitados; dias somente segunda habilitados
+    # SEMANAL
     return ['manha'], True, ['seg'], False
 
 @app.callback(
@@ -702,25 +697,19 @@ def toggle_boletim_panel(n, is_open):
 @app.callback(
     Output('boletim-save-btn', 'disabled'),
     Input('boletim-freq', 'value'),
-    Input('boletim-multidiario-slots', 'value'),
     Input('boletim-semanal-dias', 'value'),
-    Input('boletim-channels', 'value'),
     Input('query-input', 'value'),
     Input('store-boletins', 'data'),
     prevent_initial_call=False
 )
-def validate_boletim(freq, slots, dias, channels, query_text, boletins):
+def validate_boletim(freq, dias, query_text, boletins):
     # Regras de desabilitação (True = desabilita)
     q = (query_text or '').strip()
     if len(q) < 3:
         return True
-    if not channels:
-        return True
-    # Requisitos por frequência
-    if freq == 'MULTIDIARIO' and not (slots and len(slots) > 0):
-        return True
     if freq == 'SEMANAL' and not (dias and len(dias) > 0):
         return True
+    # Demais campos estão fixos por default nesta fase simplificada
     # Duplicidade por texto (case-insensitive, trim)
     try:
         qn = q.lower()
@@ -737,14 +726,12 @@ def validate_boletim(freq, slots, dias, channels, query_text, boletins):
     Output('boletim-save-btn', 'title'),
     Output('boletim-save-btn', 'style'),
     Input('boletim-freq', 'value'),
-    Input('boletim-multidiario-slots', 'value'),
     Input('boletim-semanal-dias', 'value'),
-    Input('boletim-channels', 'value'),
     Input('query-input', 'value'),
     Input('store-boletins', 'data'),
     prevent_initial_call=False
 )
-def refresh_boletim_save_visuals(freq, slots, dias, channels, query_text, boletins):
+def refresh_boletim_save_visuals(freq, dias, query_text, boletins):
     """Atualiza hint (title) e opacidade do botão '+' para indicar estado.
 
     Mantém o estilo base e o ícone '+', apenas ajustando a opacidade.
@@ -755,15 +742,10 @@ def refresh_boletim_save_visuals(freq, slots, dias, channels, query_text, boleti
     if len(q) < 3:
         base.update({'opacity': 0.4})
         return 'Digite uma consulta (mín. 3 caracteres)', base
-    if not channels:
-        base.update({'opacity': 0.4})
-        return 'Selecione pelo menos um canal', base
-    if freq == 'MULTIDIARIO' and not (slots and len(slots) > 0):
-        base.update({'opacity': 0.4})
-        return 'Selecione ao menos um horário', base
     if freq == 'SEMANAL' and not (dias and len(dias) > 0):
         base.update({'opacity': 0.4})
         return 'Selecione ao menos um dia', base
+    # Campos avançados estão com defaults
     # Duplicado?
     try:
         qn = q.lower()
@@ -802,8 +784,8 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
         raise PreventUpdate
     if not query or len(query.strip()) < 3:
         raise PreventUpdate
-    if not channels:
-        raise PreventUpdate
+    # Campos ocultos: manter defaults
+    channels = channels or ['email']
     # Evita duplicados por texto de consulta (case-insensitive, trim)
     try:
         qn = (query or '').strip().lower()
@@ -814,11 +796,10 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
     except Exception:
         pass
     schedule_detail = {}
-    if freq == 'MULTIDIARIO':
-        schedule_detail = {'slots': slots or []}
-    elif freq == 'SEMANAL':
+    if freq == 'SEMANAL':
         schedule_detail = {'days': dias or []}
     else:
+        # DIARIO
         schedule_detail = {'days': ['seg','ter','qua','qui','sex']}
     config_snapshot = {
         'search_type': s_type,
@@ -833,7 +814,7 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
         query_text=query.strip(),
         schedule_type=freq,
         schedule_detail=schedule_detail,
-        channels=channels or [],
+    channels=channels or ['email'],
         config_snapshot=config_snapshot,
     )
     if not boletim_id:
@@ -844,7 +825,7 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
         'query_text': query.strip(),
         'schedule_type': freq,
         'schedule_detail': schedule_detail,
-        'channels': channels,
+    'channels': channels or ['email'],
     }
     data = (current or [])
     data.insert(0, item)
@@ -939,7 +920,7 @@ def render_boletins_list(data):
             d_txt = 'Dias: ' + (', '.join(detail.get('days') or []) or '-')
         else:
             d_txt = 'Dias: Seg–Sex'
-        ch_txt = 'Canais: ' + (', '.join(channels) if channels else '-')
+        ch_txt = 'Canais: ' + (', '.join(channels) if channels else 'email')
         cfg_txt = f"{freq} | {d_txt} | {ch_txt}"
         items.append(
             html.Div([
@@ -2184,14 +2165,53 @@ def render_tabs_bar(sessions, active):
     out = []
     for sid, sess in sessions.items():
         is_active = (sid == active)
-        # Use current tab style keys from gvg_styles.py
+        # Estilo base da aba
         base_style = dict(styles['tab_button_base'])
+        close_style = dict(styles['tab_close_btn'])
         if sess.get('type') == 'pncp':
-            base_style.update(styles['tab_button_pncp'])
+            # Cor dinâmica com base na data de encerramento
+            status_color = None
+            try:
+                first = (sess.get('results') or [None])[0] or {}
+                details = (first.get('details') or {}) if isinstance(first, dict) else {}
+                end_date = (
+                    details.get('dataencerramentoproposta')
+                    or details.get('dataEncerramentoProposta')
+                    or details.get('dataEncerramento')
+                )
+                _status, _color = _enc_status_and_color(end_date)
+                status_color = _color
+            except Exception:
+                status_color = None
+            # Fallback de cor quando inexistente
+            status_color = status_color or '#2E7D32'  # verde padrão
+            if is_active:
+                base_style.update({
+                    'backgroundColor': status_color,
+                    'border': f'2px solid {status_color}',
+                    'color': 'white',
+                })
+                close_style.update({
+                    'border': '1px solid white',
+                    'color': 'white',
+                    'backgroundColor': 'transparent'
+                })
+            else:
+                base_style.update({
+                    'backgroundColor': 'white',
+                    'border': f'2px solid {status_color}',
+                    'color': status_color,
+                })
+                close_style.update({
+                    'border': f'1px solid {status_color}',
+                    'color': status_color,
+                    'backgroundColor': 'white'
+                })
         else:
+            # Abas de consulta (query) permanecem como estão
             base_style.update(styles['tab_button_query'])
-        if is_active:
-            base_style.update(styles['tab_button_active'])
+            if is_active:
+                base_style.update(styles['tab_button_active'])
         # Define o label conforme o tipo da sessão
         if sess.get('type') == 'pncp':
             # Título: Rotulo - Local
@@ -2234,7 +2254,7 @@ def render_tabs_bar(sessions, active):
         out.append(html.Div([
             icon,
             html.Span(label, title=label_full),
-            html.Button(html.I(className='fas fa-times'), id={'type': 'tab-close', 'sid': sid}, style=styles['tab_close_btn'], title='Fechar')
+            html.Button(html.I(className='fas fa-times'), id={'type': 'tab-close', 'sid': sid}, style=close_style, title='Fechar')
         ], id={'type': 'tab-activate', 'sid': sid}, style=base_style))
     return out
 
