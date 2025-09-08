@@ -13,7 +13,11 @@ import datetime as _dt
 import traceback as _tb
 
 from dotenv import load_dotenv
-from supabase import create_client
+
+try:
+    from supabase import create_client
+except Exception:  # pacote pode não estar instalado ainda
+    create_client = None  # type: ignore
 
 # Carregar .env de forma defensiva
 for candidate in (

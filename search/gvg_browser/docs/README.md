@@ -86,6 +86,52 @@ Este documento resume e explica a arquitetura do módulo `gvg_browser` e, em esp
 3) Exportações
 - Botões no painel “Exportar” geram arquivos em `reports/`: JSON, XLSX, CSV, PDF (se reportlab instalado) e HTML.
 
+## Boletins (Agendamento de Consultas)
+
+Funcionalidade recém‑adicionada para permitir que o usuário salve uma consulta parametrizada e a agende para execuções futuras (orquestração externa futura). Primeira etapa: criação, listagem e remoção.
+
+Tabela: `public.user_boletins`
+- Campos utilizados: `id`, `user_id`, `query_text`, `schedule_type`, `schedule_detail` (jsonb), `channels` (jsonb), `config_snapshot` (jsonb), `active`, `created_at`.
+- Soft delete: `active = false` (não remove linha).
+
+Frequências suportadas:
+- MULTIDIARIO: `schedule_detail = { slots: [ 'manha'|'tarde'|'noite' ] }`
+- DIARIO: implícito seg‑sex (armazenado como `{ days: ['seg','ter','qua','qui','sex'] }`)
+- SEMANAL: `{ days: [...] }` com subset de seg..sex.
+
+Canais: `email`, `whatsapp` (array JSONB em `channels`).
+
+Snapshot de configuração salvo em `config_snapshot` (campos: search_type, search_approach, relevance_level, sort_mode, max_results, top_categories_count, filter_expired).
+
+UI / Layout:
+- Botão consulta (seta) e, logo abaixo dele (mesma coluna à direita do campo), o botão de boletim com ícone `fa-calendar-plus`.
+- Botão Boletim: mesma geometria (32px, circular). Cor normal (laranja) quando fechado; invertida (fundo branco/borda laranja) quando o painel está aberto.
+- Collapse “Configurar Boletim” com: Frequência, Horários/Dias, Canais e botão “Salvar Boletim”.
+
+Stores:
+- `store-boletins`: lista de objetos `{ id, query_text, schedule_type, schedule_detail, channels }` (somente ativos, ordenados por criação desc).
+- `store-boletim-open`: boolean (estado do collapse de configuração).
+
+Callbacks principais:
+- Habilitação do botão (depende de query não vazia) e inversão de estilo conforme aberto/fechado.
+- Salvar: cria registro, insere otimisticamente na store (dedupe `_dedupe_boletins`).
+- Carregar inicial: busca apenas ativos `active=true`.
+- Remover: pattern‑matching com validação `n_clicks > 0` antes de `deactivate_user_boletim` (protege contra triggers fantasmas). Também aplica dedupe.
+
+Deduplicação:
+- Função `_dedupe_boletins` remove IDs repetidos e imprime log simples quando necessário.
+
+Limitações atuais (backlog):
+- Sem edição / reativação.
+- Sem cálculo de `next_run_at` ou executor agendador interno (será implementado externamente).
+- Sem página de histórico de execuções de boletim.
+
+Logs:
+- Apenas prints simples em exclusão e deduplicação (sem prefixos customizados, conforme política).
+
+Impacto visual:
+- Ajuste de layout do container da consulta mantendo alinhamento horizontal original do input + coluna de botões à direita.
+
 ## Banco de dados (V1)
 
 - Tabelas chave:
@@ -213,6 +259,8 @@ Principais Stores e seus formatos:
 - `store-panel-active`: mapeia `{ [pncp]: 'itens'|'docs'|'resumo' }` para controlar a janela ativa por cartão.
 - `store-cache-itens` / `store-cache-docs` / `store-cache-resumo`: caches por PNCP; para Resumo, o valor é `{ docs: [...], summary: '...' }`.
 - `processing-state` + `progress-store`/`progress-interval`: controle do spinner central e da barra de progresso (percent/label) durante a busca.
+- `store-boletins`: boletins ativos do usuário.
+- `store-boletim-open`: estado (True/False) painel de configuração de boletim.
 
 ## Como executar
 
@@ -270,7 +318,8 @@ Atenção:
 - O código está modularizado: schema centralizado, SQL builders, e UI separada dos serviços de busca/IA.
 - Funcionalidades premium (relevância, sumários) degradam graciosamente quando não configuradas.
 - Para rodar sem atritos: configure `.env`, garanta `dash`/`dash-bootstrap-components`/`openai`/DB e, se quiser resumo de documentos, instale `docling`.
+- Nova funcionalidade de Boletins adiciona camada de agendamento (primeira etapa: CRUD básico e UI). Próximas etapas incluem executor e reativação.
 
 ---
 
-Última atualização: auto‑gerado a partir do código em 2025‑09‑03.
+Última atualização: 2025-09-08.

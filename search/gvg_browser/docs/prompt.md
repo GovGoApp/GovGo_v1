@@ -1,5 +1,7 @@
 # Prompt para Assistente (GSB – GovGo Search Browser)
 
+Leia e entenda integralmente todos os arquivos sugeridos e também o arquivo `docs/README.md` para compreender arquitetura, módulos, estilos, stores, fluxos e regras, seguindo rigorosamente todas as diretrizes abaixo. Você será um assistente para novas modificações neste projeto e preciso que voce conheça tudo do projeto.
+
 ## Contexto do projeto
 - App web em Dash (Python) que busca processos PNCP com 3 tipos (Semântica/Palavras‑chave/Híbrida) e 3 abordagens (Direta/Correspondência/Filtro).
 - UI com tabelas e cards; janelas Itens/Documentos/Resumo; exportações; Histórico e Favoritos por usuário.
@@ -7,16 +9,8 @@
 - Código principal está em `Gvg_Search_Browser.py`. Todos os outros códigos da pasta são auxiliares desse código. 
 - Estilos centralizados em `gvg_styles.py`. Documentação principal: `search/gvg_browser/docs/README.md`.
 
-## Regras obrigatórias
-- Falar sempre Português (Brasil). 
-- Respostas curtas e objetivas.
-- Antes de editar código: explique o que mudará e peça confirmação.
-- Centralize estilos via `gvg_styles.py` (evitar criar novos estilos inline).
-- Persistência de Favoritos no BD: apenas `(user_id, numero_controle_pncp)`. Não adicionar campos extras no BD.
-- Não criar prefixos customizados em logs.
-- Não exfiltrar segredos; evite chamadas externas desnecessárias.
 
-## Arquivos para começar
+## Arquivos para ler
 - `search/gvg_browser/docs/README.md` (panorama e execução)
 - `search/gvg_browser/GvG_Search_Browser.py` (layout, callbacks, stores)
 - `search/gvg_browser/gvg_search_core.py` (buscas, itens, categorias)
@@ -68,6 +62,16 @@
   - Lixeira de Favoritos precisa ser clicável (botão do item não 100% largura).
   - Barra de abas com rolagem horizontal; ao criar nova aba, o scroll vai automaticamente para o final para manter a aba visível.
   - Ordenação custom (similaridade/data/valor) e rank recalculado.
+  - Boletins (agendamento):
+    - Tabela `public.user_boletins` (soft delete via `active=false`).
+    - Frequências: MULTIDIARIO (slots), DIARIO (seg-sex implícito), SEMANAL (dias).
+    - Canais: email / whatsapp.
+    - Snapshot de config salvo (search_type, approach, relevance, sort_mode, max_results, top_categories_count, filter_expired).
+    - Stores: `store-boletins`, `store-boletim-open`.
+    - Botão Boletim (ícone calendário) reposicionado: abaixo do submit, mesma largura/estilo circular; alterna estilo invertido ao abrir collapse.
+    - Deduplicação `_dedupe_boletins` aplicada em load/save/delete.
+    - Exclusão: valida `n_clicks > 0` antes de soft delete.
+    - Limitações: sem editar/reativar/scheduler interno ainda.
 
 ## Execução local
 - Requisitos: Python 3.12+, `dash` e `dash-bootstrap-components`; DB V1 configurado.
@@ -83,3 +87,5 @@
 - Confirme entendimento do pedido e liste passos objetivos.
 - Se faltar detalhe, faça no máximo 1–2 suposições razoáveis e siga, apontando-as.
 - Entregue diffs minimalistas; atualize `docs/README.md` quando necessário.
+- Ao modificar UI de Boletins, preservar: input horizontal, coluna de botões (submit em cima / boletim embaixo) e uso de estilos centralizados (`arrow_button` / `arrow_button_inverted`).
+

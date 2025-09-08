@@ -8,6 +8,7 @@ import os
 import re
 import json
 import numpy as np
+import time
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -154,7 +155,7 @@ def generate_keywords(text, max_keywords=10, max_chars=200):
 		"""
         
 		response = openai_client.chat.completions.create(
-			model="gpt-3.5-turbo",
+			model="gpt-4o",
 			messages=[{"role": "user", "content": prompt}],
 			max_tokens=150,
 			temperature=0.3
@@ -201,4 +202,81 @@ def calculate_confidence(scores):
 	except (ValueError, TypeError):
 		return 0.0
 
-__all__ = ['get_embedding','get_negation_embedding','generate_keywords','calculate_confidence']
+### Removidas heurísticas complexas de normalização.
+### Qualidade agora delegada ao prompt do Assistant.
+
+def generate_contratacao_label(descricao: str, timeout: float = 6.0) -> str:
+	"""Gera rótulo curto para contratação.
+
+	Agora a formatação é delegada ao Assistant (prompt atualizado). Mantemos:
+	  1. Tentativa via Assistant (ID em GVG_ROTULO_CONTRATATACAO)
+	  2. Fallback chat simples
+	  3. Fallback heurístico mínimo (primeiras 4 palavras)
+	Limpeza mínima local: strip, remover aspas externas, limitar tamanho.
+	"""
+	desc = (descricao or '').strip()
+	if not desc:
+		return 'Indefinido'
+	assistant_id = os.getenv('GVG_ROTULO_CONTRATATACAO')
+	label_raw = ''
+	start = time.time()
+	# 1) Assistant API
+	if assistant_id:
+		try:
+			thread = openai_client.beta.threads.create(messages=[{"role": "user", "content": desc}])  # type: ignore
+			run = openai_client.beta.threads.runs.create(thread_id=thread.id, assistant_id=assistant_id)  # type: ignore
+			while time.time() - start < timeout:
+				run = openai_client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)  # type: ignore
+				if run.status in ('completed', 'failed', 'cancelled'):  # type: ignore
+					break
+				time.sleep(0.35)
+			if getattr(run, 'status', '') == 'completed':  # type: ignore
+				msgs = openai_client.beta.threads.messages.list(thread_id=thread.id, order='desc', limit=5)  # type: ignore
+				for m in getattr(msgs, 'data', []):  # type: ignore
+					if getattr(m, 'role', '') == 'assistant':
+						parts = getattr(m, 'content', [])
+						for p in parts:
+							if getattr(p, 'type', '') == 'text':
+								label_raw = getattr(getattr(p, 'text', {}), 'value', '')
+								break
+						if label_raw:
+							break
+		except Exception as e:
+			if (os.getenv('GVG_BROWSER_DEBUG') or '').lower() in ('1','true','yes'):
+				print(f"[GVG][LABEL] Assistant fallback: {e}")
+	# 2) Chat fallback
+	if not label_raw:
+		try:
+			prompt = (
+				"Gerar rótulo curto (até 3 palavras) do objeto a seguir. Sem órgão, local, códigos ou números. Apenas o objeto/serviço/material. Sem pontuação!\n" + desc[:600]
+			)
+			resp = openai_client.chat.completions.create(
+				model='gpt-4o',
+				messages=[{"role": "user", "content": prompt}],
+				max_tokens=20,
+				temperature=0.2
+			)
+			label_raw = resp.choices[0].message.content.strip()
+		except Exception as e:
+			if (os.getenv('GVG_BROWSER_DEBUG') or '').lower() in ('1','true','yes'):
+				print(f"[GVG][LABEL] Chat fallback: {e}")
+	# 3) Fallback mínimo
+	if not label_raw:
+		tokens = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]{2,}", desc)
+		label_raw = ' '.join(tokens[:4]) or 'Indefinido'
+	# Limpeza mínima
+	label = ' '.join(re.sub(r'[.,;\'"“”‘’]', '', label_raw.strip().replace('\n', ' ')).split())
+	# remover aspas externas simples ou duplas
+	if len(label) >= 2 and ((label[0] == '"' and label[-1] == '"') or (label[0] == "'" and label[-1] == "'")):
+		label = label[1:-1].strip()
+	# Cortar em 60 chars preservando palavra
+	if len(label) > 60:
+		cut = label[:60]
+		if ' ' in cut:
+			cut = cut.rsplit(' ', 1)[0]
+		label = cut
+	if not label:
+		label = 'Indefinido'
+	return label
+
+__all__ = ['get_embedding','get_negation_embedding','generate_keywords','calculate_confidence','generate_contratacao_label']

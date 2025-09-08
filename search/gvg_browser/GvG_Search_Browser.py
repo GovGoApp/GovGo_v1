@@ -27,6 +27,9 @@ import dash_bootstrap_components as dbc
 from dash import html, dcc, dash_table, Input, Output, State, callback_context, ALL
 from dash.exceptions import PreventUpdate
 
+from datetime import datetime as _dt
+from datetime import date as _date
+
 # =====================================================================================
 # Importações locais (usar os módulos já copiados para gvg_browser)
 # =====================================================================================
@@ -41,6 +44,7 @@ from gvg_ai_utils import (
     generate_keywords,
     get_embedding,
     get_negation_embedding,
+    generate_contratacao_label,
 )
 from gvg_search_core import (
     semantic_search,
@@ -77,6 +81,11 @@ from gvg_user import (
     fetch_bookmarks,
     add_bookmark,
     remove_bookmark,
+)
+from gvg_boletim import (
+    fetch_user_boletins,
+    create_user_boletim,
+    deactivate_user_boletim,
 )
 
 # Autenticação (Supabase)
@@ -160,13 +169,13 @@ RELEVANCE_LEVELS = {
 # =====================================================================================
 # Cores padronizadas para datas de encerramento (tabela e detalhes)
 # =====================================================================================
-COLOR_ENC_NA = "#000000"       # N/A
-COLOR_ENC_EXPIRED = "#800080"  # roxo
+COLOR_ENC_NA = "#8F8F8FB1"       # cinza (sem data)
+COLOR_ENC_EXPIRED = "#800080"    # roxo
 COLOR_ENC_LT3 = "#FF0000EE"      # vermelho escuro (<= 3 dias)
-COLOR_ENC_LT7 = "#FF6200"      # vermelho (<= 7 dias)
-COLOR_ENC_LT15 = "#FFBD21"     # laranja (<= 15 dias)
-COLOR_ENC_LT30 = "#BBFF00B4"     # amarelo (<= 30 dias)
-COLOR_ENC_GT30 = "#2BFF00AF"     # verde  (> 30 dias)
+COLOR_ENC_LT7 = "#FF6200"        # laranja (<= 7 dias)
+COLOR_ENC_LT15 = "#FFBD21"       # amarelo (<= 15 dias)
+COLOR_ENC_LT30 = "#00FF517C"     # verde (<= 30 dias)
+COLOR_ENC_GT30 = "#0099FF9D"     # azul  ( > 30 dias)
 
 
 # styles agora vem de gvg_styles
@@ -194,19 +203,30 @@ try:
             set_markdown_enabled(True)
         except Exception:
             pass
-    # Bypass de autenticação com usuário hardcoded quando --pass for usado
+    # Bypass de autenticação via variáveis de ambiente quando --pass for usado
     if _known and getattr(_known, 'auto_pass', False):
+        import os as _os
         try:
-            _bypass_user = {
-                'uid': '5d3b153a-3854-4d70-8039-9ba34a698d67',
-                'name': 'Haroldo Durães',
-                'email': 'hdaduraes@gmail.com',
-            }
-            AUTH_INIT = {'status': 'auth', 'user': _bypass_user}
+            # Tenta carregar .env se ainda não carregado por outro módulo
             try:
-                set_current_user(_bypass_user)
+                if not _os.getenv('PASS_USER_UID'):
+                    from dotenv import load_dotenv as _ld
+                    _ld()  # silencioso
             except Exception:
                 pass
+            _uid = _os.getenv('PASS_USER_UID')
+            _name = _os.getenv('PASS_USER_NAME')
+            _email = _os.getenv('PASS_USER_EMAIL')
+            if _uid and _name and _email:
+                _bypass_user = {'uid': _uid, 'name': _name, 'email': _email}
+                AUTH_INIT = {'status': 'auth', 'user': _bypass_user}
+                try:
+                    set_current_user(_bypass_user)
+                except Exception:
+                    pass
+                print('[GSB][AUTH] Bypass (--pass) com usuário de ambiente aplicado.')
+            else:
+                print('[GSB][AUTH] Variáveis PASS_USER_UID/NAME/EMAIL ausentes; bypass ignorado.')
         except Exception:
             AUTH_INIT = {'status': 'unauth', 'user': None}
 except Exception:
@@ -333,12 +353,87 @@ controls_panel = html.Div([
             rows=2,
             style={**styles['input_field'], 'overflowY': 'auto', 'resize': 'none', 'height': '80px'}
         ),
-        html.Button(
-            html.I(className="fas fa-arrow-right"),
-            id='submit-button',
-            style=styles['arrow_button']
-        )
+        html.Div([
+            html.Button(
+                html.I(className="fas fa-arrow-right"),
+                id='submit-button',
+                style=styles['arrow_button']
+            ),
+            html.Button(
+                html.I(className="fas fa-calendar-plus"),
+                id='boletim-toggle-btn',
+                title='Agendar boletim desta consulta',
+                style={**styles['arrow_button'], 'marginTop': '6px', 'opacity': 0.4},
+                disabled=True
+            ),
+        ], style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center', 'marginLeft': '8px'}),
     ], id='query-container', style=styles['input_container']),
+    # Bloco configurável do Boletim (título fora do painel branco, mas dentro da área colapsável)
+    dbc.Collapse(
+        html.Div([
+            html.Div([
+                html.Div('Configurar Boletim', style=styles['card_title'])
+            ], style=styles['boletim_section_header']),
+            html.Div([
+                html.Div([
+                    html.Label('Frequência', className='gvg-form-label'),
+                    dcc.RadioItems(
+                        id='boletim-freq',
+                        options=[
+                            {'label': ' Multidiário', 'value': 'MULTIDIARIO'},
+                            {'label': ' Diário (Seg-Sex)', 'value': 'DIARIO'},
+                            {'label': ' Semanal', 'value': 'SEMANAL'},
+                        ],
+                        value='MULTIDIARIO',
+                        labelStyle={'marginRight': '12px', 'fontSize': '12px'}
+                    )
+                ], className='gvg-form-row'),
+                html.Div([
+                    html.Label('Horários / Dias', className='gvg-form-label'),
+                    html.Div([
+                        dcc.Checklist(
+                            id='boletim-multidiario-slots',
+                            options=[
+                                {'label': ' Manhã', 'value': 'manha'},
+                                {'label': ' Tarde', 'value': 'tarde'},
+                                {'label': ' Noite', 'value': 'noite'},
+                            ],
+                            value=['manha'],
+                            style={'fontSize': '12px'}
+                        ),
+                        dcc.Checklist(
+                            id='boletim-semanal-dias',
+                            options=[
+                                {'label': ' Seg', 'value': 'seg'},
+                                {'label': ' Ter', 'value': 'ter'},
+                                {'label': ' Qua', 'value': 'qua'},
+                                {'label': ' Qui', 'value': 'qui'},
+                                {'label': ' Sex', 'value': 'sex'},
+                            ],
+                            value=['seg'],
+                            style={'fontSize': '12px', 'marginLeft': '12px'}
+                        )
+                    ], style={'display': 'flex', 'alignItems': 'center'})
+                ], className='gvg-form-row'),
+                html.Div([
+                    html.Label('Canais', className='gvg-form-label'),
+                    dcc.Checklist(
+                        id='boletim-channels',
+                        options=[
+                            {'label': ' E-mail', 'value': 'email'},
+                            {'label': ' WhatsApp', 'value': 'whatsapp'},
+                        ],
+                        value=['email'],
+                        style={'fontSize': '12px'}
+                    )
+                ], className='gvg-form-row'),
+                html.Div([
+                    html.Button('Salvar Boletim', id='boletim-save-btn', style={**styles['submit_button'], 'width': '160px'}, disabled=True)
+                ], style={'marginTop': '4px'})
+            ], style=styles['boletim_config_panel'])
+        ]),
+        id='boletim-collapse', is_open=False
+    ),
     html.Div([
         html.Div("Configurações de Busca", style=styles['card_title']),
         html.Button(
@@ -412,6 +507,21 @@ controls_panel = html.Div([
             html.Div(id='favorites-list')
         ], id='favorites-card', style=styles['controls_group']),
         id='favorites-collapse', is_open=True
+    ),
+    html.Div([
+        html.Div('Boletins', style=styles['card_title']),
+        html.Button(
+            html.I(className="fas fa-chevron-down"),
+            id='boletins-toggle-btn',
+            title='Mostrar/ocultar boletins',
+            style={**styles['arrow_button_small'], 'marginRight': '12px'}
+        ),
+    ], style=styles['row_header']),
+    dbc.Collapse(
+        html.Div([
+            html.Div(id='boletins-list')
+        ], id='boletins-card', style=styles['controls_group']),
+        id='boletins-collapse', is_open=True
     )
 ], style=styles['left_panel'])
 
@@ -479,6 +589,9 @@ app.layout = html.Div([
     dcc.Store(id='store-categories', data=[]),
     dcc.Store(id='store-meta', data={}),
     dcc.Store(id='store-last-query', data=""),
+    dcc.Store(id='store-boletim-open', data=False),
+    dcc.Store(id='store-boletins', data=[]),
+    dcc.Store(id='store-boletins-open', data=True),
     dcc.Store(id='store-history', data=[]),
     dcc.Store(id='store-history-open', data=True),
     dcc.Store(id='store-favorites', data=[]),
@@ -531,6 +644,221 @@ def reflect_header_badge(auth_data):
         initials = 'US'
     title = f"{name} ({email})" if email else name
     return initials, title
+
+
+# =====================================================================================
+# Boletins: callbacks (habilitar botão, toggle, salvar, listar, remover)
+# =====================================================================================
+@app.callback(
+    Output('boletim-toggle-btn', 'disabled'),
+    Output('boletim-toggle-btn', 'style'),
+    Input('query-input', 'value'),
+    Input('boletim-collapse', 'is_open'),
+    prevent_initial_call=False
+)
+def enable_boletim_button(q, is_open):
+    enabled = bool(q and isinstance(q, str) and q.strip())
+    base_style = styles['arrow_button_inverted'] if is_open else styles['arrow_button']
+    style = {**base_style, 'marginTop': '6px', 'opacity': 1.0 if enabled else 0.4}
+    return (not enabled), style
+
+@app.callback(
+    Output('boletim-collapse', 'is_open'),
+    Output('store-boletim-open', 'data'),
+    Input('boletim-toggle-btn', 'n_clicks'),
+    State('store-boletim-open', 'data'),
+    prevent_initial_call=True
+)
+def toggle_boletim_panel(n, is_open):
+    if not n:
+        raise PreventUpdate
+    new_state = not bool(is_open)
+    return new_state, new_state
+
+@app.callback(
+    Output('boletim-save-btn', 'disabled'),
+    Input('boletim-freq', 'value'),
+    Input('boletim-multidiario-slots', 'value'),
+    Input('boletim-semanal-dias', 'value'),
+    Input('boletim-channels', 'value'),
+    prevent_initial_call=False
+)
+def validate_boletim(freq, slots, dias, channels):
+    if not channels:
+        return True
+    if freq == 'MULTIDIARIO':
+        return not (slots and len(slots) > 0)
+    if freq == 'SEMANAL':
+        return not (dias and len(dias) > 0)
+    return False
+
+@app.callback(
+    Output('store-boletins', 'data', allow_duplicate=True),
+    Output('boletim-save-btn', 'children', allow_duplicate=True),
+    Input('boletim-save-btn', 'n_clicks'),
+    State('query-input', 'value'),
+    State('boletim-freq', 'value'),
+    State('boletim-multidiario-slots', 'value'),
+    State('boletim-semanal-dias', 'value'),
+    State('boletim-channels', 'value'),
+    State('search-type', 'value'),
+    State('search-approach', 'value'),
+    State('relevance-level', 'value'),
+    State('sort-mode', 'value'),
+    State('max-results', 'value'),
+    State('top-categories', 'value'),
+    State('toggles', 'value'),
+    State('store-boletins', 'data'),
+    prevent_initial_call=True
+)
+def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, sort_mode, max_res, top_cat, toggles, current):
+    if not n:
+        raise PreventUpdate
+    if not query or len(query.strip()) < 3:
+        raise PreventUpdate
+    if not channels:
+        raise PreventUpdate
+    schedule_detail = {}
+    if freq == 'MULTIDIARIO':
+        schedule_detail = {'slots': slots or []}
+    elif freq == 'SEMANAL':
+        schedule_detail = {'days': dias or []}
+    else:
+        schedule_detail = {'days': ['seg','ter','qua','qui','sex']}
+    config_snapshot = {
+        'search_type': s_type,
+        'search_approach': approach,
+        'relevance_level': rel,
+        'sort_mode': sort_mode,
+        'max_results': max_res,
+        'top_categories_count': top_cat,
+        'filter_expired': 'filter_expired' in (toggles or []),
+    }
+    boletim_id = create_user_boletim(
+        query_text=query.strip(),
+        schedule_type=freq,
+        schedule_detail=schedule_detail,
+        channels=channels or [],
+        config_snapshot=config_snapshot,
+    )
+    if not boletim_id:
+        return dash.no_update, 'Erro'
+    item = {
+        'id': boletim_id,
+        'query_text': query.strip(),
+        'schedule_type': freq,
+        'schedule_detail': schedule_detail,
+        'channels': channels,
+    }
+    data = (current or [])
+    data.insert(0, item)
+    # Deduplicação defensiva
+    data = _dedupe_boletins(data) if '_dedupe_boletins' in globals() else data
+    return data[:200], 'Salvo'
+
+def _dedupe_boletins(items):
+    """Remove duplicados por id; loga quantos removeu."""
+    seen = set()
+    out = []
+    dupes = 0
+    for b in (items or []):
+        bid = b.get('id')
+        if bid in seen:
+            dupes += 1
+            continue
+        seen.add(bid)
+        out.append(b)
+    if dupes:
+        print(f"Boletins duplicados removidos: {dupes}")
+    return out
+
+@app.callback(
+    Output('store-boletins', 'data'),
+    Input('store-auth', 'data'),
+)
+def load_boletins_on_auth(auth_data):
+    if not auth_data or auth_data.get('status') != 'auth':
+        return []
+    fetched = fetch_user_boletins() or []
+    ui_items = []
+    for b in fetched:
+        ui_items.append({
+            'id': b.get('id'),
+            'query_text': b.get('query_text'),
+            'schedule_type': b.get('schedule_type'),
+            'schedule_detail': b.get('schedule_detail'),
+            'channels': b.get('channels'),
+        })
+    return _dedupe_boletins(ui_items)
+
+@app.callback(
+    Output('store-boletins', 'data', allow_duplicate=True),
+    Input({'type': 'boletim-delete', 'id': ALL}, 'n_clicks'),
+    State('store-boletins', 'data'),
+    prevent_initial_call=True
+)
+def delete_boletim(n_list, boletins):
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    trig_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    clicked_value = ctx.triggered[0].get('value', None)
+    try:
+        comp = json.loads(trig_id)
+    except Exception:
+        raise PreventUpdate
+    if comp.get('type') != 'boletim-delete':
+        raise PreventUpdate
+    bid = comp.get('id')
+    if not bid:
+        raise PreventUpdate
+    # Proteção: só processa se houve clique (>0)
+    if not clicked_value or clicked_value <= 0:
+        print(f"Ignorando trigger sem clique efetivo id={bid} valor={clicked_value}")
+        raise PreventUpdate
+    deactivate_user_boletim(int(bid))
+    print(f"Boletim deletado id={bid} n_clicks={clicked_value}")
+    new_list = [b for b in (boletins or []) if b.get('id') != bid]
+    new_list = _dedupe_boletins(new_list) if '_dedupe_boletins' in globals() else new_list
+    return new_list
+
+@app.callback(
+    Output('boletins-list', 'children'),
+    Input('store-boletins', 'data'),
+    prevent_initial_call=False
+)
+def render_boletins_list(data):
+    if not data:
+        return [html.Div('Sem boletins.', style={'color': '#555', 'fontSize': '12px'})]
+    items = []
+    for b in data:
+        freq = b.get('schedule_type')
+        detail = b.get('schedule_detail') or {}
+        channels = b.get('channels') or []
+        if freq == 'MULTIDIARIO':
+            d_txt = ' / '.join(detail.get('slots') or []) or '-'
+        elif freq == 'SEMANAL':
+            d_txt = 'Dias: ' + ','.join(detail.get('days') or [])
+        else:
+            d_txt = 'Seg-Sex'
+        ch_txt = ','.join(channels)
+        label = f"{freq} | {d_txt} | {ch_txt}"
+        items.append(
+            html.Div([
+                html.Button(
+                    b.get('query_text','')[:80] + ('...' if len(b.get('query_text',''))>80 else '') + '\n' + label,
+                    id={'type': 'boletim-item', 'id': b.get('id')},
+                    style=styles['boletim_item_button']
+                ),
+                html.Button(
+                    html.I(className='fas fa-trash'),
+                    id={'type': 'boletim-delete', 'id': b.get('id')},
+                    className='delete-btn',
+                    style=styles['boletim_delete_btn']
+                )
+            ], style=styles['boletim_item_row'])
+        )
+    return items
 
 
 # Inicialização pós-login e limpeza no logout
@@ -1295,6 +1623,34 @@ def _enc_status_and_color(date_value):
         return 'lt30', COLOR_ENC_LT30
     return 'gt30', COLOR_ENC_GT30
 
+def _enc_status_text(status: str, dt_value) -> str:
+    """Mapeia status interno para texto da tag.
+    Regras especiais: se status não for 'expired' e a data for hoje => 'encerra hoje!'.
+    """
+    from datetime import date as _date
+    if status == 'na':
+        return 'sem data'
+    if status == 'expired':
+        return 'expirada'
+    # detectar hoje
+    try:
+        dt = _parse_date_generic(dt_value)
+        if dt and dt == _date.today():
+            return 'encerra hoje!'
+    except Exception:
+        pass
+    if status == 'lt3':
+        return 'encerra em até 3 dias'
+    if status == 'lt7':
+        return 'encerra em até 7 dias'
+    if status == 'lt15':
+        return 'encerra em até 15 dias'
+    if status == 'lt30':
+        return 'encerra em até 30 dias'
+    if status == 'gt30':
+        return 'encerra > 30 dias'
+    return ''
+
 
 def _build_pncp_data(details: dict) -> dict:
     return {
@@ -1715,26 +2071,33 @@ def render_tabs_bar(sessions, active):
             base_style.update(styles['tab_button_active'])
         # Define o label conforme o tipo da sessão
         if sess.get('type') == 'pncp':
-            # Usar exatamente os campos do item de favorito (Local: Municipio/UF)
+            # Título: Rotulo - Local
             municipio = ''
             uf = ''
+            rotulo = ''
             try:
                 first = (sess.get('results') or [None])[0] or {}
                 details = (first.get('details') or {}) if isinstance(first, dict) else {}
                 municipio = details.get('unidade_orgao_municipio_nome') or ''
                 uf = details.get('unidade_orgao_uf_sigla') or ''
+                # Preferir sempre rotulo vindo do favorito/BD; somente fallback leve se inexistente
+                rotulo = details.get('rotulo') or ''
+                if not rotulo:
+                    # Fallback secundário: NÃO usar objeto_compra inteiro para evitar poluição; curta referência
+                    obj = details.get('objeto_compra') or ''
+                    if isinstance(obj, str) and obj:
+                        rotulo = (obj.split(' ')[0][:30])  # primeira palavra curta
             except Exception:
-                municipio, uf = '', ''
-            loc = f"{municipio}/{uf}".strip('/')
-            if loc:
-                label_full = loc
-            else:
-                # Fallback para "PNCP <id>"
+                municipio, uf, rotulo = '', '', ''
+            loc = f"{municipio}/{uf}".strip('/') if (municipio or uf) else ''
+            if not rotulo:
+                # fallback final
                 try:
                     pid = (details.get('numerocontrolepncp') if details else None) or (details.get('numero_controle_pncp') if details else None) or (first.get('id') if isinstance(first, dict) else None) or ''
                 except Exception:
                     pid = ''
-                label_full = f"PNCP {pid}".strip()
+                rotulo = f"PNCP {pid}".strip()
+            label_full = f"{rotulo} - {loc}" if loc else rotulo
         else:
             # Query: "CONSULTA: " + query[:47] + "..."
             q = sess.get('title') or ''
@@ -1946,6 +2309,18 @@ def open_pncp_tab_from_favorite(n_clicks_list, favs, sessions, active):
     'sort': None,
     'signature': pncp_sign,
     }
+    # Ajuste: garantir que rotulo (e local se preciso) fiquem presentes em details para o render_tabs_bar usar "rotulo - local"
+    try:
+        fav_rotulo = (item or {}).get('rotulo') or ''
+        if fav_rotulo and not details.get('rotulo'):
+            details['rotulo'] = fav_rotulo
+        # Fallback de local caso não venha do BD
+        if not details.get('unidade_orgao_municipio_nome') and (item or {}).get('unidade_orgao_municipio_nome'):
+            details['unidade_orgao_municipio_nome'] = item.get('unidade_orgao_municipio_nome')
+        if not details.get('unidade_orgao_uf_sigla') and (item or {}).get('unidade_orgao_uf_sigla'):
+            details['unidade_orgao_uf_sigla'] = item.get('unidade_orgao_uf_sigla')
+    except Exception:
+        pass
     return sessions, sid
 
 
@@ -2382,6 +2757,8 @@ def render_details(results, last_query):
         if link and len(link_text) > 100:
             link_text = link_text[:97] + '...'
 
+        status_text = _enc_status_text(_enc_status, raw_en)
+        tag = html.Span(status_text, style={**styles['date_status_tag'], 'backgroundColor': enc_color}) if status_text else None
         body = html.Div([
             html.Div([
                 html.Span('Órgão: ', style={'fontWeight': 'bold'}), html.Span(orgao)
@@ -2398,11 +2775,16 @@ def render_details(results, last_query):
             html.Div([
                 html.Span('Valor: ', style={'fontWeight': 'bold'}), html.Span(valor)
             ]),
+            # Datas em linhas separadas
             html.Div([
-                html.Span('Datas: ', style={'fontWeight': 'bold'}),
-                html.Span(f"Abertura: {data_ab} | Encerramento: "),
-                html.Span(str(data_en), style={'color': enc_color, 'fontWeight': 'bold'})
-            ]),
+                html.Span('Data de Abertura: ', style={'fontWeight': 'bold'}),
+                html.Span(str(data_ab), )
+            ], style={'display': 'flex', 'alignItems': 'center', 'gap': '4px'}),
+            html.Div([
+                html.Span('Data de Encerramento: ', style={'fontWeight': 'bold'}),
+                html.Span(str(data_en), style={'color': enc_color, 'fontWeight': 'bold'}),
+                tag
+            ], style={'display': 'flex', 'alignItems': 'center', 'gap': '6px', 'marginTop': '2px'}),
             html.Div([
                 html.Span('Link: ', style={'fontWeight': 'bold'}), html.A(link_text, href=link, target='_blank', style=styles['link_break_all']) if link else html.Span('N/A')
             ], style={'marginBottom': '8px'}),
@@ -3013,6 +3395,13 @@ def set_active_panel(it_clicks, dc_clicks, rs_clicks, results, active_map):
         trg_id = _json.loads(id_str)
     except Exception:
         raise PreventUpdate
+    # Ignorar criação inicial dos componentes (n_clicks None/0)
+    try:
+        clicks = int(ctx.triggered[0].get('value') or 0)
+    except Exception:
+        clicks = 0
+    if clicks <= 0:
+        raise PreventUpdate
     pncp = str(trg_id.get('pncp'))
     t = trg_id.get('type')
     # Toggle: if clicking the same active tab, remove selection
@@ -3214,6 +3603,16 @@ def delete_history_item(n_clicks_list, history):
 # ==========================
 # Favoritos (UI e callbacks)
 # ==========================
+# Ordenação ascendente por data de encerramento (expirados primeiro; sem data por último)
+def _sort_favorites_list(favs: list) -> list:
+    try:
+        from datetime import date as _date
+        def _key(it: dict):
+            dt = _parse_date_generic((it or {}).get('data_encerramento_proposta'))
+            return (dt is None, dt or _date.max)
+        return sorted(list(favs or []), key=_key)
+    except Exception:
+        return list(favs or [])
 @app.callback(
     Output('store-favorites', 'data'),
     Input('store-favorites', 'data'),
@@ -3222,9 +3621,10 @@ def delete_history_item(n_clicks_list, history):
 def init_favorites(favs):
     # Inicializa a Store de favoritos na primeira renderização (mesmo padrão do histórico)
     if favs:
-        return favs
+        return _sort_favorites_list(favs)
     try:
-        return fetch_bookmarks(limit=200)
+        data = fetch_bookmarks(limit=200)
+        return _sort_favorites_list(data)
     except Exception:
         return []
 
@@ -3242,7 +3642,7 @@ def load_favorites_on_results(meta):
                 print(f"[GSB][FAV] load_favorites_on_results: carregados={len(favs)}")
         except Exception:
             pass
-        return favs
+        return _sort_favorites_list(favs)
     except Exception:
         return []
 
@@ -3279,46 +3679,73 @@ def update_favorites_icon(is_open):
 
 @app.callback(
     Output('favorites-list', 'children'),
-    Input('store-favorites', 'data')
+    Input('store-favorites', 'data'),
+    Input('toggles', 'value')
 )
-def render_favorites_list(favs):
-
+def render_favorites_list(favs, toggles):
+    hide_expired = 'filter_expired' in (toggles or [])
     items = []
+    visible_count = 0
     for i, f in enumerate(favs or []):
         pncp = f.get('numero_controle_pncp') or 'N/A'
+        rotulo = (f.get('rotulo') or '') if isinstance(f, dict) else ''
+        if not rotulo:
+            # fallback: objeto_compra truncado
+            raw_obj = f.get('objeto_compra') or ''
+            if isinstance(raw_obj, str):
+                rotulo = (raw_obj[:30] + ('…' if len(raw_obj) > 30 else '')) if raw_obj else ''
+        if isinstance(rotulo, str) and len(rotulo) > 50:
+            rotulo = rotulo[:50] + '…'
         orgao = f.get('orgao_entidade_razao_social') or ''
         mun = f.get('unidade_orgao_municipio_nome') or ''
         uf = f.get('unidade_orgao_uf_sigla') or ''
         local = f"{mun}/{uf}".strip('/') if (mun or uf) else ''
-        desc = f.get('objeto_compra') or ''
-        if isinstance(desc, str) and len(desc) > 100:
-            desc = desc[:100]
         raw_enc = f.get('data_encerramento_proposta')
         enc_txt = _format_br_date(raw_enc)
         _enc_status, enc_color = _enc_status_and_color(raw_enc)
+        body_color = {'color': '#808080'} if _enc_status == 'expired' else {}
+        status_text = _enc_status_text(_enc_status, raw_enc)
+        tag = html.Span(status_text, style={**styles['date_status_tag'], 'backgroundColor': enc_color}) if status_text else None
+        date_row = html.Div([
+            html.Span(enc_txt, style={'color': enc_color, 'fontWeight': 'bold'}),
+            tag
+        ], style={'display': 'flex', 'alignItems': 'center', 'gap': '4px'})
         body = html.Div([
-            html.Div(orgao),
-            html.Div(local),
-            html.Div(desc),
-            html.Div(enc_txt, style={'color': enc_color})
-        ], style={'textAlign': 'left', 'display': 'flex', 'flexDirection': 'column'})
+            html.Div(rotulo or (orgao[:40] if isinstance(orgao, str) else ''), style=styles.get('fav_label')),
+            html.Div(local, style=styles.get('fav_local')),
+            html.Div(orgao, style=styles.get('fav_orgao')),
+            date_row
+        ], style={'textAlign': 'left', 'display': 'flex', 'flexDirection': 'column', **body_color})
+        btn_style = {**styles['fav_item_button'], 'whiteSpace': 'normal', 'textAlign': 'left', 'width': 'auto', 'flex': '1 1 auto'}
+        if _enc_status == 'expired':
+            btn_style.update({'border': '2px solid #CFCFCF', 'color': '#808080'})
+        else:
+            btn_style.update({'border': f'2px solid {enc_color}'})
+        row_style = dict(styles['fav_item_row'])
+        if hide_expired and _enc_status == 'expired':
+            # Apenas oculta visualmente para manter índice consistente
+            row_style['display'] = 'none'
+        else:
+            visible_count += 1
         row = html.Div([
-            # Evitar ocupar 100% da largura para não cobrir a lixeira; usar flex elástico
             html.Button(
                 body,
                 id={'type': 'favorite-item', 'index': i},
-                style={**styles['history_item_button'], 'whiteSpace': 'normal', 'textAlign': 'left', 'width': 'auto', 'flex': '1 1 auto'}
+                style=btn_style
             ),
             html.Button(
                 html.I(className='fas fa-trash'),
                 id={'type': 'favorite-delete', 'index': i},
                 className='delete-btn',
-                style=styles['history_delete_btn']
+                style=styles['fav_delete_btn']
             )
-        ], className='history-item-row', style=styles['history_item_row'])
+        ], className='fav-item-row', style=row_style)
         items.append(row)
     if not items:
         items = [html.Div('Sem favoritos.', style={'color': '#555'})]
+    elif hide_expired and visible_count == 0:
+        # Todos ocultos pela filtragem
+        items.append(html.Div('Todos os favoritos estão expirados (filtro ativo).', style={'color': '#555', 'fontSize': '12px'}))
     return items
 
 
@@ -3377,14 +3804,9 @@ def toggle_bookmark(n_clicks_list, results, favs):
             except Exception:
                 pass
         else:
-            try:
-                add_bookmark(clicked_pid)
-            except Exception:
-                pass
-            # Otimista local (adiciona no topo) com os mesmos campos exibidos no card de detalhes
+            # Adicionar favorito com geração de rótulo
             fav_item = {'numero_controle_pncp': clicked_pid}
             try:
-                # Obter o resultado correspondente e extrair campos como no card de detalhes
                 r = (results or [])[clicked_idx] if clicked_idx is not None else None
                 d = (r or {}).get('details', {}) or {}
                 orgao = (
@@ -3405,14 +3827,17 @@ def toggle_bookmark(n_clicks_list, results, favs):
                     or d.get('uf')
                     or ''
                 )
-                descricao = (
+                descricao_full = (
                     d.get('descricaocompleta')
                     or d.get('descricaoCompleta')
                     or d.get('objeto')
                     or ''
                 )
-                if isinstance(descricao, str) and len(descricao) > 100:
-                    descricao = descricao[:100]
+                rotulo = None
+                try:
+                    rotulo = generate_contratacao_label(descricao_full) if descricao_full else None
+                except Exception:
+                    rotulo = None
                 raw_en = (
                     d.get('dataencerramentoproposta')
                     or d.get('dataEncerramentoProposta')
@@ -3423,19 +3848,29 @@ def toggle_bookmark(n_clicks_list, results, favs):
                     'orgao_entidade_razao_social': orgao,
                     'unidade_orgao_municipio_nome': municipio,
                     'unidade_orgao_uf_sigla': uf,
-                    'objeto_compra': descricao,
+                    'objeto_compra': (descricao_full[:100] if isinstance(descricao_full, str) else ''),
                     'data_encerramento_proposta': data_en,
+                    'rotulo': rotulo,
                 })
             except Exception:
                 pass
+            try:
+                add_bookmark(clicked_pid, fav_item.get('rotulo'))
+            except Exception:
+                try:
+                    add_bookmark(clicked_pid)
+                except Exception:
+                    pass
             updated_favs = ([fav_item] + [x for x in updated_favs if str(x.get('numero_controle_pncp')) != clicked_pid])
             try:
                 from gvg_search_core import SQL_DEBUG
                 if SQL_DEBUG:
-                    print(f"[GSB][BMK] toggle_bookmark: ADD {clicked_pid}")
+                    print(f"[GSB][BMK] toggle_bookmark: ADD {clicked_pid} rotulo={fav_item.get('rotulo')}")
             except Exception:
                 pass
         # Sem recarregar do BD aqui: mantemos atualização otimista no UI
+    # Ordenar sempre a Store de favoritos após add/remove
+    updated_favs = _sort_favorites_list(updated_favs)
     # Ícones imediatos (com base no updated_favs)
     fav_set_after = {str(x.get('numero_controle_pncp')) for x in (updated_favs or [])}
     children_out = []
@@ -3530,6 +3965,7 @@ def delete_favorite(n_clicks_list, favs):
         pass
     # Remove da Store localmente
     updated = [x for x in (favs or []) if str(x.get('numero_controle_pncp')) != pid]
+    updated = _sort_favorites_list(updated)
 
     return updated
 

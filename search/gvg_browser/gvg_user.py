@@ -106,7 +106,7 @@ def get_user_initials(name: Optional[str]) -> str:
 # Histórico de prompts
 # ==========================
 def fetch_prompt_texts(limit: int = 50) -> List[str]:
-    """Retorna a lista de textos dos prompts do usuário atual (mais recentes primeiro)."""
+    """Retorna textos dos prompts (mais recentes) já filtrando active = true (coluna garantida)."""
     user = get_current_user()
     uid = user['uid']
     conn = None
@@ -117,16 +117,16 @@ def fetch_prompt_texts(limit: int = 50) -> List[str]:
             return []
         cur = conn.cursor()
         cur.execute(
-            """
-            SELECT text
-            FROM public.user_prompts
-            WHERE user_id = %s AND text IS NOT NULL
-            ORDER BY created_at DESC
-            LIMIT %s
-            """,
+            """SELECT text
+                   FROM public.user_prompts
+                  WHERE user_id = %s
+                    AND text IS NOT NULL
+                    AND active = true
+               ORDER BY created_at DESC
+                  LIMIT %s""",
             (uid, limit)
         )
-        rows = cur.fetchall()
+        rows = cur.fetchall() or []
         return [r[0] for r in rows if r and r[0]]
     except Exception:
         return []
@@ -281,7 +281,12 @@ def fetch_prompts_with_config(limit: int = 50) -> List[Dict[str, Any]]:
             'max_results', 'top_categories_count', 'filter_expired'
         ]
         select_cols = base_cols + [c for c in opt_cols if c in cols_existing]
-        select_sql = f"SELECT {', '.join(select_cols)} FROM public.user_prompts WHERE user_id = %s AND text IS NOT NULL ORDER BY created_at DESC LIMIT %s"
+        # Checa se coluna active existe para filtrar somente ativos
+        has_active = 'active' in cols_existing
+        where_clause = "WHERE user_id = %s AND text IS NOT NULL"
+        if has_active:
+            where_clause += " AND active = true"
+        select_sql = f"SELECT {', '.join(select_cols)} FROM public.user_prompts {where_clause} ORDER BY created_at DESC LIMIT %s"
         cur.execute(select_sql, (uid, limit))
 
         out: List[Dict[str, Any]] = []
@@ -311,24 +316,37 @@ def delete_prompt(text: str) -> bool:
         if not conn:
             return False
         cur = conn.cursor()
-        # Busca os IDs dos prompts a serem removidos
-        cur.execute(
-            "SELECT id FROM public.user_prompts WHERE user_id = %s AND text = %s",
-            (uid, text)
-        )
-        ids_rows = cur.fetchall() or []
-        prompt_ids = [r[0] for r in ids_rows if r and r[0] is not None]
-
-        # Apaga resultados relacionados primeiro (seguro mesmo com FK CASCADE)
-        if prompt_ids:
-            placeholders = ','.join(['%s'] * len(prompt_ids))
+        # Detecta se existe coluna active para aplicar soft delete
+        try:
             cur.execute(
-                f"DELETE FROM public.user_results WHERE user_id = %s AND prompt_id IN ({placeholders})",
-                (uid, *prompt_ids)
+                """
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='user_prompts' AND column_name='active'
+                """
             )
-
-        # Agora remove os prompts
-        cur.execute("DELETE FROM public.user_prompts WHERE user_id = %s AND text = %s", (uid, text))
+            has_active = bool(cur.fetchone())
+        except Exception:
+            has_active = False
+        if has_active:
+            cur.execute(
+                "UPDATE public.user_prompts SET active=false WHERE user_id=%s AND text=%s",
+                (uid, text)
+            )
+        else:
+            # Comportamento antigo (hard delete + limpeza de resultados)
+            cur.execute(
+                "SELECT id FROM public.user_prompts WHERE user_id = %s AND text = %s",
+                (uid, text)
+            )
+            ids_rows = cur.fetchall() or []
+            prompt_ids = [r[0] for r in ids_rows if r and r[0] is not None]
+            if prompt_ids:
+                placeholders = ','.join(['%s'] * len(prompt_ids))
+                cur.execute(
+                    f"DELETE FROM public.user_results WHERE user_id = %s AND prompt_id IN ({placeholders})",
+                    (uid, *prompt_ids)
+                )
+            cur.execute("DELETE FROM public.user_prompts WHERE user_id = %s AND text = %s", (uid, text))
         conn.commit()
         return True
     except Exception:
@@ -411,10 +429,12 @@ def save_user_results(prompt_id: int, results: List[Dict[str, Any]]) -> bool:
 # Favoritos (Bookmarks)
 # ==========================
 def fetch_bookmarks(limit: int = 100) -> List[Dict[str, Any]]:
-    """Lista favoritos do usuário atual.
+    """Lista favoritos do usuário atual, incluindo rótulo se a coluna existir.
 
-    Retorna itens como { 'numero_controle_pncp': str, 'titulo': str }
-    titulo é composto a partir de contratacao (órgão + objeto), se disponível.
+    Retorna itens contendo:
+      numero_controle_pncp, objeto_compra, orgao_entidade_razao_social,
+      unidade_orgao_municipio_nome, unidade_orgao_uf_sigla,
+      data_encerramento_proposta, rotulo (opcional)
     """
     user = get_current_user(); uid = user['uid']
     conn = None; cur = None
@@ -423,13 +443,6 @@ def fetch_bookmarks(limit: int = 100) -> List[Dict[str, Any]]:
         if not conn:
             return []
         cur = conn.cursor()
-        # Debug flag (env or global SQL_DEBUG)
-        debug = (os.getenv('GVG_SQL_DEBUG') in ('1','true','TRUE')) or (os.getenv('GVG_BROWSER_DEBUG') in ('1','true','TRUE'))
-        try:
-            from gvg_search_core import SQL_DEBUG  # type: ignore
-            debug = bool(debug or SQL_DEBUG)
-        except Exception:
-            pass
         # Verificar existência da tabela
         try:
             cur.execute(
@@ -439,34 +452,56 @@ def fetch_bookmarks(limit: int = 100) -> List[Dict[str, Any]]:
                 """
             )
             if not cur.fetchone():
-                
                 return []
         except Exception:
-           
             return []
-        # SELECT com contratacao: retorna campos para exibir 4 linhas na UI
+        # Detecta se coluna rotulo existe
+        has_rotulo = False
+        try:
+            cur.execute(
+                """
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='user_bookmarks' AND column_name='rotulo'
+                """
+            )
+            has_rotulo = bool(cur.fetchone())
+        except Exception:
+            has_rotulo = False
+        # Checar colunas existentes em user_bookmarks para saber se active existe
+        try:
+            cur.execute(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='user_bookmarks'
+                """
+            )
+            bm_cols = {r[0] for r in (cur.fetchall() or [])}
+        except Exception:
+            bm_cols = set()
+        has_active = 'active' in bm_cols
+        select_fields = [
+            'ub.id',
+            'ub.numero_controle_pncp',
+            'c.objeto_compra',
+            'c.orgao_entidade_razao_social',
+            'c.unidade_orgao_municipio_nome',
+            'c.unidade_orgao_uf_sigla',
+            'c.data_encerramento_proposta'
+        ]
+        if has_rotulo:
+            select_fields.append('ub.rotulo')
+        where_parts = ["ub.user_id = %s", "c.numero_controle_pncp = ub.numero_controle_pncp"]
+        if has_active:
+            where_parts.append("ub.active = true")
         sql = (
-            "SELECT "
-            "ub.id, "
-            "ub.numero_controle_pncp, "
-            "c.objeto_compra, "
-            "c.orgao_entidade_razao_social, "
-            "c.unidade_orgao_municipio_nome, "
-            "c.unidade_orgao_uf_sigla, "
-            "c.data_encerramento_proposta "
-            "FROM public.user_bookmarks ub, public.contratacao c "
-            "WHERE ub.user_id = %s "
-            "AND c.numero_controle_pncp = ub.numero_controle_pncp "
-            "ORDER BY ub.created_at DESC NULLS LAST, ub.id DESC "
-            "LIMIT %s"
+            "SELECT " + ', '.join(select_fields) +
+            " FROM public.user_bookmarks ub, public.contratacao c WHERE " + ' AND '.join(where_parts) +
+            " ORDER BY ub.created_at DESC NULLS LAST, ub.id DESC LIMIT %s"
         )
-
         cur.execute(sql, (uid, limit))
         rows_db = cur.fetchall() or []
- 
         out: List[Dict[str, Any]] = []
         for row in rows_db:
-            # row: (id, numero_controle_pncp, objeto_compra, orgao_entidade_razao_social, municipio, uf, data_enc)
             pncp = row[1]
             item = {
                 'numero_controle_pncp': pncp,
@@ -476,6 +511,8 @@ def fetch_bookmarks(limit: int = 100) -> List[Dict[str, Any]]:
                 'unidade_orgao_uf_sigla': row[5],
                 'data_encerramento_proposta': row[6],
             }
+            if has_rotulo:
+                item['rotulo'] = row[7]
             out.append(item)
         return out
     except Exception:
@@ -489,8 +526,11 @@ def fetch_bookmarks(limit: int = 100) -> List[Dict[str, Any]]:
                 conn.close()
 
 
-def add_bookmark(numero_controle_pncp: str) -> bool:
-    """Adiciona um favorito (ignora duplicatas)."""
+def add_bookmark(numero_controle_pncp: str, rotulo: Optional[str] = None) -> bool:
+    """Adiciona um favorito (ignora duplicatas), com rótulo opcional.
+
+    Se a coluna rotulo não existir, ignora o parâmetro rotulo.
+    """
     if not numero_controle_pncp:
         return False
     user = get_current_user(); uid = user['uid']
@@ -510,15 +550,69 @@ def add_bookmark(numero_controle_pncp: str) -> bool:
                 return False
         except Exception:
             return False
-        # Dedup simples
-        cur.execute(
-            "DELETE FROM public.user_bookmarks WHERE user_id = %s AND numero_controle_pncp = %s",
-            (uid, numero_controle_pncp)
-        )
-        cur.execute(
-            "INSERT INTO public.user_bookmarks (user_id, numero_controle_pncp) VALUES (%s, %s)",
-            (uid, numero_controle_pncp)
-        )
+        # Checa se coluna rotulo existe
+        has_rotulo = False
+        try:
+            cur.execute(
+                """
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='user_bookmarks' AND column_name='rotulo'
+                """
+            )
+            has_rotulo = bool(cur.fetchone())
+        except Exception:
+            has_rotulo = False
+        # Detecta coluna active
+        has_active = False
+        try:
+            cur.execute(
+                """
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='user_bookmarks' AND column_name='active'
+                """
+            )
+            has_active = bool(cur.fetchone())
+        except Exception:
+            has_active = False
+        # Se active existe: tentar reativar em vez de remover/inserir
+        if has_active:
+            if has_rotulo:
+                cur.execute(
+                    "UPDATE public.user_bookmarks SET active=true, rotulo=COALESCE(%s, rotulo) WHERE user_id=%s AND numero_controle_pncp=%s",
+                    (rotulo, uid, numero_controle_pncp)
+                )
+            else:
+                cur.execute(
+                    "UPDATE public.user_bookmarks SET active=true WHERE user_id=%s AND numero_controle_pncp=%s",
+                    (uid, numero_controle_pncp)
+                )
+            if cur.rowcount == 0:
+                if has_rotulo:
+                    cur.execute(
+                        "INSERT INTO public.user_bookmarks (user_id, numero_controle_pncp, rotulo) VALUES (%s, %s, %s)",
+                        (uid, numero_controle_pncp, rotulo)
+                    )
+                else:
+                    cur.execute(
+                        "INSERT INTO public.user_bookmarks (user_id, numero_controle_pncp) VALUES (%s, %s)",
+                        (uid, numero_controle_pncp)
+                    )
+        else:
+            # fallback comportamento antigo (sem coluna active)
+            cur.execute(
+                "DELETE FROM public.user_bookmarks WHERE user_id = %s AND numero_controle_pncp = %s",
+                (uid, numero_controle_pncp)
+            )
+            if has_rotulo:
+                cur.execute(
+                    "INSERT INTO public.user_bookmarks (user_id, numero_controle_pncp, rotulo) VALUES (%s, %s, %s)",
+                    (uid, numero_controle_pncp, rotulo)
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO public.user_bookmarks (user_id, numero_controle_pncp) VALUES (%s, %s)",
+                    (uid, numero_controle_pncp)
+                )
         conn.commit()
         return True
     except Exception:
@@ -545,10 +639,28 @@ def remove_bookmark(numero_controle_pncp: str) -> bool:
         if not conn:
             return False
         cur = conn.cursor()
-        cur.execute(
-            "DELETE FROM public.user_bookmarks WHERE user_id = %s AND numero_controle_pncp = %s",
-            (uid, numero_controle_pncp)
-        )
+        # Soft delete se coluna active existir
+        has_active = False
+        try:
+            cur.execute(
+                """
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='user_bookmarks' AND column_name='active'
+                """
+            )
+            has_active = bool(cur.fetchone())
+        except Exception:
+            has_active = False
+        if has_active:
+            cur.execute(
+                "UPDATE public.user_bookmarks SET active=false WHERE user_id=%s AND numero_controle_pncp=%s",
+                (uid, numero_controle_pncp)
+            )
+        else:
+            cur.execute(
+                "DELETE FROM public.user_bookmarks WHERE user_id = %s AND numero_controle_pncp = %s",
+                (uid, numero_controle_pncp)
+            )
         conn.commit()
         return True
     except Exception:

@@ -121,6 +121,18 @@ styles = {
         'justifyContent': 'center',
         'cursor': 'pointer'
     },
+    'arrow_button_inverted': {
+        'backgroundColor': 'white',
+        'color': '#FF5722',
+        'border': '2px solid #FF5722',
+        'borderRadius': '50%',
+        'width': '32px',
+        'height': '32px',
+        'display': 'flex',
+        'alignItems': 'center',
+        'justifyContent': 'center',
+        'cursor': 'pointer'
+    },
     'result_card': {
         'backgroundColor': 'white',
         'borderRadius': '15px',
@@ -353,6 +365,24 @@ styles = {
     'auth_error': { 'color': '#D32F2F', 'fontSize': '12px', 'marginTop': '6px' },
 }
 
+# Tag de status de data de encerramento
+styles['date_status_tag'] = {
+    'display': 'inline-block', 'padding': '2px 6px', 'borderRadius': '12px',
+    'fontSize': '10px', 'fontWeight': '600', 'color': 'white', 'lineHeight': '1',
+    'marginLeft': '6px', 'textTransform': 'none'
+}
+
+# Estilos específicos para favoritos (rótulo em negrito, local em itálico)
+styles['fav_label'] = {
+    'fontWeight': 'bold'
+}
+styles['fav_local'] = {
+    'fontStyle': 'italic'
+}
+styles['fav_orgao'] = {
+    'fontSize': '11px'
+}
+
 styles['result_number'] = {
     'position': 'absolute',
     'top': '10px',
@@ -375,6 +405,38 @@ styles['card_title'] = {
     'color': '#003A70',
     'paddingRight': '8px',
     'paddingBottom': '8px',
+}
+
+# --- Boletins ---
+styles['boletim_panel'] = {
+    'padding': '10px', 'backgroundColor': 'white', 'borderRadius': '15px',
+    'display': 'flex', 'flexDirection': 'column', 'gap': '8px'
+}
+styles['boletim_item_row'] = {
+    'display': 'flex', 'gap': '8px', 'alignItems': 'flex-start', 'marginBottom': '6px'
+}
+styles['boletim_item_button'] = {
+    'backgroundColor': 'white', 'color': '#003A70', 'border': '1px solid #D0D7E2',
+    'borderRadius': '16px', 'display': 'block', 'width': '100%', 'textAlign': 'left',
+    'padding': '8px 12px', 'whiteSpace': 'normal', 'wordBreak': 'break-word',
+    'lineHeight': '1.25', 'cursor': 'default', 'fontSize': '12px'
+}
+styles['boletim_delete_btn'] = {
+    'width': '28px', 'height': '28px', 'minWidth': '28px', 'borderRadius': '50%',
+    'border': '1px solid #FF5722', 'backgroundColor': 'white', 'color': '#FF5722', 'cursor': 'pointer'
+}
+styles['boletim_toggle_btn'] = {
+    'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none', 'borderRadius': '50%',
+    'width': '32px', 'height': '32px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'cursor': 'pointer'
+}
+styles['boletim_config_panel'] = {
+    'padding': '10px', 'backgroundColor': 'white', 'borderRadius': '15px', 'marginTop': '8px'
+}
+styles['boletim_section_header'] = {
+    'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginTop': '8px'
+}
+styles['boletim_inline_group'] = {
+    'display': 'flex', 'gap': '6px', 'flexWrap': 'wrap', 'alignItems': 'center'
 }
 
 
@@ -412,20 +474,20 @@ BASE_CSS = """
 .fav-item-row:hover .delete-btn { opacity: 1; }
 .fav-item-row .delete-btn:hover { background-color: #FDEDEC; }
 
-/* Bigger sort arrows in DataTable header and orange color */
-.dash-table-container .dash-spreadsheet-container th .column-header--sort { margin-left: 6px; }
-.dash-table-container .dash-spreadsheet-container th .column-header--sort .column-header--sort-icon { font-size: 18px; color: #FF5722; }
-.dash-table-container .dash-spreadsheet-container th .column-header--sort:after { font-size: 18px; color: #FF5722; }
-
-/* Place sort controls at the right side of the header title with spacing */
-.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner .column-header-name { order: 1; flex: 1 1 auto; }
-.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner .column-header--sort { order: 2; margin-left: 8px; }
+/* DataTable sort icons to the RIGHT of the header label, with spacing */
+.dash-table-container .dash-spreadsheet-container th { position: relative; padding-right: 22px; }
+.dash-table-container .dash-spreadsheet-container th .column-header--sort {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    margin-left: 0; /* no left margin when absolutely positioned */
+}
+.dash-table-container .dash-spreadsheet-container th .column-header--sort .column-header--sort-icon {
+    font-size: 22px; color: #FF5722;
+}
+.dash-table-container .dash-spreadsheet-container th .column-header--sort:after {
+    font-size: 22px; color: #FF5722;
+}
 
 #gvg-center-spinner { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; display: flex; flex-direction: column; align-items: center; width: 260px; }
-
-/* Smaller font for remember/terms checklists */
-#auth-remember label { font-size: 11px; }
-#auth-terms label { font-size: 11px; }
 """
 
 # Classe aplicada em dcc.Markdown(children=..., className='markdown-summary')
