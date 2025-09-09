@@ -9,6 +9,7 @@ supabase>=2.0.0
 psycopg2-binary>=2.9.0
 asyncpg>=0.28.0
 pgvector>=0.2.0
+sqlalchemy>=2.0.0
 
 # OpenAI para embeddings
 openai>=1.0.0
@@ -23,6 +24,8 @@ pydantic>=2.0.0
 # Interface de usuário e terminal
 rich>=13.0.0
 click>=8.0.0
+dash>=2.14.0
+dash-bootstrap-components>=1.5.0
 
 # Configuração e ambiente
 python-dotenv>=1.0.0
@@ -52,6 +55,7 @@ structlog>=23.0.0
 # Exportação de dados
 openpyxl>=3.1.0
 reportlab>=4.0.0
+rarfile>=4.1
 
 # ===============================
 # DESENVOLVIMENTO (OPCIONAL)
