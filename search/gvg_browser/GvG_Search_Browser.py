@@ -4298,13 +4298,36 @@ app.index_string = '''
 '''.replace('%CSS_ALL%', CSS_ALL)
 
 
+"""WSGI server entrypoint for Gunicorn/Render."""
+# Expor no nível de módulo para que `gunicorn GvG_Search_Browser:server` funcione
+server = app.server  # WSGI entrypoint para Gunicorn/Render
+
 if __name__ == '__main__':
-    # Porta padrão diferente do Reports para evitar conflito
-    # Desativar hot-reload para evitar resets durante processamento pesado de documentos
-    app.run_server(
-        debug=True, port=8060, 
-        dev_tools_hot_reload=True, 
-        dev_tools_props_check=False, 
-        dev_tools_ui=False,
-        dev_tools_hot_reload_interval=0.5, 
-        use_reloader=True )
+    # Respeitar porta/host de ambiente (Render/Paas)
+    # Em produção (Render), defina DEBUG=false (ou ausente) para desativar dev tools
+    _env = os.environ
+    _debug = (_env.get('DEBUG', 'false') or 'false').strip().lower() in ('1', 'true', 'yes', 'on')
+    _port = int(_env.get('PORT', _env.get('RENDER_PORT', '8060')))
+    if _debug:
+        # Ambiente local de desenvolvimento
+        app.run_server(
+            debug=True,
+            host='0.0.0.0',
+            port=_port,
+            dev_tools_hot_reload=True,
+            dev_tools_props_check=False,
+            dev_tools_ui=False,
+            dev_tools_hot_reload_interval=0.5,
+            use_reloader=True,
+        )
+    else:
+        # Produção: sem dev tools
+        app.run_server(
+            debug=False,
+            host='0.0.0.0',
+            port=_port,
+            dev_tools_hot_reload=False,
+            dev_tools_props_check=False,
+            dev_tools_ui=False,
+            use_reloader=False,
+        )

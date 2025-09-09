@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: gvg-browser
+    env: python
+    rootDirectory: search/gvg_browser
+    branch: master
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn GvG_Search_Browser:server -w 2 -k gthread --threads 4 --timeout 180 -b 0.0.0.0:$PORT
+    healthCheckPath: /
+    autoDeploy: true
+    plan: starter
+    previewPlan: starter
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
