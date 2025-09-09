@@ -1,0 +1,8 @@
+# Requisitos mínimos para o pipeline (scripts 03, 04 e 05)
+openai>=1.0.0
+psycopg2-binary>=2.9.9
+numpy>=1.24.0
+pandas>=2.0.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+rich>=13.0.0
