@@ -278,9 +278,11 @@ header = html.Div([
 
 # ------------------ Overlay de Autenticação (bloqueia UI até autenticar) ------------------
 catchy_lines = [
-    "Inteligência para compras públicas.",
-    "Busque, analise e acompanhe licitações em minutos.",
-    "Resultados objetivos. Oportunidades reais.",
+    "Busque licitações públicas com inteligência artificial.",
+    "Encontre oportunidades de contratos governamentais rapidamente.",
+    "Consultas avançadas para licitações e contratos públicos.",
+    "Sua porta de entrada para o mercado público.",
+    "Descubra licitações relevantes com facilidade.",
 ]
 auth_overlay = html.Div([
     html.Div([
@@ -353,6 +355,7 @@ controls_panel = html.Div([
             html.Button(
                 html.I(className="fas fa-arrow-right"),
                 id='submit-button',
+                title='Executar busca',
                 style=styles['arrow_button']
             ),
             html.Button(
