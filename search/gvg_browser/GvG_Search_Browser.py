@@ -343,103 +343,129 @@ auth_overlay = html.Div([
 # Painel de controles (esquerda)
 controls_panel = html.Div([
     html.Div('Consulta', style={**styles['card_title'], }),
-    # Entrada de consulta estilo Reports no rodapé esquerdo
+    # Entrada de consulta com painel de Boletim embutido logo abaixo (layout em tabela)
     html.Div([
-        dcc.Textarea(
-            id='query-input',
-            placeholder='Digite sua consulta...',
-            rows=2,
-            style={**styles['input_field'], 'overflowY': 'auto', 'resize': 'none', 'height': '80px'}
-        ),
-        html.Div([
-            html.Button(
-                html.I(className="fas fa-arrow-right"),
-                id='submit-button',
-                title='Executar busca',
-                style=styles['arrow_button']
-            ),
-            html.Button(
-                html.I(className="fas fa-calendar-plus"),
-                id='boletim-toggle-btn',
-                title='Agendar boletim desta consulta',
-                style={**styles['arrow_button'], 'marginTop': '6px', 'opacity': 0.4},
-                disabled=True
-            ),
-        ], style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center', 'marginLeft': '8px'}),
+        html.Table([
+            html.Tbody([
+                html.Tr([
+                    html.Td(
+                        html.Div([
+                            dcc.Textarea(
+                                id='query-input',
+                                placeholder='Digite sua consulta...',
+                                rows=2,
+                                style={**styles['input_field'], 'overflowY': 'auto', 'resize': 'none', 'height': '80px', 'width': '100%'}
+                            )
+                        ], style=styles.get('query_textbox', {})),
+                        style=styles.get('query_text_cell', {'width': '100%'})
+                    ),
+                    html.Td(
+                        html.Div([
+                            html.Button(
+                                html.I(className="fas fa-arrow-right"),
+                                id='submit-button',
+                                title='Executar busca',
+                                style=styles['arrow_button']
+                            ),
+                            html.Button(
+                                html.I(className="fas fa-calendar-plus"),
+                                id='boletim-toggle-btn',
+                                title='Agendar boletim desta consulta',
+                                style={**styles['arrow_button'], 'marginTop': '6px', 'opacity': 0.4},
+                                disabled=True
+                            ),
+                        ], style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center'})
+                    , style=styles.get('query_buttons_cell', {'width': '36px'}) )
+                ]),
+                html.Tr([
+                    html.Td(
+                        dbc.Collapse(
+                            html.Div([
+                                html.Table([
+                                    html.Tbody([
+                                        html.Tr([
+                                            html.Td([
+                                                html.Div([
+                                                    html.Label('Frequência', className='gvg-form-label'),
+                                                    dcc.Dropdown(
+                                                        id='boletim-freq',
+                                                        options=[
+                                                            {'label': 'Diário (Seg-Sex)', 'value': 'DIARIO'},
+                                                            {'label': 'Semanal', 'value': 'SEMANAL'},
+                                                        ],
+                                                        value='DIARIO',
+                                                        clearable=False,
+                                                        style=styles['input_fullflex']
+                                                    )
+                                                ], className='gvg-form-row'),
+                                                html.Div([
+                                                    html.Label('Horários', className='gvg-form-label'),
+                                                    dcc.Checklist(
+                                                        id='boletim-multidiario-slots',
+                                                        options=[
+                                                            {'label': ' Manhã', 'value': 'manha'},
+                                                            {'label': ' Tarde', 'value': 'tarde'},
+                                                            {'label': ' Noite', 'value': 'noite'},
+                                                        ],
+                                                        value=['manha'],
+                                                        labelStyle={'display': 'inline-block', 'marginRight': '12px', 'fontSize': '12px'}
+                                                    )
+                                                ], className='gvg-form-row', style=styles['hidden']),
+                                                html.Div([
+                                                    html.Label('Dias', className='gvg-form-label'),
+                                                    dcc.Checklist(
+                                                        id='boletim-semanal-dias',
+                                                        options=[
+                                                            {'label': ' Seg', 'value': 'seg'},
+                                                            {'label': ' Ter', 'value': 'ter'},
+                                                            {'label': ' Qua', 'value': 'qua'},
+                                                            {'label': ' Qui', 'value': 'qui'},
+                                                            {'label': ' Sex', 'value': 'sex'},
+                                                        ],
+                                                        value=['seg'],
+                                                        labelStyle={'display': 'inline-block', 'marginRight': '10px', 'fontSize': '12px'}
+                                                    )
+                                                ], className='gvg-form-row'),
+                                                html.Div([
+                                                    html.Label('Canais', className='gvg-form-label'),
+                                                    dcc.Checklist(
+                                                        id='boletim-channels',
+                                                        options=[
+                                                            {'label': ' E-mail', 'value': 'email'},
+                                                            {'label': ' WhatsApp', 'value': 'whatsapp'},
+                                                        ],
+                                                        value=['email'],
+                                                        labelStyle={'display': 'inline-block', 'marginRight': '12px', 'fontSize': '12px'}
+                                                    )
+                                                ], className='gvg-form-row', style=styles['hidden'])
+                                            ], style=styles.get('query_text_cell', {'width': '100%'}) ),
+                                            html.Td(
+                                                html.Div([
+                                                    html.Button(
+                                                        html.I(className='fas fa-plus'),
+                                                        id='boletim-save-btn',
+                                                        title='Salvar boletim',
+                                                        style=styles['arrow_button'],
+                                                        disabled=True
+                                                    )
+                                                ], style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center'}),
+                                                style=styles.get('query_buttons_cell', {'width': '36px'})
+                                            )
+                                        ])
+                                    ])
+                                ], style=styles.get('query_table', {'width': '100%'}) )
+                            ], style=styles['boletim_config_panel'], className='gvg-controls'),
+                            id='boletim-collapse', is_open=False
+                        ),
+                        colSpan=2,
+                        style={'paddingTop': '2px'}
+                    )
+                ])
+            ])
+        ], style=styles.get('query_table', {'width': '100%'}) ),
     ], id='query-container', style=styles['input_container']),
-    # Bloco configurável do Boletim (título fora do painel branco, mas dentro da área colapsável)
-    dbc.Collapse(
-        html.Div([
-            html.Div([
-                html.Div('Configurar Boletim', style=styles['card_title'])
-            ], style=styles['boletim_section_header']),
-            html.Div([
-                html.Div([
-                    html.Label('Frequência', className='gvg-form-label'),
-                    dcc.Dropdown(
-                        id='boletim-freq',
-                        options=[
-                            {'label': 'Diário (Seg-Sex)', 'value': 'DIARIO'},
-                            {'label': 'Semanal', 'value': 'SEMANAL'},
-                        ],
-                        value='DIARIO',
-                        clearable=False,
-                        style=styles['input_fullflex']
-                    )
-                ], className='gvg-form-row'),
-                html.Div([
-                    html.Label('Horários', className='gvg-form-label'),
-                    dcc.Checklist(
-                        id='boletim-multidiario-slots',
-                        options=[
-                            {'label': ' Manhã', 'value': 'manha'},
-                            {'label': ' Tarde', 'value': 'tarde'},
-                            {'label': ' Noite', 'value': 'noite'},
-                        ],
-                        value=['manha'],
-                        labelStyle={'display': 'inline-block', 'marginRight': '12px', 'fontSize': '12px'}
-                    )
-                ], className='gvg-form-row', style=styles['hidden']),
-                html.Div([
-                    html.Label('Dias', className='gvg-form-label'),
-                    dcc.Checklist(
-                        id='boletim-semanal-dias',
-                        options=[
-                            {'label': ' Seg', 'value': 'seg'},
-                            {'label': ' Ter', 'value': 'ter'},
-                            {'label': ' Qua', 'value': 'qua'},
-                            {'label': ' Qui', 'value': 'qui'},
-                            {'label': ' Sex', 'value': 'sex'},
-                        ],
-                        value=['seg'],
-                        labelStyle={'display': 'inline-block', 'marginRight': '10px', 'fontSize': '12px'}
-                    )
-                ], className='gvg-form-row'),
-                html.Div([
-                    html.Label('Canais', className='gvg-form-label'),
-                    dcc.Checklist(
-                        id='boletim-channels',
-                        options=[
-                            {'label': ' E-mail', 'value': 'email'},
-                            {'label': ' WhatsApp', 'value': 'whatsapp'},
-                        ],
-                        value=['email'],
-                        labelStyle={'display': 'inline-block', 'marginRight': '12px', 'fontSize': '12px'}
-                    )
-                ], className='gvg-form-row', style=styles['hidden']),
-                html.Div([
-                    html.Button(
-                        html.I(className='fas fa-plus'),
-                        id='boletim-save-btn',
-                        title='Salvar boletim',
-                        style=styles['arrow_button'],
-                        disabled=True
-                    )
-                ], style={'marginTop': '4px', 'display': 'flex', 'justifyContent': 'flex-end'})
-            ], style=styles['boletim_config_panel'], className='gvg-controls')
-        ]),
-        id='boletim-collapse', is_open=False
-    ),
+
+    
     html.Div([
         html.Div("Configurações de Busca", style=styles['card_title']),
         html.Button(
@@ -915,7 +941,7 @@ def render_boletins_list(data):
     for b in data:
         freq = b.get('schedule_type')
         detail = b.get('schedule_detail') or {}
-        channels = b.get('channels') or []
+    # channels removidos do texto exibido (mantidos apenas no dado)
         # Monta o parágrafo de configurações (itálico)
         if freq == 'MULTIDIARIO':
             d_txt = 'Horários: ' + (' / '.join(detail.get('slots') or []) or '-')
@@ -923,8 +949,7 @@ def render_boletins_list(data):
             d_txt = 'Dias: ' + (', '.join(detail.get('days') or []) or '-')
         else:
             d_txt = 'Dias: Seg–Sex'
-        ch_txt = 'Canais: ' + (', '.join(channels) if channels else 'email')
-        cfg_txt = f"{freq} | {d_txt} | {ch_txt}"
+        cfg_txt = f"{freq} | {d_txt}"
         items.append(
             html.Div([
                 html.Button([
@@ -934,13 +959,26 @@ def render_boletins_list(data):
                     id={'type': 'boletim-item', 'id': b.get('id')},
                     style=styles['boletim_item_button']
                 ),
-                html.Button(
-                    html.I(className='fas fa-trash'),
-                    id={'type': 'boletim-delete', 'id': b.get('id')},
-                    className='delete-btn',
-                    style=styles['boletim_delete_btn']
-                )
-            ], style=styles['boletim_item_row'])
+                html.Div([
+                    html.Button(
+                        html.I(className='fas fa-trash'),
+                        id={'type': 'boletim-delete', 'id': b.get('id')},
+                        className='delete-btn action-btn',
+                        style=styles['boletim_delete_btn']
+                    ),
+                    # [FUTURO] Botão "Editar" do item de boletim
+                    # Mantido comentado até implementação do fluxo de edição.
+                    # A ideia: ao clicar, preencher os controles do painel de boletim
+                    # (frequência, dias) com os valores do item selecionado e abrir o collapse.
+                    # Depois, o usuário pode salvar novamente (atualização) ou cancelar.
+                    # html.Button(
+                    #     html.I(className='fas fa-pencil-alt'),
+                    #     id={'type': 'boletim-edit', 'id': b.get('id')},
+                    #     className='edit-btn action-btn',
+                    #     style=styles['boletim_delete_btn']
+                    # )
+                ], style={'display': 'flex', 'flexDirection': 'column', 'gap': '6px'})
+            ], style=styles['boletim_item_row'], className='boletim-item-row')
         )
     return items
 

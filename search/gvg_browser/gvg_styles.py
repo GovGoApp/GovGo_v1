@@ -430,7 +430,8 @@ styles['boletim_toggle_btn'] = {
     'width': '32px', 'height': '32px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'cursor': 'pointer'
 }
 styles['boletim_config_panel'] = {
-    'padding': '10px', 'backgroundColor': 'white', 'borderRadius': '15px', 'marginTop': '8px'
+    'paddingTop': '10px', 'paddingBottom': '10px', 'paddingLeft': '0px', 'paddingRight': '0px',
+    'backgroundColor': 'white', 'borderRadius': '15px', 'marginTop': '8px', 'width': '100%'
 }
 styles['boletim_section_header'] = {
     'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginTop': '8px'
@@ -442,6 +443,25 @@ styles['boletim_inline_group'] = {
 # Utilitário: esconder elemento mantendo no DOM
 styles['hidden'] = {
     'display': 'none'
+}
+
+# Linha do input do query + coluna de botões
+styles['input_row'] = {
+    'display': 'flex', 'alignItems': 'center', 'width': '100%'
+}
+
+# Tabela do input de consulta: célula de texto flexível e coluna de botões mínima
+styles['query_table'] = {
+    'width': '100%'
+}
+styles['query_text_cell'] = {
+    'width': '100%', 'verticalAlign': 'top', 'paddingRight': '6px'
+}
+styles['query_buttons_cell'] = {
+    'width': '36px', 'minWidth': '36px', 'verticalAlign': 'top', 'paddingLeft': '4px', 'textAlign': 'center', 'whiteSpace': 'nowrap'
+}
+styles['query_textbox'] = {
+    'width': '100%', 'border': '1px solid #D0D7E2', 'borderRadius': '16px', 'padding': '4px', 'boxSizing': 'border-box', 'backgroundColor': 'white'
 }
 
 # Texto da query (negrito) e bloco de configurações (itálico) nos itens de boletim
@@ -474,7 +494,7 @@ BASE_CSS = """
 .gvg-controls input[type=number] { -moz-appearance: textfield; }
 /* Horizontal form rows */
 .gvg-controls .gvg-form-row { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
-.gvg-controls .gvg-form-label { width: 130px; min-width: 130px; font-size: 12px; color: #003A70; margin: 0; font-weight: 600; }
+.gvg-controls .gvg-form-label { width: 110px; min-width: 110px; font-size: 12px; color: #003A70; margin: 0; font-weight: 600; }
 .gvg-controls .gvg-form-row > *:last-child { flex: 1; }
 
 /* History row hover: show delete button */
@@ -486,6 +506,14 @@ BASE_CSS = """
 .fav-item-row .delete-btn { opacity: 0; transition: opacity 0.15s ease-in-out; }
 .fav-item-row:hover .delete-btn { opacity: 1; }
 .fav-item-row .delete-btn:hover { background-color: #FDEDEC; }
+
+/* Boletins row hover: show action buttons (trash + edit) */
+.boletim-item-row .delete-btn { opacity: 0; transition: opacity 0.15s ease-in-out; }
+.boletim-item-row:hover .delete-btn { opacity: 1; }
+.boletim-item-row .delete-btn:hover { background-color: #FDEDEC; }
+.boletim-item-row .edit-btn { opacity: 0; transition: opacity 0.15s ease-in-out; }
+.boletim-item-row:hover .edit-btn { opacity: 1; }
+.boletim-item-row .edit-btn:hover { background-color: #FDEDEC; }
 
 /* DataTable sort icons to the RIGHT of the header label, with spacing */
 .dash-table-container .dash-spreadsheet-container th { position: relative; padding-right: 22px; }
