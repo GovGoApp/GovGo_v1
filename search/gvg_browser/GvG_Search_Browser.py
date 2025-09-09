@@ -643,9 +643,13 @@ app.layout = html.Div([
     header,
     auth_overlay,
     html.Div([
-        controls_panel,
-        results_panel,
-    ], style=styles['container'])
+        html.Div([
+            controls_panel
+        ], className='gvg-slide'),
+        html.Div([
+            results_panel
+        ], className='gvg-slide')
+    ], id='gvg-main-panels', style=styles['container'])
 ])
 
 

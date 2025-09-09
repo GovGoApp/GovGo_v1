@@ -17,7 +17,7 @@ styles = {
         'padding': '5px',
     },
     'left_panel': {
-        'width': '30%',  ### 30%
+    'width': '100%',  ### controle de largura via wrapper/CSS var
         'backgroundColor': '#E0EAF9',
         'padding': '10px',
         'margin': '5px',
@@ -28,7 +28,7 @@ styles = {
         'height': 'calc(100vh - 100px)'
     },
     'right_panel': {
-        'width': '70%', ### 70%
+    'width': '100%', ### controle de largura via wrapper/CSS var
         'backgroundColor': '#E0EAF9',
         'padding': '10px',
         'margin': '5px',
@@ -475,6 +475,15 @@ styles['boletim_config'] = {
 
 # CSS base (antes inline no app.index_string do GSB)
 BASE_CSS = """
+/* Larguras padrão (desktop) controladas por variáveis CSS */
+:root { --gvg-left-slide-width: 30%; --gvg-right-slide-width: 70%; }
+
+/* Wrappers dos painéis (desktop: respeita 30/70; mobile: vira slider) */
+#gvg-main-panels > .gvg-slide { display: flex; }
+#gvg-main-panels > .gvg-slide:first-child { width: var(--gvg-left-slide-width); }
+#gvg-main-panels > .gvg-slide:last-child { width: var(--gvg-right-slide-width); }
+#gvg-main-panels > .gvg-slide > div { width: 100%; }
+
 /* Compact controls inside left panel config card */
 .gvg-controls .Select-control { min-height: 32px; height: 32px; border-radius: 16px; font-size: 12px; border: 1px solid #D0D7E2; box-shadow: none; }
 .gvg-controls .is-focused .Select-control, .gvg-controls .Select.is-focused > .Select-control { border-color: #52ACFF; box-shadow: 0 0 0 2px rgba(82,172,255,0.12); }
@@ -529,6 +538,13 @@ BASE_CSS = """
 }
 
 #gvg-center-spinner { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; display: flex; flex-direction: column; align-items: center; width: 260px; }
+
+/* MODO MOBILE (≤ 992px): slider horizontal com scroll-snap, zero-JS */
+@media (max-width: 992px) {
+    :root { --gvg-left-slide-width: 100vw; --gvg-right-slide-width: 100vw; }
+    #gvg-main-panels { overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
+    #gvg-main-panels > .gvg-slide { flex: 0 0 100vw; scroll-snap-align: start; }
+}
 """
 
 # Classe aplicada em dcc.Markdown(children=..., className='markdown-summary')
