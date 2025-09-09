@@ -285,6 +285,17 @@ Atenção:
 - Se o filtro de relevância ou pré‑processamento falhar por falta dos Assistants, a busca segue sem essas etapas.
 - Se o resumo falhar por ausência do `docling` ou `OPENAI_API_KEY`, a funcionalidade “Resumo” apenas mostra o erro; o resto do app segue ok.
 
+## Deploy no Render (essencial)
+
+- Serviço Web (env: Python) com raiz do projeto em `search/gvg_browser` (rootDirectory).
+- Build Command: `pip install -r requirements.txt`
+- Start Command: `gunicorn GvG_Search_Browser:server -w 2 -k gthread --threads 4 --timeout 180 -b 0.0.0.0:$PORT`
+- Variáveis no painel (não commitar .env):
+  - Banco: `SUPABASE_HOST`, `SUPABASE_USER`, `SUPABASE_PASSWORD`, `SUPABASE_PORT=6543`, `SUPABASE_DBNAME`.
+  - OpenAI/Assistants: `OPENAI_API_KEY`, `GVG_PREPROCESSING_QUERY_v1`, `GVG_RELEVANCE_FLEXIBLE`, `GVG_RELEVANCE_RESTRICTIVE`, `GVG_SUMMARY_DOCUMENT_v1`.
+  - Recomendadas (filesystem efêmero): `BASE_PATH=/tmp`, `FILES_PATH=/tmp/files`, `RESULTS_PATH=/tmp/reports`, `TEMP_PATH=/tmp`, `DEBUG=false`.
+- DNS (www.govgo.com.br): criar CNAME `www` apontando para o domínio do serviço no Render e remover A de `www`; apex opcional conforme instruções do Render.
+
 ## Depuração
 
 - Ative `--debug` para imprimir SQL de busca e etapas do pipeline no console.

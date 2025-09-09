@@ -78,6 +78,13 @@ Leia e entenda integralmente todos os arquivos sugeridos e também o arquivo `do
 - Rodar em `search/gvg_browser`: `python .\GvG_Search_Browser.py --debug`
 - `docling` é opcional (apenas Resumo). Variáveis em `.env` (inclui `OPENAI_API_KEY` e IDs dos Assistants).
 
+## Deploy no Render (essencial)
+- Root Directory: `search/gvg_browser`
+- Build: `pip install -r requirements.txt`
+- Start: `gunicorn GvG_Search_Browser:server -w 2 -k gthread --threads 4 --timeout 180 -b 0.0.0.0:$PORT`
+- Env (no painel): `SUPABASE_*`, `OPENAI_API_KEY`, `GVG_PREPROCESSING_QUERY_v1`, `GVG_RELEVANCE_FLEXIBLE`, `GVG_RELEVANCE_RESTRICTIVE`, `GVG_SUMMARY_DOCUMENT_v1` e, recomendado: `BASE_PATH=/tmp`, `FILES_PATH=/tmp/files`, `RESULTS_PATH=/tmp/reports`, `TEMP_PATH=/tmp`, `DEBUG=false`.
+- DNS (www): CNAME `www` → domínio do serviço no Render; remover A de `www`. Apex opcional conforme instruções do Render.
+
 ## Qualidade e validação
 - Antes de editar: liste mudanças e impacto. Peça confirmação.
 - Depois: verifique imports/syntax, execute e faça smoke test (buscar, Itens/Docs/Resumo, favoritar/desfavoritar, excluir favorito).
