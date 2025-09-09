@@ -263,7 +263,7 @@ LOGO_PATH = "https://hemztmtbejcbhgfmsvfq.supabase.co/storage/v1/object/public/g
 header = html.Div([
     html.Div([
     html.Img(src=LOGO_PATH, style=styles['header_logo']),
-    html.H4("GvG Search", style=styles['header_title'])
+    html.H4("GvG Search", className='gvg-header-title', style=styles['header_title'])
     ], style=styles['header_left']),
     html.Div([
         html.Div(

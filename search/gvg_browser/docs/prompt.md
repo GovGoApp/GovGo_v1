@@ -9,6 +9,11 @@ Leia e entenda integralmente todos os arquivos sugeridos e também o arquivo `do
 - Código principal está em `Gvg_Search_Browser.py`. Todos os outros códigos da pasta são auxiliares desse código. 
 - Estilos centralizados em `gvg_styles.py`. Documentação principal: `search/gvg_browser/docs/README.md`.
 
+Atualizações recentes (2025-09-09)
+- Mobile (≤ 992px): swipe zero‑JS entre “Controles” e “Resultados” (CSS scroll‑snap), desktop preservado (30/70).
+- Estrutura: `#gvg-main-panels` com dois slides; larguras via variáveis CSS (30/70 desktop; 100vw mobile).
+- Header: ocultar o título “GvG Search” no mobile.
+
 
 ## Arquivos para ler
 - `search/gvg_browser/docs/README.md` (panorama e execução)

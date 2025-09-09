@@ -544,6 +544,7 @@ BASE_CSS = """
     :root { --gvg-left-slide-width: 100vw; --gvg-right-slide-width: 100vw; }
     #gvg-main-panels { overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
     #gvg-main-panels > .gvg-slide { flex: 0 0 100vw; scroll-snap-align: start; }
+    .gvg-header-title { display: none; }
 }
 """
 

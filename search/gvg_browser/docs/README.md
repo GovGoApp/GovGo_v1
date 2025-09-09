@@ -333,4 +333,11 @@ Atenção:
 
 ---
 
-Última atualização: 2025-09-08.
+
+## Atualizações recentes (2025-09-09)
+- Mobile (≤ 992px): swipe zero‑JS entre “Controles” e “Resultados” via CSS scroll‑snap; desktop preservado (30/70).
+- Estrutura: painéis envolvidos em `#gvg-main-panels > .gvg-slide`; larguras controladas por variáveis CSS (desktop 30/70; mobile 100vw por slide).
+- Estilos centralizados em `gvg_styles.py`; nenhuma nova dependência.
+- Header: título “GvG Search” oculto no mobile.
+
+Última atualização: 2025-09-09.
