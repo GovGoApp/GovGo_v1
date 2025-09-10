@@ -3013,11 +3013,11 @@ def render_details(results, last_query):
             ]),
             # Datas em linhas separadas
             html.Div([
-                html.Span('Data de Abertura: ', style={'fontWeight': 'bold'}),
+                html.Span('Abertura: ', style={'fontWeight': 'bold'}),
                 html.Span(str(data_ab), )
             ], style={'display': 'flex', 'alignItems': 'center', 'gap': '4px'}),
             html.Div([
-                html.Span('Data de Encerramento: ', style={'fontWeight': 'bold'}),
+                html.Span('Encerramento: ', style={'fontWeight': 'bold'}),
                 html.Span(str(data_en), style={'color': enc_color, 'fontWeight': 'bold'}),
                 tag
             ], style={'display': 'flex', 'alignItems': 'center', 'gap': '6px', 'marginTop': '2px'}),
@@ -3040,7 +3040,7 @@ def render_details(results, last_query):
                 html.Button('Itens', id={'type': 'itens-btn', 'pncp': str(pncp_id)}, title='Itens', style=styles['btn_pill']),
                 html.Button('Documentos', id={'type': 'docs-btn', 'pncp': str(pncp_id)}, title='Documentos', style=styles['btn_pill']),
                 html.Button('Resumo', id={'type': 'resumo-btn', 'pncp': str(pncp_id)}, title='Resumo', style=styles['btn_pill']),
-            ], style=styles['right_panel_actions']),
+            ], className='gvg-right-actions', style=styles['right_panel_actions']),
             # Wrapper fixo com 3 painéis sobrepostos (somente um visível)
             html.Div(
                 id={'type': 'panel-wrapper', 'pncp': str(pncp_id)},
@@ -3086,7 +3086,7 @@ def render_details(results, last_query):
             html.Div([
                 left_panel,
                 right_panel
-            ], style={'display': 'flex', 'gap': '10px', 'alignItems': 'stretch'}),
+            ], className='gvg-details-row', style={'display': 'flex', 'gap': '10px', 'alignItems': 'stretch'}),
             html.Div(str(r.get('rank')), style=styles['result_number']),
             bookmark_btn
         ], style=_card_style))

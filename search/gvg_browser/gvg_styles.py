@@ -545,6 +545,11 @@ BASE_CSS = """
     #gvg-main-panels { overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
     #gvg-main-panels > .gvg-slide { flex: 0 0 100vw; scroll-snap-align: start; }
     .gvg-header-title { display: none; }
+    /* Detalhes acima, janelas (Itens/Docs/Resumo) abaixo */
+    .gvg-details-row { flex-direction: column !important; gap: 8px !important; }
+    .gvg-details-row > div { width: 100% !important; }
+    /* Botões de ação no painel direito: alinhar ao topo à esquerda em mobile */
+    .gvg-details-row .gvg-right-actions { position: static !important; margin-bottom: 6px; }
 }
 """
 
