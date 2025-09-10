@@ -9,6 +9,7 @@ import psycopg2
 import requests
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
+from gvg_debug import debug_log as dbg
 
 # Carregar configurações
 load_dotenv()
@@ -40,7 +41,7 @@ def create_connection():
         )
         return connection
     except Exception as e:
-        print(f"Erro ao conectar ao banco: {e}")
+        dbg('SQL', f"Erro ao conectar ao banco: {e}")
         return None
 
 def create_engine_connection():
@@ -55,7 +56,7 @@ def create_engine_connection():
         connection_string = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
         return create_engine(connection_string, pool_pre_ping=True)
     except Exception as e:
-        print(f"Erro ao criar engine SQLAlchemy: {e}")
+        dbg('SQL', f"Erro ao criar engine SQLAlchemy: {e}")
         return None
 
 def _parse_numero_controle_pncp(numero_controle: str):
@@ -103,7 +104,7 @@ def fetch_documentos(numero_controle: str):
                         documentos.append({'url': url, 'nome': 'Link Sistema', 'tipo': 'origem', 'origem': 'db'})
             cur.close(); conn.close()
         except Exception as e:
-            print(f"⚠️ fetch_documentos DB: {e}")
+            dbg('SQL', f"⚠️ fetch_documentos DB: {e}")
             try: conn.close()
             except Exception: pass
 
@@ -133,9 +134,9 @@ def fetch_documentos(numero_controle: str):
                         'origem': 'api'
                     })
         else:
-            print(f"⚠️ API documentos status {resp.status_code} ({numero_controle})")
+            dbg('DOCS', f"⚠️ API documentos status {resp.status_code} ({numero_controle})")
     except Exception as e:
-        print(f"⚠️ API documentos erro: {e}")
+        dbg('DOCS', f"⚠️ API documentos erro: {e}")
     return documentos
 """
 gvg_database.py
@@ -185,7 +186,7 @@ def create_connection():
         )
         return connection
     except Exception as e:
-        print(f"Erro ao conectar ao banco: {e}")
+        dbg('SQL', f"Erro ao conectar ao banco: {e}")
         return None
 
 def create_engine_connection():
@@ -200,7 +201,7 @@ def create_engine_connection():
         connection_string = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
         return create_engine(connection_string, pool_pre_ping=True)
     except Exception as e:
-        print(f"Erro ao criar engine SQLAlchemy: {e}")
+        dbg('SQL', f"Erro ao criar engine SQLAlchemy: {e}")
         return None
 
 def _parse_numero_controle_pncp(numero_controle: str):
@@ -248,7 +249,7 @@ def fetch_documentos(numero_controle: str):
                         documentos.append({'url': url, 'nome': 'Link Sistema', 'tipo': 'origem', 'origem': 'db'})
             cur.close(); conn.close()
         except Exception as e:
-            print(f"⚠️ fetch_documentos DB: {e}")
+            dbg('SQL', f"⚠️ fetch_documentos DB: {e}")
             try: conn.close()
             except Exception: pass
 
@@ -278,7 +279,7 @@ def fetch_documentos(numero_controle: str):
                         'origem': 'api'
                     })
         else:
-            print(f"⚠️ API documentos status {resp.status_code} ({numero_controle})")
+            dbg('DOCS', f"⚠️ API documentos status {resp.status_code} ({numero_controle})")
     except Exception as e:
-        print(f"⚠️ API documentos erro: {e}")
+        dbg('DOCS', f"⚠️ API documentos erro: {e}")
     return documentos

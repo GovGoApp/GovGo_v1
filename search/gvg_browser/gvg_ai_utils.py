@@ -5,16 +5,15 @@ Contém apenas as funções de IA e embeddings realmente utilizadas
 """
 
 import os
+from gvg_debug import debug_log as dbg
 import re
 import json
 import numpy as np
 import time
 from openai import OpenAI
 from dotenv import load_dotenv
-
-# Configurações
-load_dotenv()
 EMBEDDING_MODEL = "text-embedding-3-large"
+NEGATION_EMB_WEIGHT = float(os.getenv('NEGATION_EMB_WEIGHT', 1.0))
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 """
@@ -33,27 +32,13 @@ NEG_WEIGHT pode ser ajustado via variável de ambiente `NEGATION_EMB_WEIGHT`
 (default 1). O vetor final é normalizado para manter escala consistente.
 """
 
-NEGATION_EMB_WEIGHT = float(os.getenv("NEGATION_EMB_WEIGHT", "1"))
-
 def get_embedding(text, model=EMBEDDING_MODEL):
-	"""
-	Gera embedding para texto usando OpenAI
-    
-	Args:
-		text (str): Texto para gerar embedding
-		model (str): Modelo de embedding a usar
-        
-	Returns:
-		list: Vetor embedding do texto
-	"""
+	"""Gera embedding para texto usando OpenAI e retorna lista (ou None em erro)."""
 	try:
-		response = openai_client.embeddings.create(
-			input=text,
-			model=model
-		)
+		response = openai_client.embeddings.create(input=text, model=model)
 		return response.data[0].embedding
 	except Exception as e:
-		print(f"Erro ao gerar embedding: {e}")
+		dbg('ASSISTANT', f"Erro ao gerar embedding: {e}")
 		return None
 
 def _normalize(vec: np.ndarray):
@@ -109,12 +94,11 @@ def get_negation_embedding(query: str, model: str = EMBEDDING_MODEL, weight: flo
 			# Falhou negativo -> usar somente positivo
 			return pos_emb
 		neg_emb = np.array(neg_emb, dtype=np.float32)
-
 		combined = pos_emb - (weight * neg_emb)
 		combined = _normalize(combined)
 		return combined
 	except Exception as e:
-		print(f"Erro get_negation_embedding: {e}")
+		dbg('ASSISTANT', f"Erro get_negation_embedding: {e}")
 		return None
 
 def generate_keywords(text, max_keywords=10, max_chars=200):
@@ -173,7 +157,7 @@ def generate_keywords(text, max_keywords=10, max_chars=200):
 		return keywords[:max_keywords]
         
 	except Exception as e:
-		print(f"Erro ao gerar palavras-chave: {e}")
+		dbg('ASSISTANT', f"Erro ao gerar palavras-chave: {e}")
 		return []
 
 def calculate_confidence(scores):
@@ -242,8 +226,11 @@ def generate_contratacao_label(descricao: str, timeout: float = 6.0) -> str:
 						if label_raw:
 							break
 		except Exception as e:
-			if (os.getenv('GVG_BROWSER_DEBUG') or '').lower() in ('1','true','yes'):
-				print(f"[GVG][LABEL] Assistant fallback: {e}")
+			try:
+				from gvg_debug import debug_log as dbg
+				dbg('ASSISTANT', f"Assistant fallback: {e}")
+			except Exception:
+				pass
 	# 2) Chat fallback
 	if not label_raw:
 		try:
@@ -258,8 +245,11 @@ def generate_contratacao_label(descricao: str, timeout: float = 6.0) -> str:
 			)
 			label_raw = resp.choices[0].message.content.strip()
 		except Exception as e:
-			if (os.getenv('GVG_BROWSER_DEBUG') or '').lower() in ('1','true','yes'):
-				print(f"[GVG][LABEL] Chat fallback: {e}")
+			try:
+				from gvg_debug import debug_log as dbg
+				dbg('ASSISTANT', f"Chat fallback: {e}")
+			except Exception:
+				pass
 	# 3) Fallback mínimo
 	if not label_raw:
 		tokens = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]{2,}", desc)

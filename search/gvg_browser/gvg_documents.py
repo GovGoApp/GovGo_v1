@@ -30,6 +30,7 @@ import logging
 import re
 import time
 from dotenv import load_dotenv
+from gvg_debug import debug_log as dbg
 import psycopg2
 
 # Import OpenAI opcional (não deve impedir carregamento do módulo)
@@ -57,28 +58,13 @@ load_dotenv()  # garante variáveis carregadas
 _DOC_DEBUG = (os.getenv('DOCUMENTS_DEBUG', os.getenv('DEBUG', 'false')) or 'false').strip().lower() in ('1', 'true', 'yes', 'on')
 
 def _dbg(msg: str):
-    if _DOC_DEBUG:
-        try:
-            print(msg)
-        except Exception:
-            pass
+    """Compat: agora apenas chama dbg diretamente (sem try/except)."""
+    dbg('DOCS', msg)
 
 # Debug helper to print Assistant output when app runs with --debug
 def _dbg_assistant_output(tag: str, text: str):
-    try:
-        from gvg_search_core import SQL_DEBUG  # imported lazily to avoid hard dependency
-        if SQL_DEBUG or _DOC_DEBUG:
-            try:
-                print(f"[GSB][RESUMO][ASSISTENTE]{'['+tag+']' if tag else ''}:\n{text}\n")
-            except Exception:
-                pass
-    except Exception:
-        # Fallback to _DOC_DEBUG only
-        if _DOC_DEBUG:
-            try:
-                print(f"[GSB][RESUMO][ASSISTENTE]{'['+tag+']' if tag else ''}:\n{text}\n")
-            except Exception:
-                pass
+    """Imprime saída do Assistant usando categoria ASSISTANT (sem try/except)."""
+    dbg('ASSISTANT', f"[RESUMO]{'['+tag+']' if tag else ''}:\n{text}\n")
 
 # Strip unwanted citation markers like 【4:5†source】 or [..source..]
 def strip_citations(text: str) -> str:
@@ -194,10 +180,7 @@ def download_document(doc_url, timeout=30):
 def convert_document_to_markdown(file_path, original_filename):
     """Convert a PDF to Markdown using Docling in a subprocess (stable path)."""
     try:
-        try:
-            print(f"[GSB][RESUMO] Subprocesso Docling iniciado para '{original_filename}'")
-        except Exception:
-            pass
+        dbg('DOCS', f"Subprocesso Docling iniciado para '{original_filename}'")
         code = (
             "import json,sys; "
             "fp=sys.argv[1]; fn=sys.argv[2];\n"
@@ -221,10 +204,7 @@ def convert_document_to_markdown(file_path, original_filename):
             return False, None, f"Falha ao executar subprocesso Docling: {e}"
         if proc.returncode != 0:
             err = proc.stderr.strip() or proc.stdout.strip()
-            try:
-                print(f"[GSB][RESUMO] Subprocesso Docling falhou rc={proc.returncode}: {err[:300]}")
-            except Exception:
-                pass
+            dbg('DOCS', f"Subprocesso Docling falhou rc={proc.returncode}: {err[:300]}")
             return False, None, f"Docling falhou no subprocesso: {err}" if err else "Docling falhou no subprocesso"
         try:
             payload = json.loads(proc.stdout.strip())
@@ -234,16 +214,10 @@ def convert_document_to_markdown(file_path, original_filename):
             return False, None, f"Saída inválida do subprocesso Docling: {e}"
         return False, None, "Saída inesperada do subprocesso Docling"
     except ImportError:
-        try:
-            print("[GSB][RESUMO] ImportError em Docling - Docling não instalado")
-        except Exception:
-            pass
+        dbg('DOCS', "ImportError em Docling - Docling não instalado")
         return False, None, "Docling não está instalado. Execute: pip install docling"
     except Exception as e:
-        try:
-            print(f"[GSB][RESUMO] Exceção em convert_document_to_markdown: {e}")
-        except Exception:
-            pass
+        dbg('DOCS', f"Exceção em convert_document_to_markdown: {e}")
         return False, None, f"Erro na conversão: {str(e)}"
 
 def save_markdown_file(content, original_filename, doc_url, timestamp=None):
@@ -485,7 +459,8 @@ def detect_file_type_by_content_v3(filepath: str) -> str:
                 except UnicodeDecodeError:
                     return "documento.dat"
     except Exception as e:
-        print(f"⚠️ Erro ao detectar tipo de arquivo: {e}")
+        
+        dbg('DOCS', f"⚠️ Erro ao detectar tipo de arquivo: {e}")
         return "documento.dat"
 
 def is_zip_file(file_path):
@@ -523,7 +498,8 @@ def extract_all_supported_files_from_zip(zip_path):
         extracted_files = []
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             file_list = zip_ref.namelist()
-            print(f"   📦 Arquivos no ZIP: {len(file_list)}")
+            
+            dbg('DOCS', f"   📦 Arquivos no ZIP: {len(file_list)}")
             for file_name in file_list:
                 if file_name.startswith('__MACOSX/') or file_name.endswith('/'):
                     continue
@@ -534,14 +510,14 @@ def extract_all_supported_files_from_zip(zip_path):
                         extracted_path = os.path.join(extract_dir, file_name)
                         if os.path.exists(extracted_path):
                             file_size = os.path.getsize(extracted_path) / (1024 * 1024)
-                            print(f"   📄 Extraído: {os.path.basename(file_name)} ({file_size:.2f} MB)")
+                            dbg('DOCS', f"   📄 Extraído: {os.path.basename(file_name)} ({file_size:.2f} MB)")
                             extracted_files.append((extracted_path, os.path.basename(file_name)))
                     except Exception as e:
-                        print(f"   ⚠️ Erro ao extrair {file_name}: {str(e)}")
+                        dbg('DOCS', f"   ⚠️ Erro ao extrair {file_name}: {str(e)}")
                         continue
             if not extracted_files:
                 return False, [], "Nenhum arquivo suportado encontrado no ZIP"
-            print(f"   ✅ Total extraído: {len(extracted_files)} arquivo(s)")
+            dbg('DOCS', f"   ✅ Total extraído: {len(extracted_files)} arquivo(s)")
             return True, extracted_files, None
     except Exception as e:
         return False, [], f"Erro ao extrair ZIP: {str(e)}"
@@ -637,20 +613,15 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
     temp_path = None
     try:
         processing_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        try:
-            print(f"[GSB][RESUMO] process_pncp_document() inicio url='{str(doc_url)[:80]}{'...' if doc_url and len(str(doc_url))>80 else ''}' nome='{document_name}'")
-        except Exception:
-            pass
+        dbg('DOCS', f"process_pncp_document() inicio url='{str(doc_url)[:80]}{'...' if doc_url and len(str(doc_url))>80 else ''}' nome='{document_name}'")
         success, temp_path, filename, error = download_document(doc_url)
-        try:
-            print(f"[GSB][RESUMO] download_document -> success={success} temp='{temp_path}' file='{filename}' err='{error}'")
-        except Exception:
-            pass
+        dbg('DOCS', f"download_document -> success={success} temp='{temp_path}' file='{filename}' err='{error}'")
+
         if not success:
             return f"Erro no download: {error}"
         final_filename = document_name if document_name else filename
         if is_zip_file(temp_path):
-            print("📦 Arquivo ZIP detectado. Extraindo TODOS os arquivos suportados...")
+            dbg('DOCS', "📦 Arquivo ZIP detectado. Extraindo TODOS os arquivos suportados...")
             success, extracted_files_list, error = extract_all_supported_files_from_zip(temp_path)
             if not success:
                 return f"Erro ao extrair arquivos do ZIP: {error}"
@@ -666,10 +637,10 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                 all_markdown_content += "---\n\n"
                 processed_files = []
                 for extracted_path, original_name in extracted_files_list:
-                    print(f"📄 Processando arquivo extraído: {original_name}")
+                    dbg('DOCS', f"📄 Processando arquivo extraído: {original_name}")
                     if os.path.exists(extracted_path):
                         file_size_extracted = os.path.getsize(extracted_path) / (1024 * 1024)
-                        print(f"📏 Tamanho: {file_size_extracted:.2f} MB")
+                        dbg('DOCS', f"📏 Tamanho: {file_size_extracted:.2f} MB")
                         file_success, file_markdown, file_error = convert_document_to_markdown(extracted_path, original_name)
                         if file_success:
                             all_markdown_content += f"## 📄 Arquivo: {original_name}\n\n"
@@ -679,7 +650,7 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                             all_markdown_content += file_markdown
                             all_markdown_content += "\n\n---\n\n"
                             processed_files.append({'name': original_name, 'success': True})
-                            print(f"✅ {original_name} processado com sucesso")
+                            dbg('DOCS', f"✅ {original_name} processado com sucesso")
                         else:
                             all_markdown_content += f"## ❌ Arquivo: {original_name}\n\n"
                             all_markdown_content += f"**Tamanho:** {file_size_extracted:.2f} MB  \n"
@@ -687,9 +658,9 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                             all_markdown_content += f"**Erro:** {file_error}  \n\n"
                             all_markdown_content += "---\n\n"
                             processed_files.append({'name': original_name, 'success': False})
-                            print(f"❌ Erro em {original_name}: {file_error}")
+                            dbg('DOCS', f"❌ Erro em {original_name}: {file_error}")
                     else:
-                        print(f"❌ Arquivo extraído não encontrado: {original_name}")
+                        dbg('DOCS', f"❌ Arquivo extraído não encontrado: {original_name}")
                 # Cleanup
                 try:
                     if extracted_files_list:
@@ -697,14 +668,14 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                         if os.path.exists(extract_dir):
                             shutil.rmtree(extract_dir)
                 except Exception as cleanup_error:
-                    print(f"⚠️ Aviso: Erro na limpeza: {cleanup_error}")
+                    dbg('DOCS', f"⚠️ Aviso: Erro na limpeza: {cleanup_error}")
                 successful_files = [f for f in processed_files if f['success']]
                 if successful_files:
                     success = True
                     markdown_content = all_markdown_content
                     error = None
                     final_filename = f"{final_filename} ({len(successful_files)}-{len(processed_files)} arquivos)"
-                    print(f"✅ ZIP processado: {len(successful_files)}/{len(processed_files)} arquivos com sucesso")
+                    dbg('DOCS', f"✅ ZIP processado: {len(successful_files)}/{len(processed_files)} arquivos com sucesso")
                 else:
                     return "Erro: Nenhum arquivo do ZIP foi processado com sucesso"
             else:
@@ -715,7 +686,7 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                     method_label = "Assistant (arquivos originais)"
                     summary_success, summary_path, summary_error = save_summary_file(summary, final_filename, doc_url, processing_timestamp, pncp_data, method_label=method_label, markdown_filename=None)
                     if not summary_success:
-                        print(f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
+                        dbg('DOCS', f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
                     # Cleanup extract dir
                     try:
                         if extracted_files_list:
@@ -723,14 +694,14 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                             if os.path.exists(extract_dir):
                                 shutil.rmtree(extract_dir)
                     except Exception as cleanup_error:
-                        print(f"⚠️ Aviso: Erro na limpeza: {cleanup_error}")
+                        dbg('DOCS', f"⚠️ Aviso: Erro na limpeza: {cleanup_error}")
                     # Return only assistant output so the UI shows the exact text
                     return summary
                 finally:
                     # Ensure temp is removed
                     pass
         elif is_rar_file(temp_path):
-            print("📦 Arquivo RAR detectado. Extraindo TODOS os arquivos suportados...")
+            dbg('DOCS', "📦 Arquivo RAR detectado. Extraindo TODOS os arquivos suportados...")
             success, extracted_files_list, error = extract_all_supported_files_from_rar(temp_path)
             if not success:
                 return f"Erro ao extrair arquivos do RAR: {error}"
@@ -746,10 +717,10 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                 all_markdown_content += "---\n\n"
                 processed_files = []
                 for extracted_path, original_name in extracted_files_list:
-                    print(f"📄 Processando arquivo extraído: {original_name}")
+                    dbg('DOCS', f"📄 Processando arquivo extraído: {original_name}")
                     if os.path.exists(extracted_path):
                         file_size_extracted = os.path.getsize(extracted_path) / (1024 * 1024)
-                        print(f"📏 Tamanho: {file_size_extracted:.2f} MB")
+                        dbg('DOCS', f"📏 Tamanho: {file_size_extracted:.2f} MB")
                         file_success, file_markdown, file_error = convert_document_to_markdown(extracted_path, original_name)
                         if file_success:
                             all_markdown_content += f"## 📄 Arquivo: {original_name}\n\n"
@@ -759,7 +730,7 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                             all_markdown_content += file_markdown
                             all_markdown_content += "\n\n---\n\n"
                             processed_files.append({'name': original_name, 'success': True})
-                            print(f"✅ {original_name} processado com sucesso")
+                            dbg('DOCS', f"✅ {original_name} processado com sucesso")
                         else:
                             all_markdown_content += f"## ❌ Arquivo: {original_name}\n\n"
                             all_markdown_content += f"**Tamanho:** {file_size_extracted:.2f} MB  \n"
@@ -767,23 +738,23 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                             all_markdown_content += f"**Erro:** {file_error}  \n\n"
                             all_markdown_content += "---\n\n"
                             processed_files.append({'name': original_name, 'success': False})
-                            print(f"❌ Erro em {original_name}: {file_error}")
+                            dbg('DOCS', f"❌ Erro em {original_name}: {file_error}")
                     else:
-                        print(f"❌ Arquivo extraído não encontrado: {original_name}")
+                        dbg('DOCS', f"❌ Arquivo extraído não encontrado: {original_name}")
                 try:
                     if extracted_files_list:
                         extract_dir = os.path.dirname(extracted_files_list[0][0])
                         if os.path.exists(extract_dir):
                             shutil.rmtree(extract_dir)
                 except Exception as cleanup_error:
-                    print(f"⚠️ Aviso: Erro na limpeza: {cleanup_error}")
+                    dbg('DOCS', f"⚠️ Aviso: Erro na limpeza: {cleanup_error}")
                 successful_files = [f for f in processed_files if f['success']]
                 if successful_files:
                     success = True
                     markdown_content = all_markdown_content
                     error = None
                     final_filename = f"{final_filename} ({len(successful_files)}-{len(processed_files)} arquivos)"
-                    print(f"✅ RAR processado: {len(successful_files)}/{len(processed_files)} arquivos com sucesso")
+                    dbg('DOCS', f"✅ RAR processado: {len(successful_files)}/{len(processed_files)} arquivos com sucesso")
                 else:
                     return "Erro: Nenhum arquivo do RAR foi processado com sucesso"
             else:
@@ -794,7 +765,7 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                     method_label = "Assistant (arquivos originais)"
                     summary_success, summary_path, summary_error = save_summary_file(summary, final_filename, doc_url, processing_timestamp, pncp_data, method_label=method_label, markdown_filename=None)
                     if not summary_success:
-                        print(f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
+                        dbg('DOCS', f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
                     try:
                         if extracted_files_list:
                             extract_dir = os.path.dirname(extracted_files_list[0][0])
@@ -806,35 +777,26 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                 finally:
                     pass
         else:
-            print(f"📄 Processando arquivo diretamente: {final_filename}")
+            dbg('DOCS', f"📄 Processando arquivo diretamente: {final_filename}")
             file_to_process = temp_path
-            try:
-                print(f"[GSB][RESUMO] Converter -> path='{file_to_process}' nome='{final_filename}'")
-            except Exception:
-                pass
+            dbg('DOCS', f"Converter -> path='{file_to_process}' nome='{final_filename}'")
+
             if GVG_MARKDOWN:
                 success, markdown_content, error = convert_document_to_markdown(file_to_process, final_filename)
                 if not success:
                     return f"Erro na conversão: {error}"
-                try:
-                    print("[GSB][RESUMO] Salvando Markdown...")
-                except Exception:
-                    pass
+                
+                dbg('DOCS', "Salvando Markdown...")
                 save_success, saved_path, save_error = save_markdown_file(markdown_content, final_filename, doc_url, processing_timestamp)
                 if not save_success:
-                    try:
-                        print(f"[GSB][RESUMO] Falha ao salvar Markdown: {save_error}")
-                    except Exception:
-                        pass
+                    dbg('DOCS', f"Falha ao salvar Markdown: {save_error}")
                     return f"Erro ao salvar: {save_error}"
                 summary = generate_document_summary(markdown_content, max_tokens, pncp_data)
-                try:
-                    print(f"[GSB][RESUMO] Resumo gerado (len={len(summary) if isinstance(summary,str) else 'N/A'})")
-                except Exception:
-                    pass
+                
+                dbg('DOCS', f"Resumo gerado (len={len(summary) if isinstance(summary,str) else 'N/A'})")
                 summary_success, summary_path, summary_error = save_summary_file(summary, final_filename, doc_url, processing_timestamp, pncp_data, method_label="Docling + Assistant", markdown_filename=os.path.basename(saved_path) if save_success else None)
                 if not summary_success:
-                    print(f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
+                    dbg('DOCS', f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
                 return summary
             else:
                 # Assistant direto com arquivo original
@@ -842,28 +804,19 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                 method_label = "Assistant (arquivo original)"
                 summary_success, summary_path, summary_error = save_summary_file(summary, final_filename, doc_url, processing_timestamp, pncp_data, method_label=method_label, markdown_filename=None)
                 if not summary_success:
-                    print(f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
+                    dbg('DOCS', f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
                 return summary
         # Common path (GVG_MARKDOWN True) continues below to save markdown + summary (already returned in direct paths)
-        try:
-            print("[GSB][RESUMO] Salvando Markdown...")
-        except Exception:
-            pass
+        dbg('DOCS', "Salvando Markdown...")
         save_success, saved_path, save_error = save_markdown_file(markdown_content, final_filename, doc_url, processing_timestamp)
         if not save_success:
-            try:
-                print(f"[GSB][RESUMO] Falha ao salvar Markdown: {save_error}")
-            except Exception:
-                pass
+            dbg('DOCS', f"Falha ao salvar Markdown: {save_error}")
             return f"Erro ao salvar: {save_error}"
         summary = generate_document_summary(markdown_content, max_tokens, pncp_data)
-        try:
-            print(f"[GSB][RESUMO] Resumo gerado (len={len(summary) if isinstance(summary,str) else 'N/A'})")
-        except Exception:
-            pass
+        dbg('DOCS', f"Resumo gerado (len={len(summary) if isinstance(summary,str) else 'N/A'})")
         summary_success, summary_path, summary_error = save_summary_file(summary, final_filename, doc_url, processing_timestamp, pncp_data, method_label="Docling + Assistant", markdown_filename=os.path.basename(saved_path) if save_success else None)
         if not summary_success:
-            print(f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
+            dbg('DOCS', f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
         return summary
     except Exception as e:
         return f"Erro inesperado no processamento: {str(e)}"
@@ -871,10 +824,7 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
         cleanup_temp_file(temp_path)
 
 def summarize_document(doc_url, max_tokens=500, document_name=None, pncp_data=None):
-    try:
-        print(f"[GSB][RESUMO] summarize_document() url='{str(doc_url)[:80]}{'...' if doc_url and len(str(doc_url))>80 else ''}' nome='{document_name}' tokens={max_tokens}")
-    except Exception:
-        pass
+    dbg('DOCS', f"summarize_document() url='{str(doc_url)[:80]}{'...' if doc_url and len(str(doc_url))>80 else ''}' nome='{document_name}' tokens={max_tokens}")
     return process_pncp_document(doc_url, max_tokens, document_name, pncp_data)
 
 def create_safe_filename(filename, max_length=100):
@@ -936,7 +886,7 @@ def _create_connection():
         )
         return connection
     except Exception as e:
-        print(f"Erro ao conectar ao banco: {e}")
+        dbg('SQL', f"Erro ao conectar ao banco: {e}")
         return None
 
 
@@ -966,7 +916,7 @@ def fetch_documentos(numero_controle: str):
                         documentos.append({'url': url, 'nome': 'Link Sistema', 'tipo': 'origem', 'origem': 'db'})
             cur.close(); conn.close()
         except Exception as e:
-            print(f"⚠️ fetch_documentos DB: {e}")
+            dbg('SQL', f"⚠️ fetch_documentos DB: {e}")
             try:
                 conn.close()
             except Exception:
@@ -997,7 +947,7 @@ def fetch_documentos(numero_controle: str):
                         'origem': 'api'
                     })
         else:
-            print(f"⚠️ API documentos status {resp.status_code} ({numero_controle})")
+            dbg('DOCS', f"⚠️ API documentos status {resp.status_code} ({numero_controle})")
     except Exception as e:
-        print(f"⚠️ API documentos erro: {e}")
+        dbg('DOCS', f"⚠️ API documentos erro: {e}")
     return documentos

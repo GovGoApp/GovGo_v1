@@ -9,6 +9,14 @@ Leia e entenda integralmente todos os arquivos sugeridos e também o arquivo `do
 - Código principal está em `Gvg_Search_Browser.py`. Todos os outros códigos da pasta são auxiliares desse código. 
 - Estilos centralizados em `gvg_styles.py`. Documentação principal: `search/gvg_browser/docs/README.md`.
 
+Atualizações recentes (2025-09-10)
+- Logging centralizado em `gvg_debug.py` com categorias e Rich:
+  - Use `from gvg_debug import debug_log as dbg, debug_sql as dbg_sql`.
+  - Chame `dbg('AREA', 'mensagem')` sem try/except; o gating é interno e controlado por env.
+  - Mensagens saem com prefixo `[AREA]`; `dbg_sql` imprime `[SQL]` em todas as linhas.
+  - Flags: `DEBUG` (master) + `GVG_<AREA>_DEBUG` (ex.: `GVG_SQL_DEBUG`, `GVG_AUTH_DEBUG`, `GVG_DOCS_DEBUG`, `GVG_SEARCH_DEBUG`, `GVG_ASSISTANT_DEBUG`, `GVG_UI_DEBUG`, `GVG_BROWSER_DEBUG`, `GVG_BOLETIM_DEBUG`, `GVG_BMK_DEBUG`, `GVG_FAV_DEBUG`, `GVG_PREPROC_DEBUG`, `GVG_RESUMO_DEBUG`).
+- `GVG_BROWSER_DEV` controla binding DEV/PROD (independente de `DEBUG`): em DEV usa `127.0.0.1:8060`; em PROD usa `0.0.0.0:$PORT`. Porta local override por `BROWSER_PORT`.
+
 Atualizações recentes (2025-09-09)
 - Mobile (≤ 992px): swipe zero‑JS entre “Controles” e “Resultados” (CSS scroll‑snap), desktop preservado (30/70).
 - Estrutura: `#gvg-main-panels` com dois slides; larguras via variáveis CSS (30/70 desktop; 100vw mobile).

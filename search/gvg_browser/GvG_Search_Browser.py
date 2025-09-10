@@ -54,6 +54,7 @@ from gvg_exporters import (
 from gvg_user import (
     get_user_initials,
     set_current_user,
+    set_access_token,
     fetch_prompt_texts,
     add_prompt,
     save_user_results,
@@ -68,6 +69,7 @@ from gvg_boletim import (
     fetch_user_boletins,
 )
 from gvg_styles import styles, CSS_ALL
+from gvg_debug import debug_log as dbg
 from gvg_user import get_current_user
 from gvg_search_core import (
     set_sql_debug,
@@ -220,9 +222,9 @@ try:
                     set_current_user(_bypass_user)
                 except Exception:
                     pass
-                print('[GSB][AUTH] Bypass (--pass) com usuário de ambiente aplicado.')
+                dbg('AUTH', 'Bypass (--pass) com usuário de ambiente aplicado.')
             else:
-                print('[GSB][AUTH] Variáveis PASS_USER_UID/NAME/EMAIL ausentes; bypass ignorado.')
+                dbg('AUTH', 'Variáveis PASS_USER_UID/NAME/EMAIL ausentes; bypass ignorado.')
         except Exception:
             AUTH_INIT = {'status': 'unauth', 'user': None}
 except Exception:
@@ -266,9 +268,9 @@ try:
                     set_current_user(_bypass_user)
                 except Exception:
                     pass
-                print('[GSB][AUTH] Bypass (PASS=on) com usuário de ambiente aplicado.')
+                dbg('AUTH', 'Bypass (PASS=on) com usuário de ambiente aplicado.')
             else:
-                print('[GSB][AUTH] Variáveis PASS_USER_UID/NAME/EMAIL ausentes; bypass ignorado.')
+                dbg('AUTH', 'Variáveis PASS_USER_UID/NAME/EMAIL ausentes; bypass ignorado.')
         except Exception:
             AUTH_INIT = {'status': 'unauth', 'user': None}
 except Exception:
@@ -926,7 +928,7 @@ def _dedupe_boletins(items):
         seen.add(bid)
         out.append(b)
     if dupes:
-        print(f"Boletins duplicados removidos: {dupes}")
+        dbg('BOLETIM', f"Boletins duplicados removidos: {dupes}")
     return out
 
 @app.callback(
@@ -971,10 +973,10 @@ def delete_boletim(n_list, boletins):
         raise PreventUpdate
     # Proteção: só processa se houve clique (>0)
     if not clicked_value or clicked_value <= 0:
-        print(f"Ignorando trigger sem clique efetivo id={bid} valor={clicked_value}")
+        #print(f"Ignorando trigger sem clique efetivo id={bid} valor={clicked_value}")
         raise PreventUpdate
     deactivate_user_boletim(int(bid))
-    print(f"Boletim deletado id={bid} n_clicks={clicked_value}")
+    #print(f"Boletim deletado id={bid} n_clicks={clicked_value}")
     new_list = [b for b in (boletins or []) if b.get('id') != bid]
     new_list = _dedupe_boletins(new_list) if '_dedupe_boletins' in globals() else new_list
     return new_list
@@ -1062,6 +1064,10 @@ def update_boletins_icon(is_open):
     Output('processing-state', 'data', allow_duplicate=True),
     Output('store-history', 'data', allow_duplicate=True),
     Output('store-favorites', 'data', allow_duplicate=True),
+    Output('store-history-open', 'data', allow_duplicate=True),
+    Output('store-favorites-open', 'data', allow_duplicate=True),
+    Output('progress-store', 'data', allow_duplicate=True),
+    Output('store-sort', 'data', allow_duplicate=True),
     Output('query-input', 'value', allow_duplicate=True),
     Output('store-results', 'data', allow_duplicate=True),
     Output('store-results-sorted', 'data', allow_duplicate=True),
@@ -1094,6 +1100,10 @@ def on_auth_changed(auth_data):
             True,                    # processing-state
             [],                      # store-history (limpa rápido)
             [],                      # store-favorites (limpa rápido)
+            True,                    # store-history-open
+            True,                    # store-favorites-open
+            {'percent': 0, 'label': ''},  # progress-store
+            None,                    # store-sort
             '',                      # query-input vazio
             empty_results,
             [],                      # store-results-sorted
@@ -1113,6 +1123,10 @@ def on_auth_changed(auth_data):
         False,
         [],
         [],
+    True,
+    True,
+    {'percent': 0, 'label': ''},
+    None,
     '',
         empty_results,
         [],
@@ -1219,9 +1233,7 @@ def switch_auth_view(n_signup, n_login1, n_login2):
         raise PreventUpdate
     trig = ctx.triggered[0]['prop_id']
     try:
-        # Debug de navegação entre views do overlay de auth
-        if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
-            print(f"[GvG_Browser.switch_auth_view] triggered_by={trig}", flush=True)
+        dbg('AUTH', f"[GvG_Browser.switch_auth_view] triggered_by={trig}")
     except Exception:
         pass
     if 'auth-switch-signup' in trig:
@@ -1252,8 +1264,7 @@ def do_login(n_clicks, email, password, remember_values):
     try:
         ok, session, err = sign_in(email, password)
         try:
-            if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
-                print(f"[GvG_Browser.do_login] sign_in ok={ok} err={err} session_keys={list((session or {}).keys())}", flush=True)
+            dbg('AUTH', f"[GvG_Browser.do_login] sign_in ok={ok} err={err} session_keys={list((session or {}).keys())}")
         except Exception:
             pass
     except Exception as e:
@@ -1303,38 +1314,33 @@ def do_signup(n_clicks, fullname, phone, email, password, terms):
     password = password or ''
     if 'ok' not in (terms or []):
         try:
-            if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
-                print(f"[GvG_Browser.do_signup] terms not accepted | email={email}", flush=True)
+            dbg('AUTH', f"[GvG_Browser.do_signup] terms not accepted | email={email}")
         except Exception:
             pass
         return dash.no_update, 'Você precisa aceitar os Termos de Contratação.', dash.no_update
     if not email or not password or not (fullname or '').strip():
         try:
-            if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
-                print(f"[GvG_Browser.do_signup] missing fields | email_set={bool(email)} name_set={bool((fullname or '').strip())} phone_set={bool((phone or '').strip())}", flush=True)
+            dbg('AUTH', f"[GvG_Browser.do_signup] missing fields | email_set={bool(email)} name_set={bool((fullname or '').strip())} phone_set={bool((phone or '').strip())}")
         except Exception:
             pass
         return dash.no_update, 'Preencha nome, e-mail e senha.', dash.no_update
     ok, msg = False, 'Erro ao cadastrar.'
     try:
         try:
-            if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
-                print(f"[GvG_Browser.do_signup] calling sign_up_with_metadata | email={email} has_phone={bool((phone or '').strip())}", flush=True)
+            dbg('AUTH', f"[GvG_Browser.do_signup] calling sign_up_with_metadata | email={email} has_phone={bool((phone or '').strip())}")
         except Exception:
             pass
         ok, msg = sign_up_with_metadata(email=email, password=password, full_name=(fullname or '').strip(), phone=(phone or '').strip())
     except Exception as e:
         ok, msg = False, f"Erro ao cadastrar: {e}"
     try:
-        if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
-            print(f"[GvG_Browser.do_signup] result ok={ok} msg={msg}", flush=True)
+        dbg('AUTH', f"[GvG_Browser.do_signup] result ok={ok} msg={msg}")
     except Exception:
         pass
     if not ok:
         return dash.no_update, (msg or 'Falha ao cadastrar.'), dash.no_update
     try:
-        if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
-            print(f"[GvG_Browser.do_signup] moving to confirm | pending_email={email}", flush=True)
+        dbg('AUTH', f"[GvG_Browser.do_signup] moving to confirm | pending_email={email}")
     except Exception:
         pass
     return 'confirm', '', email
@@ -1359,17 +1365,15 @@ def do_confirm(n_clicks, email, otp):
     ok, session, err = False, None, None
     try:
         try:
-            if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
-                masked = (('*' * max(0, len(otp) - 2)) + otp[-2:]) if otp else ''
-                print(f"[GvG_Browser.do_confirm] calling verify_otp | email={email} otp_masked={masked}", flush=True)
+            masked = (('*' * max(0, len(otp) - 2)) + otp[-2:]) if otp else ''
+            dbg('AUTH', f"[GvG_Browser.do_confirm] calling verify_otp | email={email} otp_masked={masked}")
         except Exception:
             pass
         ok, session, err = verify_otp(email=email, token=otp, type_='signup')
     except Exception as e:
         ok, session, err = False, None, f"Erro na confirmação: {e}"
     try:
-        if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
-            print(f"[GvG_Browser.do_confirm] result ok={ok} err={err} session_keys={list((session or {}).keys())}", flush=True)
+        dbg('AUTH', f"[GvG_Browser.do_confirm] result ok={ok} err={err} session_keys={list((session or {}).keys())}")
     except Exception:
         pass
     if not ok or not session or not session.get('user'):
@@ -1446,6 +1450,15 @@ def do_logout(n_clicks, auth_data):
             sign_out(rt)
         except Exception:
             pass
+    except Exception:
+        pass
+    # Limpa token/acesso e reseta usuário local (não apaga dados persistidos)
+    try:
+        set_access_token(None)
+    except Exception:
+        pass
+    try:
+        set_current_user({'uid': '', 'email': '', 'name': 'Usuário'})
     except Exception:
         pass
     return {'status': 'unauth', 'user': None}
@@ -2034,7 +2047,7 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
         try:
             from gvg_search_core import SQL_DEBUG
             if SQL_DEBUG:
-                print("[ASSISTANT][process_query] =>", info)
+                dbg('SEARCH', f"process_query => {info}")
         except Exception:
             pass
         if (info.get('search_terms') or '').strip():
@@ -2959,7 +2972,7 @@ def render_details(results, last_query):
         try:
             from gvg_search_core import SQL_DEBUG
             if SQL_DEBUG:
-                print("[GSB][render_details] Nenhum resultado para renderizar.")
+                dbg('UI', "render_details: Nenhum resultado para renderizar.")
         except Exception:
             pass
         return []
@@ -3458,7 +3471,7 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
             try:
                 from gvg_search_core import SQL_DEBUG
                 if SQL_DEBUG:
-                    print(f"[GSB][RESUMO] pncp={pid} documentos_encontrados={len(docs)}")
+                    dbg('DOCS', f"RESUMO pncp={pid} documentos_encontrados={len(docs)}")
             except Exception:
                 pass
             if not docs:
@@ -3480,7 +3493,7 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                 from gvg_search_core import SQL_DEBUG
                 if SQL_DEBUG:
                     short = (url[:80] + '...') if len(url) > 80 else url
-                    print(f"[GSB][RESUMO] Documento escolhido: nome='{nome}' url='{short}'")
+                    dbg('RESUMO', f"Documento escolhido: nome='{nome}' url='{short}'")
             except Exception:
                 pass
             pncp_data = {}
@@ -3515,7 +3528,7 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                         try:
                             from gvg_search_core import SQL_DEBUG
                             if SQL_DEBUG:
-                                print("[GSB][RESUMO] Gerando resumo via summarize_document...")
+                                dbg('RESUMO', "Gerando resumo via summarize_document...")
                         except Exception:
                             pass
                         summary_text = summarize_document(url, max_tokens=500, document_name=nome, pncp_data=pncp_data)
@@ -3523,7 +3536,7 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                         try:
                             from gvg_search_core import SQL_DEBUG
                             if SQL_DEBUG:
-                                print("[GSB][RESUMO] Gerando resumo via process_pncp_document (fallback)...")
+                                dbg('RESUMO', "Gerando resumo via process_pncp_document (fallback)...")
                         except Exception:
                             pass
                         summary_text = process_pncp_document(url, max_tokens=500, document_name=nome, pncp_data=pncp_data)
@@ -3536,7 +3549,7 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                 from gvg_search_core import SQL_DEBUG
                 if SQL_DEBUG and summary_text is not None:
                     sz = len(summary_text) if isinstance(summary_text, str) else 'N/A'
-                    print(f"[GSB][RESUMO] Resumo gerado (chars={sz})")
+                    dbg('RESUMO', f"Resumo gerado (chars={sz})")
             except Exception:
                 pass
 
@@ -3876,7 +3889,7 @@ def load_favorites_on_results(meta):
         try:
             from gvg_search_core import SQL_DEBUG
             if SQL_DEBUG:
-                print(f"[GSB][FAV] load_favorites_on_results: carregados={len(favs)}")
+                dbg('FAV', f"load_favorites_on_results: carregados={len(favs)}")
         except Exception:
             pass
         return _sort_favorites_list(favs)
@@ -4037,7 +4050,7 @@ def toggle_bookmark(n_clicks_list, results, favs):
             try:
                 from gvg_search_core import SQL_DEBUG
                 if SQL_DEBUG:
-                    print(f"[GSB][BMK] toggle_bookmark: REMOVE {clicked_pid}")
+                    dbg('FAV', f"toggle_bookmark: REMOVE {clicked_pid}")
             except Exception:
                 pass
         else:
@@ -4102,7 +4115,7 @@ def toggle_bookmark(n_clicks_list, results, favs):
             try:
                 from gvg_search_core import SQL_DEBUG
                 if SQL_DEBUG:
-                    print(f"[GSB][BMK] toggle_bookmark: ADD {clicked_pid} rotulo={fav_item.get('rotulo')}")
+                    dbg('FAV', f"toggle_bookmark: ADD {clicked_pid} rotulo={fav_item.get('rotulo')}")
             except Exception:
                 pass
         # Sem recarregar do BD aqui: mantemos atualização otimista no UI
@@ -4194,7 +4207,7 @@ def delete_favorite(n_clicks_list, favs):
     if not pid:
         raise PreventUpdate
     # Diagnóstico mínimo sempre visível
-    print(f"[GSB][FAV] delete_favorite fired idx={idx} pid={pid}")
+    dbg('FAV', f"delete_favorite fired idx={idx} pid={pid}")
     # Remove no BD (best-effort)
     try:
         remove_bookmark(pid)
@@ -4355,16 +4368,17 @@ server = app.server  # WSGI entrypoint para Gunicorn/Render
 
 if __name__ == '__main__':
     # Respeitar porta/host de ambiente (Render/Paas)
-    # Em produção (Render), defina DEBUG=false (ou ausente) para desativar dev tools
     _env = os.environ
-    _debug = (_env.get('DEBUG', 'false') or 'false').strip().lower() in ('1', 'true', 'yes', 'on')
-    _port = int(_env.get('PORT', _env.get('RENDER_PORT', '8060')))
-    if _debug:
-        # Ambiente local de desenvolvimento
+    # DEBUG (apenas logs): variável DEBUG controla somente logs/verbosidade no console (já tratada acima)
+    # DEV/PROD: variável GVG_BROWSER_DEV controla modo de execução do servidor (dev tools, host, reloader)
+    _dev_mode = (_env.get('GVG_BROWSER_DEV', 'false') or 'false').strip().lower() in ('1', 'true', 'yes', 'on')
+    if _dev_mode:
+        # Desenvolvimento: http://127.0.0.1:8060
+        _port_dev = int(_env.get('BROWSER_PORT', '8060'))
         app.run_server(
-            debug=True,
-            host='0.0.0.0',
-            port=_port,
+            debug=True,  # Dash dev tools
+            host='127.0.0.1',
+            port=_port_dev,
             dev_tools_hot_reload=True,
             dev_tools_props_check=False,
             dev_tools_ui=False,
@@ -4372,12 +4386,13 @@ if __name__ == '__main__':
             use_reloader=True,
         )
     else:
-        # Produção: sem dev tools
+        # Produção: sem dev tools, exposto em todas as interfaces
+        _port_prod = int(_env.get('PORT', _env.get('RENDER_PORT', '8060')))
         app.run_server(
             debug=False,
             host='0.0.0.0',
-            port=_port,
-            dev_tools_hot_reload=True,
+            port=_port_prod,
+            dev_tools_hot_reload=False,
             dev_tools_props_check=False,
             dev_tools_ui=False,
             use_reloader=False,

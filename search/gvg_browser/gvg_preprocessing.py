@@ -90,7 +90,11 @@ class SearchQueryProcessor:
 				return self._parse_response(response_content, user_query)
                 
 			except Exception as e:
-				print(f"Tentativa {attempt + 1} falhou: {e}")
+				try:
+					from gvg_debug import debug_log as dbg
+					dbg('PREPROC', f"Tentativa {attempt + 1} falhou: {e}")
+				except Exception:
+					pass
 				if attempt == max_retries - 1:
 					# Última tentativa falhou, retornar query original
 					return {

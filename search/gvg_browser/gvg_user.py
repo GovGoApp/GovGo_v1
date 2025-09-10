@@ -10,6 +10,7 @@ import os
 from typing import List, Optional, Dict, Any, Union
 import datetime as _dt
 from gvg_database import create_connection
+from gvg_debug import debug_log as dbg
 
 # Tenta importar auth para obter usuário da sessão (token em cookies)
 try:
@@ -32,8 +33,7 @@ def set_access_token(token: Optional[str]):
     global _ACCESS_TOKEN
     _ACCESS_TOKEN = token
     try:
-        if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
-            print(f"[{_dt.datetime.now()}][gvg_user.set_access_token] token set len={(len(token) if token else 0)}", flush=True)
+        dbg('AUTH', f"gvg_user.set_access_token token_len={(len(token) if token else 0)}")
     except Exception:
         pass
 
@@ -60,8 +60,7 @@ def get_current_user() -> Dict[str, str]:
             }
             return dict(_CURRENT_USER)
     try:
-        if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
-            print(f"[{_dt.datetime.now()}][gvg_user.get_current_user] returning uid={_CURRENT_USER.get('uid')} email={_CURRENT_USER.get('email')}", flush=True)
+        dbg('AUTH', f"gvg_user.get_current_user uid={_CURRENT_USER.get('uid')} email={_CURRENT_USER.get('email')}")
     except Exception:
         pass
     return dict(_CURRENT_USER)
@@ -85,8 +84,7 @@ def set_current_user(user_or_uid: Union[Dict[str, str], str], email: Optional[st
             'name': str(name or 'Usuário'),
         }
     try:
-        if (os.getenv('GVG_AUTH_DEBUG') or '').lower() in ('1','true','yes','on'):
-            print(f"[{_dt.datetime.now()}][gvg_user.set_current_user] uid={_CURRENT_USER.get('uid')} email={_CURRENT_USER.get('email')}", flush=True)
+        dbg('AUTH', f"gvg_user.set_current_user uid={_CURRENT_USER.get('uid')} email={_CURRENT_USER.get('email')}")
     except Exception:
         pass
 
@@ -226,15 +224,13 @@ def add_prompt(
                 else:
                     placeholders.append('%s')
 
-        # Debug opcional
-        debug = (os.getenv('GVG_SQL_DEBUG') in ('1','true','TRUE')) or (os.getenv('GVG_BROWSER_DEBUG') in ('1','true','TRUE'))
-        if debug:
-            try:
-                print('[gvg_user.add_prompt] cols_existing =', sorted(list(cols_existing)))
-                print('[gvg_user.add_prompt] insert_cols =', insert_cols)
-                print('[gvg_user.add_prompt] insert_vals types =', [type(v).__name__ for v in insert_vals])
-            except Exception:
-                pass
+        # Debug opcional (auto-gated pelo dbg)
+        try:
+            dbg('SQL', '[gvg_user.add_prompt] cols_existing = ' + str(sorted(list(cols_existing))))
+            dbg('SQL', '[gvg_user.add_prompt] insert_cols = ' + str(insert_cols))
+            dbg('SQL', '[gvg_user.add_prompt] insert_vals types = ' + str([type(v).__name__ for v in insert_vals]))
+        except Exception:
+            pass
 
         sql = f"INSERT INTO public.user_prompts ({', '.join(insert_cols)}) VALUES ({', '.join(placeholders)}) RETURNING id"
         cur.execute(sql, insert_vals)

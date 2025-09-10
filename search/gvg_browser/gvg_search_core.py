@@ -20,6 +20,7 @@ import psycopg2
 
 # Importações dos módulos otimizados
 from gvg_database import create_connection
+from gvg_debug import debug_log as dbg, debug_sql as dbg_sql
 from gvg_ai_utils import get_embedding, get_negation_embedding, calculate_confidence
 from gvg_schema import (
 	CONTRATACAO_TABLE, CONTRATACAO_EMB_TABLE, CATEGORIA_TABLE,
@@ -264,23 +265,13 @@ def _summarize_param(p: Any) -> str:
 
 
 def _debug_sql(label: str, sql: str, params: List[Any], names: Optional[List[str]] = None):
-	"""Standardized SQL debug printing with placeholder vs parameter counts."""
+	"""Wrapper para debug SQL usando gvg_debug (Rich)."""
 	if not SQL_DEBUG:
 		return
 	try:
-		import re as _re
-		placeholders = len(_re.findall(r'(?<!%)%s', sql))
+		dbg_sql(label, sql, params, names)
 	except Exception:
-		placeholders = sql.count('%s')
-	print(f"\n[SQL][{label}] placeholders={placeholders} params={len(params)} match={'YES' if placeholders==len(params) else 'NO'}")
-	print(sql)
-	if params:
-		print("---------------------------------")
-		print(f"[PARAMS][{label}] →")
-		for i, p in enumerate(params):
-			name = names[i] if (names and i < len(names)) else None
-			prefix = (name + " = ") if name else ""
-			print(f"  {i:02d}: {prefix}{_summarize_param(p)}")
+		pass
 
 def _get_processed(query_text: str):
 	"""Executa processamento inteligente com fallback simples."""
@@ -529,7 +520,7 @@ def semantic_search(query_text,
 				executed_optimized = True
 			except Exception as opt_err:
 				if sql_debug:
-					print(f"⚠️ Vetor otimizado falhou: {opt_err}")
+					dbg('SQL', f"⚠️ Vetor otimizado falhou: {opt_err}")
 				try:
 					if conn:
 						conn.rollback()
@@ -594,7 +585,7 @@ def semantic_search(query_text,
 					results = filtered
 			except Exception as rf_err:
 					if SQL_DEBUG:
-						print(f"⚠️ Filtro de relevância falhou: {rf_err}")
+						dbg('SEARCH', f"⚠️ Filtro de relevância falhou: {rf_err}")
 
 		return results, calculate_confidence([r['similarity'] for r in results])
 	except Exception as e:
@@ -604,8 +595,8 @@ def semantic_search(query_text,
 		except Exception:
 			pass
 		if SQL_DEBUG:
-			print(f"[ERRO][semantic_search] {type(e).__name__}: {e}")
-		print(f"Erro na busca semântica: {e}")
+			dbg('SQL', f"[ERRO][semantic_search] {type(e).__name__}: {e}")
+		dbg('SEARCH', f"Erro na busca semântica: {e}")
 		return [], 0.0
 	finally:
 		_safe_close(cursor, conn)
@@ -745,10 +736,10 @@ def keyword_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 					results = filtered
 			except Exception as rf_err:
 				if sql_debug:
-					print(f"⚠️ Filtro de relevância falhou: {rf_err}")
+					dbg('SEARCH', f"⚠️ Filtro de relevância falhou: {rf_err}")
 		return results, calculate_confidence([r['similarity'] for r in results])
 	except Exception as e:
-		print(f"Erro na busca por palavras‑chave: {e}")
+		dbg('SEARCH', f"Erro na busca por palavras‑chave: {e}")
 		return [], 0.0
 	finally:
 		_safe_close(cursor, conn)
@@ -867,11 +858,11 @@ def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 						results = filtered
 				except Exception as rf_err:
 							if sql_debug:
-								print(f"⚠️ [ERRO] Filtro de relevância falhou: {rf_err}")
+								dbg('SEARCH', f"⚠️ [ERRO] Filtro de relevância falhou: {rf_err}")
 			return results, calculate_confidence([r['similarity'] for r in results])
 		except Exception as fe:
 			if sql_debug:
-				print(f"⚠️ [ERRO] Híbrida SQL única falhou, fallback dupla: {fe}")
+				dbg('SQL', f"⚠️ [ERRO] Híbrida SQL única falhou, fallback dupla: {fe}")
 			# Fallback: combinar duas buscas
 			sem_results, sem_conf = semantic_search(query_text, limit, min_results, filter_expired, use_negation, intelligent_mode)
 			kw_results, kw_conf = keyword_search(query_text, limit, min_results, filter_expired, intelligent_mode)
@@ -915,11 +906,11 @@ def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 						final = filtered
 				except Exception as rf_err:
 							if sql_debug:
-								print(f"⚠️ Filtro de relevância falhou: {rf_err}")
+								dbg('SEARCH', f"⚠️ Filtro de relevância falhou: {rf_err}")
 			conf = sem_conf*semantic_weight + kw_conf*kw_weight
 			return final, conf
 	except Exception as e:
-		print(f"Erro na busca híbrida: {e}")
+		dbg('SEARCH', f"Erro na busca híbrida: {e}")
 		return [], 0.0
 	finally:
 		_safe_close(cursor, conn)
@@ -934,14 +925,13 @@ def toggle_intelligent_processing(enable: bool = True):
 	global ENABLE_INTELLIGENT_PROCESSING
 	ENABLE_INTELLIGENT_PROCESSING = enable
 	status = "ATIVADO" if enable else "DESATIVADO"
-	print("========================================")
-	print(f"🧠 Processamento Inteligente: {status}")
+	dbg('SEARCH', f"🧠 Processamento Inteligente: {status}")
 
 def set_sql_debug(enable: bool = False):
 	"""Define a flag global de debug de SQL."""
 	global SQL_DEBUG
 	SQL_DEBUG = bool(enable)
-	print(f"🔎 SQL Debug: {'ATIVADO' if SQL_DEBUG else 'DESATIVADO'}")
+	dbg('SQL', f"🔎 SQL Debug: {'ATIVADO' if SQL_DEBUG else 'DESATIVADO'}")
 
 def get_intelligent_status():
 	"""
@@ -1000,8 +990,8 @@ def get_top_categories_for_query(query_text: str, top_n: int = 10, use_negation:
 			})
 		return out
 	except Exception as e:
-		if console:
-			console.print(f"[red]Erro ao buscar categorias: {e}[/red]")
+		from gvg_debug import debug_log as dbg
+		dbg('SEARCH', f"Erro ao buscar categorias: {e}")
 		return []
 
 def _calculate_correspondence_similarity_score(query_categories, result_categories, result_similarities):
@@ -1097,7 +1087,8 @@ def correspondence_search(query_text, top_categories, limit=30, filter_expired=T
 		confidence = calculate_confidence([r['similarity'] for r in results]) if results else 0.0
 		return results, confidence, {'total_raw': len(rows)}
 	except Exception as e:
-		if console: console.print(f"[red]Erro correspondência: {e}[/red]")
+		from gvg_debug import debug_log as dbg
+		dbg('SEARCH', f"Erro correspondência: {e}")
 		return [], 0.0, {'error': str(e)}
 
 def category_filtered_search(query_text, search_type, top_categories, limit=30, filter_expired=True, use_negation=True, expanded_factor=3, console=None):
@@ -1171,7 +1162,8 @@ def category_filtered_search(query_text, search_type, top_categories, limit=30, 
 		}
 		return filtered, confidence, meta
 	except Exception as e:
-		if console: console.print(f"[red]Erro filtro categorias: {e}[/red]")
+		from gvg_debug import debug_log as dbg
+		dbg('SEARCH', f"Erro filtro categorias: {e}")
 		return [], 0.0, {'error': str(e)}
 
 __all__ = [
@@ -1208,7 +1200,7 @@ def fetch_itens_contratacao(numero_controle_pncp: str, limit: int = 500) -> List
 		return out
 	except Exception as e:
 		if SQL_DEBUG:
-			print(f"[ERRO][fetch_itens_contratacao] {e}")
+			dbg('SQL', f"[ERRO][fetch_itens_contratacao] {e}")
 		try:
 			if conn:
 				conn.rollback()
@@ -1249,7 +1241,7 @@ def fetch_contratacao_by_pncp(numero_controle_pncp: str) -> Optional[Dict[str, A
 		return rec
 	except Exception as e:
 		if SQL_DEBUG:
-			print(f"[ERRO][fetch_contratacao_by_pncp] {e}")
+			dbg('SQL', f"[ERRO][fetch_contratacao_by_pncp] {e}")
 		try:
 			if conn: conn.rollback()
 		except Exception:

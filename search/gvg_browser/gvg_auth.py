@@ -32,20 +32,13 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 
 _client: Optional[Any] = None
 
-# Debug helpers
-def _is_auth_debug() -> bool:
-    val = os.getenv('GVG_AUTH_DEBUG') or os.getenv('GVG_BROWSER_DEBUG')
-    return str(val).lower() in ('1', 'true', 'yes', 'on')
-
+from gvg_debug import debug_log as dbg
 def _dbg(tag: str, msg: str, extra: Optional[Dict[str, Any]] = None):
-    if not _is_auth_debug():
-        return
     try:
-        ts = _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        line = f"[{ts}][gvg_auth.{tag}] {msg}"
+        payload = f"[gvg_auth.{tag}] {msg}"
         if extra:
-            line += f" | extra={extra}"
-        print(line, flush=True)
+            payload += f" | extra={extra}"
+        dbg('AUTH', payload)
     except Exception:
         pass
 

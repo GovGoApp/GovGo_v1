@@ -298,10 +298,20 @@ Atenção:
 
 ## Depuração
 
-- Ative `--debug` para imprimir SQL de busca e etapas do pipeline no console.
-- Em `gvg_search_core.set_sql_debug(True)` também ativa prints internos.
-- Progresso de busca é refletido no spinner central e numa barra de progresso (percent/label).
- - Para diagnosticar interações da UI (favoritos, histórico, janelas Itens/Docs/Resumo), verifique se o modo debug está ativo para observar mensagens no console.
+- Sistema de logs centralizado (`gvg_debug.py`) com categorias e Rich:
+  - Importação: `from gvg_debug import debug_log as dbg, debug_sql as dbg_sql`.
+  - Uso: chame diretamente `dbg('AREA', 'mensagem')` — sem try/except nem guards; o `dbg` já verifica as flags.
+  - Prefixo automático: toda mensagem sai como `[AREA] ...`; `dbg_sql` imprime `[SQL] ...` (inclui cabeçalho, SQL e parâmetros).
+  - Flags de ambiente (booleanos: 1/true/yes/on):
+    - `DEBUG`: master. Se `false`, nada loga. Se `true`, apenas áreas com `GVG_<AREA>_DEBUG=true` logam.
+    - `GVG_<AREA>_DEBUG`: por categoria, ex.: `GVG_SQL_DEBUG`, `GVG_AUTH_DEBUG`, `GVG_SEARCH_DEBUG`, `GVG_DOCS_DEBUG`, `GVG_ASSISTANT_DEBUG`, `GVG_UI_DEBUG`, `GVG_BROWSER_DEBUG`, `GVG_BOLETIM_DEBUG`, `GVG_BMK_DEBUG`, `GVG_FAV_DEBUG`, `GVG_PREPROC_DEBUG`, `GVG_RESUMO_DEBUG`.
+  - Exemplos: `dbg('AUTH', 'Login ok')` → `[AUTH] Login ok`; `dbg_sql('fetch', sql, params)` → linhas com `[SQL]`.
+
+Outros:
+- `--debug` (CLI) e/ou `DEBUG=1` (env) habilitam logs gerais; ligue as áreas específicas que deseja ver.
+- `set_sql_debug(True)` segue existindo, porém prefira controlar por `DEBUG` + `GVG_SQL_DEBUG`.
+- Progresso de busca é refletido no spinner central e numa barra (percent/label).
+- Para diagnosticar UI (favoritos, histórico, Itens/Docs/Resumo), ative `GVG_UI_DEBUG`/`GVG_DOCS_DEBUG` etc.
 
 ## Estrutura de pastas (dentro de `gvg_browser`)
 
@@ -334,10 +344,17 @@ Atenção:
 ---
 
 
+## Atualizações recentes (2025-09-10)
+- Logging unificado por categorias (`gvg_debug`):
+  - `dbg` auto‑gaitado por `DEBUG` + `GVG_<AREA>_DEBUG` (sem `isdbg` nem try/except ao redor de logs).
+  - Prefixo `[AREA]` em todas as mensagens; `dbg_sql` imprime `[SQL]` em todas as linhas (header, SQL e params).
+  - Novas flags por área adicionadas ao `.env` do browser.
+- `GVG_BROWSER_DEV` separa DEV/PROD de `DEBUG` (host/porta independentes do nível de log).
+
 ## Atualizações recentes (2025-09-09)
 - Mobile (≤ 992px): swipe zero‑JS entre “Controles” e “Resultados” via CSS scroll‑snap; desktop preservado (30/70).
 - Estrutura: painéis envolvidos em `#gvg-main-panels > .gvg-slide`; larguras controladas por variáveis CSS (desktop 30/70; mobile 100vw por slide).
 - Estilos centralizados em `gvg_styles.py`; nenhuma nova dependência.
 - Header: título “GvG Search” oculto no mobile.
 
-Última atualização: 2025-09-09.
+Última atualização: 2025-09-10.
