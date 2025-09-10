@@ -228,6 +228,52 @@ try:
 except Exception:
     pass
 
+# ==============================================================
+# Suporte a variáveis de ambiente: DEBUG/PASS (equivalentes a --debug/--pass)
+# ==============================================================
+try:
+    def _truthy(val) -> bool:
+        try:
+            return str(val).strip().lower() in ("1", "true", "yes", "on")
+        except Exception:
+            return False
+
+    # DEBUG via ambiente => mesmo efeito de --debug (liga verbose SQL/assistants)
+    if _truthy(os.getenv("DEBUG")):
+        try:
+            set_sql_debug(True)
+        except Exception:
+            pass
+
+    # PASS via ambiente => mesmo efeito de --pass (bypass de autenticação)
+    if _truthy(os.getenv("PASS")):
+        import os as _os
+        try:
+            # Carregar .env se variáveis do usuário de bypass não estiverem presentes
+            try:
+                if not _os.getenv('PASS_USER_UID'):
+                    from dotenv import load_dotenv as _ld
+                    _ld()  # silencioso
+            except Exception:
+                pass
+            _uid = _os.getenv('PASS_USER_UID')
+            _name = _os.getenv('PASS_USER_NAME')
+            _email = _os.getenv('PASS_USER_EMAIL')
+            if _uid and _name and _email:
+                _bypass_user = {'uid': _uid, 'name': _name, 'email': _email}
+                AUTH_INIT = {'status': 'auth', 'user': _bypass_user}
+                try:
+                    set_current_user(_bypass_user)
+                except Exception:
+                    pass
+                print('[GSB][AUTH] Bypass (PASS=on) com usuário de ambiente aplicado.')
+            else:
+                print('[GSB][AUTH] Variáveis PASS_USER_UID/NAME/EMAIL ausentes; bypass ignorado.')
+        except Exception:
+            AUTH_INIT = {'status': 'unauth', 'user': None}
+except Exception:
+    pass
+
 # ==========================
 # Progresso global (polled por Interval)
 # ==========================

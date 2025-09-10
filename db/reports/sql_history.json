@@ -10,5 +10,41 @@
     "question": "SELECT c.data_publicacao_pncp::date AS data, COUNT(DISTINCT c.numero_controle_pncp) AS contagem_contratacoes, COUNT(DISTINCT e.numero_controle_pncp) AS contagem_embeddings, COUNT(DISTINCT e.numero_controle_pncp) FILTER (WHERE e.top_categories IS NOT NULL) AS contagem_top_categories FROM contratacao AS c LEFT JOIN contratacao_emb AS e ON c.numero_controle_pncp = e.numero_controle_pncp GROUP BY c.data_publicacao_pncp::date ORDER BY c.data_publicacao_pncp::date DESC LIMIT 1000;",
     "sql": "SELECT c.data_publicacao_pncp::date AS data, COUNT(DISTINCT c.numero_controle_pncp) AS contagem_contratacoes, COUNT(DISTINCT e.numero_controle_pncp) AS contagem_embeddings, COUNT(DISTINCT e.numero_controle_pncp) FILTER (WHERE e.top_categories IS NOT NULL) AS contagem_top_categories FROM contratacao AS c LEFT JOIN contratacao_emb AS e ON c.numero_controle_pncp = e.numero_controle_pncp GROUP BY c.data_publicacao_pncp::date ORDER BY c.data_publicacao_pncp::date DESC LIMIT 1000;",
     "timestamp": "11/08/2025 18:15:30"
+  },
+  {
+    "id": "1",
+    "question": "me mostre a lista de cod_cat e nom_cat",
+    "sql": "SELECT cod_cat, nom_cat FROM categoria ORDER BY cod_cat;",
+    "timestamp": "10/09/2025 00:14:49"
+  },
+  {
+    "id": "2",
+    "question": "pegue 100 cod_cat random. Para cada um deles, quero a contagem de quantas contratacoes tem o cod_cat como primeiro da lista de top_categories. ",
+    "sql": "WITH random_cod_cat AS ( SELECT cod_cat FROM categoria ORDER BY RANDOM() LIMIT 100 ) SELECT r.cod_cat, COUNT(DISTINCT e.numero_controle_pncp) AS total_contratacoes FROM random_cod_cat AS r LEFT JOIN contratacao_emb AS e ON r.cod_cat = e.top_categories[1] GROUP BY r.cod_cat ORDER BY total_contratacoes DESC;",
+    "timestamp": "10/09/2025 00:16:46"
+  },
+  {
+    "id": "3",
+    "question": "mostre o nom_cat tambem",
+    "sql": "WITH random_cod_cat AS ( SELECT cod_cat, nom_cat FROM categoria ORDER BY RANDOM() LIMIT 100 ) SELECT r.cod_cat, r.nom_cat, COUNT(DISTINCT e.numero_controle_pncp) AS total_contratacoes FROM random_cod_cat AS r LEFT JOIN contratacao_emb AS e ON r.cod_cat = e.top_categories[1] GROUP BY r.cod_cat, r.nom_cat ORDER BY total_contratacoes DESC;",
+    "timestamp": "10/09/2025 00:17:40"
+  },
+  {
+    "id": "4",
+    "question": "quero tambem o valor medio da primeira similaridade para cada cod_cat, o valor max e o valor min ",
+    "sql": "WITH random_cod_cat AS ( SELECT cod_cat, nom_cat FROM categoria ORDER BY RANDOM() LIMIT 100 ) SELECT r.cod_cat, r.nom_cat, COUNT(DISTINCT e.numero_controle_pncp) AS total_contratacoes, AVG(e.top_similarities[1]::numeric) AS similaridade_media, MAX(e.top_similarities[1]::numeric) AS similaridade_max, MIN(e.top_similarities[1]::numeric) AS similaridade_min FROM random_cod_cat AS r LEFT JOIN contratacao_emb AS e ON r.cod_cat = e.top_categories[1] GROUP BY r.cod_cat, r.nom_cat ORDER BY total_contratacoes DESC;",
+    "timestamp": "10/09/2025 00:20:54"
+  },
+  {
+    "id": "5",
+    "question": "agora faça o seguinte: pegue 100 cod_cat random. Para cada um deles, quero a contagem de quantas contratacoes tem o cod_cat em qualquer uma das posições da lista de top_categories.",
+    "sql": "WITH random_cod_cat AS ( SELECT cod_cat, nom_cat FROM categoria ORDER BY RANDOM() LIMIT 100 ) SELECT r.cod_cat, r.nom_cat, COUNT(DISTINCT e.numero_controle_pncp) AS total_contratacoes FROM random_cod_cat AS r LEFT JOIN contratacao_emb AS e ON r.cod_cat = ANY(e.top_categories) GROUP BY r.cod_cat, r.nom_cat ORDER BY total_contratacoes DESC;",
+    "timestamp": "10/09/2025 00:26:40"
+  },
+  {
+    "id": "6",
+    "question": "quero tambem o valor medio da similaridade para cada cod_cat, o valor max e o valor min, para qualquer posição ",
+    "sql": "WITH random_cod_cat AS ( SELECT cod_cat, nom_cat FROM categoria ORDER BY RANDOM() LIMIT 100 ) SELECT r.cod_cat, r.nom_cat, COUNT(DISTINCT e.numero_controle_pncp) AS total_contratacoes, AVG(unnest(e.top_similarities)::numeric) AS similaridade_media, MAX(unnest(e.top_similarities)::numeric) AS similaridade_max, MIN(unnest(e.top_similarities)::numeric) AS similaridade_min FROM random_cod_cat AS r LEFT JOIN contratacao_emb AS e ON r.cod_cat = ANY(e.top_categories) GROUP BY r.cod_cat, r.nom_cat ORDER BY total_contratacoes DESC;",
+    "timestamp": "10/09/2025 00:28:17"
   }
 ]
