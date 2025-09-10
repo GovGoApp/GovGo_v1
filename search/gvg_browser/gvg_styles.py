@@ -46,10 +46,10 @@ styles = {
     'tab_button_base': {
     'display': 'inline-flex', 'alignItems': 'center', 'gap': '6px',
     'borderRadius': '16px', 'borderTopRightRadius': '18px', 'borderBottomRightRadius': '18px',
-    'padding': '2px 2px 2px 8px', 'cursor': 'pointer',
+    'padding': '4px 2px 4px 8px', 'cursor': 'pointer',
     'border': '2px solid #D0D7E2', 'backgroundColor': 'white', 'color': '#003A70',
     'overflow': 'hidden', 'textOverflow': 'ellipsis', 'whiteSpace': 'nowrap',
-    'fontSize': '11px', 'flex': '0 0 auto'
+    'fontSize': '12px', 'flex': '0 0 auto'
     },
     'tab_button_active': {
     'borderColor': '#003A70',
@@ -62,11 +62,11 @@ styles = {
     'borderColor': '#2E7D32', 'color': '#2E7D32', 'backgroundColor': "#DDF5DF"
     },
     'tab_close_btn': {
-    'width': '14px', 'height': '14px', 'minWidth': '14px',
-    'borderRadius': '50%', 'border': '1px solid #888888', 'backgroundColor': 'white',
+    'width': '20px', 'height': '20px', 'minWidth': '20px',
+    'borderRadius': '50%', 'border': '2px solid #888888', 'backgroundColor': 'white',
     'color': '#888888', 'cursor': 'pointer',
     'display': 'inline-flex', 'alignItems': 'center', 'justifyContent': 'center',
-    'lineHeight': '0', 'padding': '2px', 'fontSize': '10px',
+    'lineHeight': '0', 'padding': '4px', 'fontSize': '12px',
     'boxSizing': 'border-box', 'marginRight': '0px', 'marginLeft': '4px',
     'transform': 'translateY(0.5px)'
     },
@@ -92,6 +92,19 @@ styles = {
         'alignItems': 'center',
         'justifyContent': 'center',
         'cursor': 'pointer'
+    },
+    # Variante específica para os botões de exportação (fonte menor)
+    'export_button': {
+        'backgroundColor': '#FF5722',
+        'color': 'white',
+        'border': 'none',
+        'borderRadius': '25px',
+        'height': '25px',
+        'display': 'flex',
+        'alignItems': 'center',
+        'justifyContent': 'center',
+        'cursor': 'pointer',
+        'fontSize': '12px'
     },
     'input_container': {
         'padding': '10px',
@@ -279,9 +292,9 @@ styles = {
         'marginTop': '20px', 'paddingTop': '16px', 'paddingLeft': '20px', 'paddingRight': '20px'
     },
     'panel_wrapper': {
-        'marginTop': '50px', 'backgroundColor': '#FFFFFF', 'border': '1px solid transparent',
+    'marginTop': '35px', 'backgroundColor': '#FFFFFF', 'border': '1px solid transparent',
         'borderRadius': '12px', 'padding': '10px',
-        'flex': '1 1 auto', 'minHeight': '0', 'position': 'relative', 'display': 'none'
+    'flex': '1 1 auto', 'position': 'relative', 'display': 'none'
     },
     # --- Export row ---
     'export_row': {
@@ -317,7 +330,7 @@ styles = {
     },
     # Inner container inside each details window (content padding + font)
     'details_content_inner': {
-        'padding': '4px',
+        'padding': '1px',
         'fontFamily': "Segoe UI, Roboto, Arial, sans-serif",
         'fontSize': '12px'
     },
@@ -539,6 +552,9 @@ BASE_CSS = """
 
 #gvg-center-spinner { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; display: flex; flex-direction: column; align-items: center; width: 260px; }
 
+/* Espaçamento padrão entre botões (ações) e a janela tripla */
+.gvg-panel-wrapper { margin-top: 50px; }
+
 /* MODO MOBILE (≤ 992px): slider horizontal com scroll-snap, zero-JS */
 @media (max-width: 992px) {
     :root { --gvg-left-slide-width: 100vw; --gvg-right-slide-width: 100vw; }
@@ -548,8 +564,11 @@ BASE_CSS = """
     /* Detalhes acima, janelas (Itens/Docs/Resumo) abaixo */
     .gvg-details-row { flex-direction: column !important; gap: 8px !important; }
     .gvg-details-row > div { width: 100% !important; }
-    /* Botões de ação no painel direito: alinhar ao topo à esquerda em mobile */
-    .gvg-details-row .gvg-right-actions { position: static !important; margin-bottom: 6px; }
+    /* Botões de ação no painel direito: alinhar ao topo à esquerda em mobile, sem margem extra */
+    .gvg-details-row .gvg-right-actions { position: static !important; margin-bottom: 0; }
+
+    /* Altura mínima das janelas (Itens/Docs/Resumo) quando abertas, para caber ~10 linhas */
+    .gvg-panel-wrapper { min-height: 360px !important; }
 }
 """
 

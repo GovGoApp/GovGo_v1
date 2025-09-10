@@ -635,11 +635,11 @@ results_panel = html.Div([
     html.Div([
         html.Div([
             html.Div('Exportar', style=styles['card_title']),
-            html.Button('JSON', id='export-json', style={**styles['submit_button'], 'width': '120px'}),
-            html.Button('XLSX', id='export-xlsx', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
-            html.Button('CSV', id='export-csv', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
-            html.Button('PDF', id='export-pdf', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
-            html.Button('HTML', id='export-html', style={**styles['submit_button'], 'width': '120px', 'marginLeft': '6px'}),
+            html.Button('JSON', id='export-json', style={**styles['export_button'], 'width': '60px'}),
+            html.Button('XLSX', id='export-xlsx', style={**styles['export_button'], 'width': '60px', 'marginLeft': '6px'}),
+            html.Button('CSV', id='export-csv', style={**styles['export_button'], 'width': '60px', 'marginLeft': '6px'}),
+            html.Button('PDF', id='export-pdf', style={**styles['export_button'], 'width': '60px', 'marginLeft': '6px'}),
+            html.Button('HTML', id='export-html', style={**styles['export_button'], 'width': '60px', 'marginLeft': '6px'}),
     ], style=styles['export_row'])
     ], id='export-panel', style={**styles['result_card'], 'display': 'none'}),
     html.Div(id='categories-table', style={**styles['result_card'], 'display': 'none'}),
@@ -3061,6 +3061,7 @@ def render_details(results, last_query):
                         style=styles['details_content_base']
                     ),
                 ],
+                className='gvg-panel-wrapper',
                 style=styles['panel_wrapper']
             )
         ], style=styles['details_right_panel'])
@@ -3695,9 +3696,9 @@ def toggle_panel_wrapper(active_map, results):
         pncp_ids.append(str(pid) if pid is not None else 'N/A')
     for pid in pncp_ids:
         base = {
-            'marginTop': '50px', 'backgroundColor': '#FFFFFF', 'border': '1px solid transparent',
+            'backgroundColor': '#FFFFFF', 'border': '1px solid transparent',
             'borderRadius': '12px', 'padding': '10px',
-            'flex': '1 1 auto', 'minHeight': '0', 'position': 'relative', 'display': 'none'
+            'flex': '1 1 auto', 'position': 'relative', 'display': 'none'
         }
         if str(pid) in (active_map or {}):
             base['display'] = 'block'
@@ -4376,7 +4377,7 @@ if __name__ == '__main__':
             debug=False,
             host='0.0.0.0',
             port=_port,
-            dev_tools_hot_reload=False,
+            dev_tools_hot_reload=True,
             dev_tools_props_check=False,
             dev_tools_ui=False,
             use_reloader=False,
