@@ -19,6 +19,73 @@ import sys
 import subprocess
 from datetime import datetime
 from pathlib import Path
+import importlib.util
+
+
+def _print(msg: str):  # impressão simples padronizada
+    print(msg, flush=True)
+
+
+def ensure_dependencies():
+    """Bootstrap idempotente das dependências mínimas do pipeline.
+
+    Se qualquer pacote crítico não estiver importável, executa:
+      python -m pip install --no-cache-dir -r scripts/requirements.txt
+
+    Controle via env:
+      PIPELINE_SKIP_BOOTSTRAP=1  -> pula checagem
+      PIPELINE_DEBUG_BOOTSTRAP=1 -> imprime detalhes extras
+    """
+    if os.environ.get("PIPELINE_SKIP_BOOTSTRAP") == "1":
+        _print("[BOOTSTRAP] Pulado (PIPELINE_SKIP_BOOTSTRAP=1)")
+        return
+
+    critical = [
+        ("requests", "requests"),
+        ("openai", "openai"),
+        ("psycopg2", "psycopg2"),
+        ("numpy", "numpy"),
+        ("pandas", "pandas"),
+        ("rich", "rich"),
+        ("dotenv", "python-dotenv"),  # import nome -> pacote pypi
+    ]
+
+    missing = []
+    for import_name, pkg in critical:
+        if importlib.util.find_spec(import_name) is None:
+            missing.append(pkg)
+
+    if not missing:
+        _print("[BOOTSTRAP] Dependências já presentes")
+        if os.environ.get("PIPELINE_DEBUG_BOOTSTRAP") == "1":
+            _print(f"[BOOTSTRAP] Python: {sys.executable}")
+        return
+
+    req_path = Path(__file__).resolve().parent / "requirements.txt"
+    if not req_path.exists():
+        _print(f"[BOOTSTRAP][ERRO] requirements não encontrado em {req_path}")
+        sys.exit(2)
+
+    _print(f"[BOOTSTRAP] Faltando: {', '.join(missing)} -> instalando via {req_path.name}")
+    try:
+        cmd = [sys.executable, "-m", "pip", "install", "--no-cache-dir", "-r", str(req_path)]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            _print("[BOOTSTRAP][ERRO] Falha na instalação pip")
+            _print(result.stdout)
+            _print(result.stderr)
+            sys.exit(3)
+        _print("[BOOTSTRAP] Instalação concluída")
+    except Exception as e:
+        _print(f"[BOOTSTRAP][ERRO] Exceção na instalação: {e}")
+        sys.exit(4)
+
+    # Verificar novamente
+    still_missing = [pkg for imp, pkg in critical if importlib.util.find_spec(imp) is None]
+    if still_missing:
+        _print(f"[BOOTSTRAP][ERRO] Ainda faltando: {', '.join(still_missing)}")
+        sys.exit(5)
+    _print("[BOOTSTRAP] Verificação final OK")
 
 
 def main() -> int:
@@ -33,6 +100,9 @@ def main() -> int:
     # Modo debug opcional: exporte PIPELINE_DEBUG=1 para propagar --debug
     debug_enabled = os.environ.get("PIPELINE_DEBUG") in {"1", "true", "TRUE", "yes", "on"}
     base_env = os.environ.copy()
+
+    # Bootstrap de dependências antes de qualquer execução
+    ensure_dependencies()
 
     steps = [
         ("ETAPA_1_DOWNLOAD", "03_download_pncp_contracts.py", ["--debug"] if debug_enabled else []),
