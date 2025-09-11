@@ -37,7 +37,7 @@ import argparse
 # =======================================================================
 
 MAX_WORKERS = 20  # Paralelismo otimizado para itens de contratação
-
+#20  # Paralelismo otimizado para itens de contratação (20 + main thread)      ==========================
 # Configuração do console Rich
 console = Console()
 
