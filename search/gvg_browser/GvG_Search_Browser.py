@@ -610,30 +610,29 @@ controls_panel = html.Div([
 results_panel = html.Div([
     html.Div(id='tabs-bar', style=styles['tabs_bar']),
     html.Div(id='status-bar', style={**styles['result_card'], 'display': 'none'}),
-    # Card de processamento (apenas durante pendência da aba de consulta ativa)
+    # Spinner central durante processamento (idêntico ao botão de busca em modo cálculo)
     html.Div(
         [
-            html.Div('Processando consulta...', style={**styles['card_title'], 'marginTop': '0', 'paddingBottom': '4px'}),
+            # Barra de progresso fina sob o spinner
             html.Div(
                 [
                     html.Div(
-                        id='progress-bar',
-                        children=[
-                            html.Div(id='progress-fill', style={**styles['progress_fill'], 'width': '0%'})
-                        ],
-                        style={**styles['progress_bar_container'], 'display': 'none'}
-                    ),
-                    html.Div(
-                        id='progress-label',
-                        children='',
-                        style={**styles['progress_label'], 'display': 'none'}
+                        id='progress-fill',
+            style={**styles['progress_fill'], 'width': '0%'}
                     )
                 ],
-                style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center', 'justifyContent': 'center'}
+                id='progress-bar',
+        style={**styles['progress_bar_container'], 'display': 'none'}
+            ),
+            # Rótulo/percentual abaixo da barra
+            html.Div(
+                id='progress-label',
+                children='',
+        style={**styles['progress_label'], 'display': 'none'}
             )
         ],
-        id='processing-card',
-        style={**styles['result_card'], 'display': 'none'}
+        id='gvg-center-spinner',
+    style=styles['center_spinner']
     ),
     html.Div([
         html.Div([
@@ -686,6 +685,8 @@ app.layout = html.Div([
     dcc.Store(id='store-cache-docs', data={}),
     dcc.Store(id='store-cache-resumo', data={}),
     dcc.Store(id='progress-store', data={'percent': 0, 'label': ''}),
+    # Token da consulta corrente (para vincular aba pendente ao resultado final)
+    dcc.Store(id='store-current-query-token', data=None),
     dcc.Interval(id='progress-interval', interval=400, n_intervals=0, disabled=True),
     dcc.Download(id='download-out'),
 
@@ -2004,9 +2005,10 @@ def save_history(history: list, max_items: int = 50):
     State('max-results', 'value'),
     State('top-categories', 'value'),
     State('toggles', 'value'),
+    State('store-current-query-token', 'data'),
     prevent_initial_call=True,
 )
-def run_search(is_processing, query, s_type, approach, relevance, order, max_results, top_cat, toggles):
+def run_search(is_processing, query, s_type, approach, relevance, order, max_results, top_cat, toggles, current_token):
     if not is_processing:
         raise PreventUpdate
     if not query or len(query.strip()) < 3:
@@ -2187,20 +2189,19 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
         progress_reset()
     except Exception:
         pass
-    # Evento final de sessão (atualiza aba pendente existente)
+    # Evento de sessão (gatilho único para criar/ativar aba)
     try:
         sign = _make_query_signature(query, meta, results)
         session_event = {
-            'token': int(time.time()*1000),
+            'token': current_token or int(time.time()*1000),
             'type': 'query',
+            'status': 'completed',
             'title': (query or '').strip(),
             'signature': sign,
-            'pending': False,
-            'pending_key': (query or '').strip().lower(),
             'payload': {
                 'results': results or [],
                 'categories': categories or [],
-                'meta': {**(meta or {}), 'status': 'ready'},
+                'meta': meta or {},
             }
         }
     except Exception:
@@ -2233,30 +2234,51 @@ def create_or_update_session(session_event, sessions, active):
         title = (session_event.get('title') or '').strip() or 'Consulta'
         s_type = session_event.get('type') or 'query'
         payload = session_event.get('payload') or {}
-        pending_flag = session_event.get('pending')
-        pending_key = session_event.get('pending_key')
+        status = session_event.get('status') or 'completed'
+        token = session_event.get('token')
 
-        # Atualização final de uma aba pendente existente
-        if not pending_flag and pending_key:
+        # 1) Se evento é de conclusão (completed) tentar localizar sessão pendente via token
+        if status == 'completed' and token is not None:
             for sid, sess in sessions.items():
-                if sess.get('type') == 'query' and sess.get('pending') and sess.get('pending_key') == pending_key:
+                if sess.get('pending_token') == token:
+                    # Atualizar esta sessão com dados finais
                     sess['results'] = payload.get('results') or []
                     sess['categories'] = payload.get('categories') or []
                     sess['meta'] = payload.get('meta') or {}
                     sess['signature'] = sign
-                    sess['pending'] = False
+                    sess.pop('pending_token', None)
+                    sess['title'] = title  # manter texto original (sem Processando)
                     return sessions, sid
-        # Evento pendente repetido (ativar) – deixamos ignorado aqui (pendente criado em outro callback)
-        if pending_flag and pending_key:
-            for sid, sess in sessions.items():
-                if sess.get('type') == 'query' and sess.get('pending') and sess.get('pending_key') == pending_key:
-                    return sessions, sid
-        # Deduplicação por assinatura (apenas prontos)
-        if sign and not pending_flag:
+
+        # 2) Caso assinatura já exista (duplicidade), apenas ativar
+        if sign:
             for sid, sess in sessions.items():
                 if sess.get('signature') and sess.get('signature') == sign:
                     return sessions, sid
-        # Limite de abas
+
+        # 3) Evento pendente: criar nova sessão vazia
+        if status == 'pending':
+            import time as _t
+            sid = (('p-' if s_type == 'pncp' else 'q-') + str(int(_t.time()*1000)))
+            # Limite de 100 abas (remove a mais antiga não ativa)
+            keys = list(sessions.keys())
+            if len(keys) >= 100:
+                for k in keys:
+                    if k != active:
+                        sessions.pop(k, None)
+                        break
+            sessions[sid] = {
+                'type': s_type,
+                'title': title,  # será exibido como Processando na renderização
+                'results': [],
+                'categories': [],
+                'meta': payload.get('meta') or {'status': 'processing'},
+                'sort': None,
+                'signature': None,
+                'pending_token': token,
+            }
+            return sessions, sid
+        # Limite de 100 abas (remove a mais antiga não ativa)
         keys = list(sessions.keys())
         if len(keys) >= 100:
             for k in keys:
@@ -2273,8 +2295,6 @@ def create_or_update_session(session_event, sessions, active):
             'meta': payload.get('meta') or {},
             'sort': None,
             'signature': sign,
-            'pending': bool(pending_flag),
-            'pending_key': pending_key,
         }
         return sessions, sid
     except Exception:
@@ -2319,7 +2339,7 @@ def render_tabs_bar(sessions, active):
                     'color': 'white',
                 })
                 close_style.update({
-                    'border': '1px solid white',
+                    'border': '2px solid white',
                     'color': 'white',
                     'backgroundColor': 'transparent'
                 })
@@ -2369,15 +2389,24 @@ def render_tabs_bar(sessions, active):
                 rotulo = f"PNCP {pid}".strip()
             label_full = f"{rotulo} - {loc}" if loc else rotulo
         else:
-            # Query: "CONSULTA: " + query[:47] + "..."
-            q = sess.get('title') or ''
-            q_short = (q[:40] + '...') if isinstance(q, str) else '...'
-            label_full = f"CONSULTA: {q_short}"
+            # Query tab: se pendente mostrar Processando + spinner
+            if sess.get('pending_token') is not None:
+                label_full = "CONSULTA: Processando"
+            else:
+                q = sess.get('title') or ''
+                q_short = (q[:40] + '...') if isinstance(q, str) else '...'
+                label_full = f"CONSULTA: {q_short}"
         # Truncamento defensivo para caber na aba (além do ellipsis via CSS)
         label = label_full
 
         # Left icon based on tab type
-        icon = html.I(className=("fas fa-bookmark" if sess.get('type') == 'pncp' else "fas fa-search"))
+        if sess.get('type') == 'pncp':
+            icon = html.I(className="fas fa-bookmark")
+        else:
+            if sess.get('pending_token') is not None:
+                icon = html.I(className="fas fa-spinner fa-spin")
+            else:
+                icon = html.I(className="fas fa-search")
         out.append(html.Div([
             icon,
             html.Span(label, title=label_full),
@@ -2461,6 +2490,9 @@ def sync_active_session(active, sessions):
     sessions = sessions or {}
     sess = sessions.get(active) if active else None
     if not sess:
+        raise PreventUpdate
+    # Evitar sincronizar sessão de consulta pendente (sem resultados ainda)
+    if sess.get('type') == 'query' and sess.get('pending_token') is not None:
         raise PreventUpdate
     results = sess.get('results') or []
     meta = sess.get('meta') or {}
@@ -2607,7 +2639,15 @@ def update_submit_button(is_processing):
     return html.I(className="fas fa-arrow-right"), False, styles['arrow_button']
 
 
-# (Removido) spinner central global substituído por card interno da sessão
+# Mostrar/ocultar spinner central no painel direito
+@app.callback(
+    Output('gvg-center-spinner', 'style'),
+    Input('processing-state', 'data')
+)
+def toggle_center_spinner(is_processing):
+    if is_processing:
+        return {'display': 'block'}
+    return {'display': 'none'}
 
 
 # Habilita/desabilita o Interval do progresso conforme o processamento
@@ -2676,17 +2716,12 @@ def reflect_progress_bar(data, is_processing):
     Output('store-cache-docs', 'data', allow_duplicate=True),
     Output('store-cache-resumo', 'data', allow_duplicate=True),
     Input('processing-state', 'data'),
-    State('store-active-session', 'data'),
-    State('store-result-sessions', 'data'),
     prevent_initial_call=True,
 )
-def clear_results_content_on_start(is_processing, active_sid, sessions):
+def clear_results_content_on_start(is_processing):
     if not is_processing:
         raise PreventUpdate
-    sessions = sessions or {}
-    sess = sessions.get(active_sid) if active_sid else None
-    if not (sess and sess.get('type') == 'query' and sess.get('pending')):
-        raise PreventUpdate
+    # Esvazia conteúdos imediatamente
     return [], [], [], [], {}, {}, {}, {}
 
 
@@ -2698,77 +2733,49 @@ def clear_results_content_on_start(is_processing, active_sid, sessions):
     Output('results-table', 'style', allow_duplicate=True),
     Output('results-details', 'style', allow_duplicate=True),
     Input('processing-state', 'data'),
-    State('store-active-session', 'data'),
-    State('store-result-sessions', 'data'),
     prevent_initial_call=True,
 )
-def hide_result_panels_during_processing(is_processing, active_sid, sessions):
+def hide_result_panels_during_processing(is_processing):
     if not is_processing:
-        raise PreventUpdate
-    sessions = sessions or {}
-    sess = sessions.get(active_sid) if active_sid else None
-    if not (sess and sess.get('type') == 'query' and sess.get('pending')):
         raise PreventUpdate
     base = styles['result_card'].copy()
     hidden = {**base, 'display': 'none'}
     return hidden, hidden, hidden, hidden, hidden
 
 
-"""Iniciar processamento: cria evento de sessão pendente e ativa estado de processamento.
-
-Emite:
- - processing-state = True (para disparar run_search)
- - store-session-event (aba pendente imediatamente visível)
-"""
+# Callback: define estado de processamento quando clicar seta
 @app.callback(
     Output('processing-state', 'data', allow_duplicate=True),
     Output('store-session-event', 'data', allow_duplicate=True),
+    Output('store-current-query-token', 'data', allow_duplicate=True),
     Input('submit-button', 'n_clicks'),
     State('query-input', 'value'),
     State('processing-state', 'data'),
     prevent_initial_call=True,
 )
-def start_query_processing(n_clicks, query, is_processing):
+def set_processing_state(n_clicks, query, is_processing):
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
-    if is_processing or not n_clicks or not query or not query.strip():
+    if is_processing or not query or not query.strip():
         raise PreventUpdate
+    # Criar token único para esta rodada
     import time as _t
-    q = query.strip()
+    token = int(_t.time()*1000)
+    # Evento de sessão inicial "pendente" (aba vazia)
     pending_event = {
-        'token': int(_t.time()*1000),
+        'token': token,
         'type': 'query',
-        'title': q,
-        'signature': None,
-        'pending': True,
-        'pending_key': q.lower(),
+        'status': 'pending',
+        'title': (query or '').strip(),
+        'signature': None,  # ainda não conhecida
         'payload': {
             'results': [],
             'categories': [],
-            'meta': {'status': 'pending'},
+            'meta': {'status': 'processing'}
         }
     }
-    return True, pending_event
-
-
-# Exibir/ocultar card de processamento conforme aba ativa pendente
-@app.callback(
-    Output('processing-card', 'style'),
-    Input('store-active-session', 'data'),
-    Input('store-result-sessions', 'data'),
-    Input('processing-state', 'data'),
-    prevent_initial_call=False,
-)
-def toggle_processing_card(active_sid, sessions, is_processing):
-    sessions = sessions or {}
-    sess = sessions.get(active_sid) if active_sid else None
-    base = dict(styles['result_card'])
-    if sess and sess.get('type') == 'query' and sess.get('pending') and is_processing:
-        base['display'] = 'block'
-    else:
-        base['display'] = 'none'
-    return base
+    return True, pending_event, token
 
 
 # Toggle config collapse open/close and icon

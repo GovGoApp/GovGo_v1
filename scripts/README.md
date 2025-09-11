@@ -445,5 +445,5 @@ Para suporte técnico, inclua:
 ---
 
 **Versão**: V1.0  
-**Última atualização**: Janeiro 2025  
+**Última atualização**: Agosto 2025  
 **Compatibilidade**: Python 3.8+, PostgreSQL 13+, pgvector

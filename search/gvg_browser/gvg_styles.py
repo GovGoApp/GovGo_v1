@@ -66,8 +66,8 @@ styles = {
     'borderRadius': '50%', 'border': '2px solid #888888', 'backgroundColor': 'white',
     'color': '#888888', 'cursor': 'pointer',
     'display': 'inline-flex', 'alignItems': 'center', 'justifyContent': 'center',
-    'lineHeight': '0', 'padding': '4px', 'fontSize': '12px',
-    'boxSizing': 'border-box', 'marginRight': '0px', 'marginLeft': '4px',
+    'lineHeight': '0', 'padding': '0px', 'fontSize': '12px',
+    'boxSizing': 'border-box', 'marginRight': '2px', 'marginLeft': '6px',
     'transform': 'translateY(0.5px)'
     },
     'tabs_content': {
