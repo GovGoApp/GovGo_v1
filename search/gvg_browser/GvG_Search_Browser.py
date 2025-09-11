@@ -62,6 +62,7 @@ from gvg_user import (
     fetch_bookmarks,
     add_bookmark,
     remove_bookmark,
+    fetch_user_results_for_prompt_text,
 )
 from gvg_boletim import (
     create_user_boletim,
@@ -2250,10 +2251,19 @@ def create_or_update_session(session_event, sessions, active):
                     sess['title'] = title  # manter texto original (sem Processando)
                     return sessions, sid
 
-        # 2) Caso assinatura já exista (duplicidade), apenas ativar
+        # 2) Caso assinatura já exista (duplicidade)
+        #    - Para 'history': mover a aba existente para o fim (direita) e ativar
+        #    - Demais tipos: apenas ativar
         if sign:
             for sid, sess in sessions.items():
                 if sess.get('signature') and sess.get('signature') == sign:
+                    try:
+                        if (session_event.get('type') or '').lower() == 'history':
+                            # Reordenar: remover e reinserir para ir ao final (dict preserva ordem de inserção)
+                            data = sessions.pop(sid)
+                            sessions[sid] = data
+                    except Exception:
+                        pass
                     return sessions, sid
 
         # 3) Evento pendente: criar nova sessão vazia
@@ -2354,6 +2364,10 @@ def render_tabs_bar(sessions, active):
                     'color': status_color,
                     'backgroundColor': 'white'
                 })
+        elif sess.get('type') == 'history':
+            base_style.update(styles['tab_button_query'])
+            if is_active:
+                base_style.update(styles['tab_button_active'])
         else:
             # Abas de consulta (query) permanecem como estão
             base_style.update(styles['tab_button_query'])
@@ -2388,6 +2402,13 @@ def render_tabs_bar(sessions, active):
                     pid = ''
                 rotulo = f"PNCP {pid}".strip()
             label_full = f"{rotulo} - {loc}" if loc else rotulo
+        elif sess.get('type') == 'history':
+            if sess.get('pending_token') is not None:
+                label_full = "HISTÓRICO: Processando"
+            else:
+                q = sess.get('title') or ''
+                q_short = (q[:40] + '...') if isinstance(q, str) else '...'
+                label_full = f"HISTÓRICO: {q_short}"
         else:
             # Query tab: se pendente mostrar Processando + spinner
             if sess.get('pending_token') is not None:
@@ -2402,6 +2423,8 @@ def render_tabs_bar(sessions, active):
         # Left icon based on tab type
         if sess.get('type') == 'pncp':
             icon = html.I(className="fas fa-bookmark")
+        elif sess.get('type') == 'history':
+            icon = html.I(className="fas fa-history")
         else:
             if sess.get('pending_token') is not None:
                 icon = html.I(className="fas fa-spinner fa-spin")
@@ -2497,8 +2520,8 @@ def sync_active_session(active, sessions):
     results = sess.get('results') or []
     meta = sess.get('meta') or {}
     categories = sess.get('categories') or []
-    # last_query deve refletir a aba ativa (para o card de resumo)
-    last_query = (sess.get('title') or '') if (sess.get('type') == 'query') else ''
+    # last_query deve refletir a aba ativa (para o card de resumo) em 'query' e 'history'
+    last_query = (sess.get('title') or '') if (sess.get('type') in ('query','history')) else ''
     # results-sorted será recalculado pelo callback existente compute_sorted_results
     return results, [], categories, meta, last_query
 
@@ -2866,27 +2889,64 @@ def init_history(history):
     Input('store-history', 'data')
 )
 def render_history_list(history):
-    items = history or []
-    if not items:
+    # Busca dados enriquecidos (texto + configurações) e reconcilia com a ordem atual de history
+    from gvg_user import fetch_prompts_with_config
+    items_order = history or []
+    if not items_order:
         return html.Div('Sem consultas ainda.', style=styles['muted_text'])
-    # Render as buttons
+    try:
+        rich = fetch_prompts_with_config(limit=max(50, len(items_order))) or []
+        # Mapa por texto
+        by_text = { (r.get('text') or '').strip(): r for r in rich }
+    except Exception:
+        by_text = {}
     buttons = []
-    for i, q in enumerate(items):
+    for i, q in enumerate(items_order):
+        q_txt = (q or '').strip()
+        rec = by_text.get(q_txt) or {}
+        # Linha 1: prompt em negrito
+        line1 = html.Div(q_txt, style=styles['history_prompt'])
+        # Linha 2: configurações (10px)
+        cfg_parts = []
+        try:
+            st = rec.get('search_type'); sa = rec.get('search_approach'); rl = rec.get('relevance_level'); sm = rec.get('sort_mode')
+            mr = rec.get('max_results'); tc = rec.get('top_categories_count'); fe = rec.get('filter_expired')
+            if st in SEARCH_TYPES: cfg_parts.append(f"Tipo: {SEARCH_TYPES[st]['name']}")
+            if sa in SEARCH_APPROACHES: cfg_parts.append(f"Abordagem: {SEARCH_APPROACHES[sa]['name']}")
+            if rl in RELEVANCE_LEVELS: cfg_parts.append(f"Relevância: {RELEVANCE_LEVELS[rl]['name']}")
+            if sm in SORT_MODES: cfg_parts.append(f"Ordenação: {SORT_MODES[sm]['name']}")
+            if mr is not None: cfg_parts.append(f"Máx: {mr}")
+            if tc is not None: cfg_parts.append(f"Categorias: {tc}")
+            if fe is not None: cfg_parts.append(f"Encerradas: {'ON' if fe else 'OFF'}")
+        except Exception:
+            pass
+        cfg_txt = ' | '.join([str(x) for x in cfg_parts if x])
+        line2 = html.Div(cfg_txt, style=styles['history_config']) if cfg_txt else html.Div('', style=styles['history_config'])
+        body = html.Div([line1, line2])
         buttons.append(
             html.Div([
                 html.Button(
-                    q,
+                    body,
                     id={'type': 'history-item', 'index': i},
-                    title=q,
+                    title=q_txt,
                     style=styles['history_item_button']
                 ),
-                html.Button(
-                    html.I(className='fas fa-trash'),
-                    id={'type': 'history-delete', 'index': i},
-                    title='Apagar esta consulta',
-                    style=styles['history_delete_btn'],
-                    className='delete-btn'
-                )
+                html.Div([
+                    html.Button(
+                        html.I(className='fas fa-trash'),
+                        id={'type': 'history-delete', 'index': i},
+                        title='Apagar esta consulta',
+                        style=styles['history_delete_btn'],
+                        className='delete-btn'
+                    ),
+                    html.Button(
+                        html.I(className='fas fa-undo'),
+                        id={'type': 'history-replay', 'index': i},
+                        title='Reabrir resultados desta consulta',
+                        style=styles['history_replay_btn'],
+                        className='delete-btn'
+                    )
+                ], style=styles['history_actions_col'])
             ], className='history-item-row', style=styles['history_item_row'])
         )
     return html.Div(buttons, style=styles['column'])
@@ -3829,6 +3889,9 @@ def toggle_results_visibility(meta, results, categories, active, sessions):
         export_style = hidden
         table_style = hidden
         details_style = show if show_results else hidden
+    # Em abas HISTÓRICO, esconder categorias; demais cards seguem como na consulta
+    if sess_type == 'history':
+        cats_style = hidden
     return status_style, cats_style, export_style, table_style, details_style
 
 
@@ -3921,6 +3984,50 @@ def delete_history_item(n_clicks_list, history):
         del items[idx]
     save_history(items)
     return items
+
+
+# Rever item do histórico: abre aba HISTÓRICO com resultados salvos
+@app.callback(
+    Output('store-session-event', 'data', allow_duplicate=True),
+    Input({'type': 'history-replay', 'index': ALL}, 'n_clicks'),
+    State('store-history', 'data'),
+    prevent_initial_call=True,
+)
+def replay_from_history(n_clicks_list, history):
+    if not n_clicks_list or not any(n_clicks_list):
+        raise PreventUpdate
+    # Qual índice foi clicado
+    idx = None
+    for i, n in enumerate(n_clicks_list):
+        if n:
+            idx = i; break
+    if idx is None:
+        raise PreventUpdate
+    items = list(history or [])
+    if idx < 0 or idx >= len(items):
+        raise PreventUpdate
+    prompt_text = (items[idx] or '').strip()
+    if not prompt_text:
+        raise PreventUpdate
+    # Buscar resultados persistidos e montar evento de sessão
+    try:
+        rows = fetch_user_results_for_prompt_text(prompt_text, limit=500)
+    except Exception:
+        rows = []
+    # Meta mínima para cards
+    meta = {'order': 1, 'count': len(rows), 'source': 'history'}
+    session_event = {
+        'type': 'history',
+        'status': 'completed',
+        'title': prompt_text,
+        'signature': f"history:{prompt_text[:100]}",
+        'payload': {
+            'results': rows,
+            'categories': [],
+            'meta': meta
+        }
+    }
+    return session_event
 
 
 # ==========================

@@ -17,10 +17,7 @@ Atualizações recentes (2025-09-10)
   - Flags: `DEBUG` (master) + `GVG_<AREA>_DEBUG` (ex.: `GVG_SQL_DEBUG`, `GVG_AUTH_DEBUG`, `GVG_DOCS_DEBUG`, `GVG_SEARCH_DEBUG`, `GVG_ASSISTANT_DEBUG`, `GVG_UI_DEBUG`, `GVG_BROWSER_DEBUG`, `GVG_BOLETIM_DEBUG`, `GVG_BMK_DEBUG`, `GVG_FAV_DEBUG`, `GVG_PREPROC_DEBUG`, `GVG_RESUMO_DEBUG`).
 - `GVG_BROWSER_DEV` controla binding DEV/PROD (independente de `DEBUG`): em DEV usa `127.0.0.1:8060`; em PROD usa `0.0.0.0:$PORT`. Porta local override por `BROWSER_PORT`.
 
-Atualizações recentes (2025-09-09)
-- Mobile (≤ 992px): swipe zero‑JS entre “Controles” e “Resultados” (CSS scroll‑snap), desktop preservado (30/70).
 - Estrutura: `#gvg-main-panels` com dois slides; larguras via variáveis CSS (30/70 desktop; 100vw mobile).
-- Header: ocultar o título “GvG Search” no mobile.
 
 
 ## Arquivos para ler
@@ -30,11 +27,14 @@ Atualizações recentes (2025-09-09)
 - `search/gvg_browser/gvg_user.py` (usuário, histórico, favoritos)
 - `search/gvg_browser/gvg_documents.py` (documentos, resumo)
 - `search/gvg_browser/gvg_styles.py` (estilos)
-- `search/gvg_browser/gvg_preprocessing.py`, `gvg_exporters.py`, `gvg_schema.py`, `gvg_database.py` conforme necessário
-- Banco: `db/BDS1.txt` (esquema de referência; não executar)
+- `search/gvg_browser/gvg_preprocessing.py`, (pré-processamento)
+- `gvg_exporters.py`, (exportação de arquivos)
+- `gvg_schema.py`, (esquema de nomes)
+- `gvg_database.py`, (banco de dados)
 
-## Bancos e esquema (BDS1)
+## Banco de Dados e esquema (BDS1)
 - Arquivo: `search/gvg_browser/db/BDS1.txt`
+- Tipo: `SUPABASE` (POSTGRES)
 - Principal: `public.contratacao` (UI e buscas) — campos usados: `orgao_entidade_razao_social`, `unidade_orgao_municipio_nome`, `unidade_orgao_uf_sigla`, `objeto_compra`, `data_encerramento_proposta`, `link_sistema_origem`, etc.
 - Embeddings: `public.contratacao_emb` (pgvector; `top_categories`/`top_similarities`).
 - Itens: `public.item_contratacao` (painel “Itens”).

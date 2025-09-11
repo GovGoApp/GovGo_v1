@@ -11,6 +11,8 @@ from typing import List, Optional, Dict, Any, Union
 import datetime as _dt
 from gvg_database import create_connection
 from gvg_debug import debug_log as dbg
+from gvg_schema import get_contratacao_core_columns, PRIMARY_KEY
+from gvg_search_core import _augment_aliases
 
 # Tenta importar auth para obter usuário da sessão (token em cookies)
 try:
@@ -414,6 +416,86 @@ def save_user_results(prompt_id: int, results: List[Dict[str, Any]]) -> bool:
         except Exception:
             pass
         return False
+    finally:
+        try:
+            if cur: cur.close()
+        finally:
+            if conn: conn.close()
+
+
+def fetch_user_results_for_prompt_text(text: str, limit: int = 500) -> List[Dict[str, Any]]:
+    """Carrega resultados salvos (public.user_results) para o prompt com o texto fornecido.
+
+    Junta com user_prompts (para obter o prompt_id mais recente/ativo) e contratacao (para detalhes).
+    Retorna no formato esperado pela UI: [{'id','numero_controle','rank','similarity','details':{...}}]
+    """
+    if not text:
+        return []
+    user = get_current_user(); uid = user.get('uid')
+    if not uid:
+        return []
+    conn = None; cur = None
+    try:
+        conn = create_connection()
+        if not conn:
+            return []
+        cur = conn.cursor()
+        # Detecta coluna active em user_prompts
+        try:
+            cur.execute(
+                """
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='user_prompts' AND column_name='active'
+                """
+            )
+            has_active = bool(cur.fetchone())
+        except Exception:
+            has_active = False
+        core_cols = get_contratacao_core_columns('c')
+        core_expr = ",\n  ".join(core_cols)
+        where_up = ["up.user_id = %s", "up.text = %s"]
+        params: List[Any] = [uid, text]
+        if has_active:
+            where_up.append("up.active = true")
+        # Junta prompts (mais recente), results e contratacao
+        sql = (
+            "SELECT "
+            "  ur.numero_controle_pncp, ur.rank, ur.similarity, ur.valor, ur.data_encerramento_proposta,\n  "
+            + core_expr +
+            f"\nFROM public.user_prompts up\n"
+            f"JOIN public.user_results ur ON ur.prompt_id = up.id AND ur.user_id = up.user_id\n"
+            f"JOIN public.contratacao c ON c.{PRIMARY_KEY} = ur.numero_controle_pncp\n"
+            "WHERE " + " AND ".join(where_up) + "\n"
+            "ORDER BY ur.rank ASC\n"
+            "LIMIT %s"
+        )
+        params.append(limit)
+        cur.execute(sql, params)
+        rows = cur.fetchall() or []
+        colnames = [d[0] for d in cur.description]
+        out: List[Dict[str, Any]] = []
+        for row in rows:
+            rec = dict(zip(colnames, row))
+            pid = rec.get('numero_controle_pncp')
+            rank = rec.get('rank')
+            sim = rec.get('similarity')
+            # Extrai apenas as colunas core para details
+            details = {k: rec.get(k) for k in colnames if k in [f.split('.')[-1] if '.' in f else f for f in core_cols]}
+            _augment_aliases(details)
+            out.append({
+                'id': pid,
+                'numero_controle': pid,
+                'rank': int(rank) if rank is not None else None,
+                'similarity': float(sim) if sim is not None else None,
+                'details': details
+            })
+        return out
+    except Exception:
+        try:
+            if conn: conn.rollback()
+        except Exception:
+            pass
+        return []
     finally:
         try:
             if cur: cur.close()

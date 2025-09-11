@@ -231,7 +231,24 @@ styles = {
         'lineHeight': '1.25',
         'cursor': 'pointer'
     },
+    'history_prompt': {
+        'fontWeight': 'bold', 'color': '#003A70'
+    },
+    'history_config': {
+        'fontSize': '10px', 'color': '#003A70', 'marginTop': '2px'
+    },
+    # Coluna vertical de ações (ex.: lixeira em cima e replay embaixo)
+    'history_actions_col': {
+        'display': 'flex', 'flexDirection': 'column', 'gap': '4px', 'alignItems': 'center'
+    },
     'history_delete_btn': {
+        'width': '28px', 'height': '28px', 'minWidth': '28px',
+        'borderRadius': '50%', 'border': '1px solid #FF5722',
+        'backgroundColor': 'white', 'color': '#FF5722',
+        'cursor': 'pointer'
+    },
+    # Botão de replay com o mesmo formato/dimensão da lixeira
+    'history_replay_btn': {
         'width': '28px', 'height': '28px', 'minWidth': '28px',
         'borderRadius': '50%', 'border': '1px solid #FF5722',
         'backgroundColor': 'white', 'color': '#FF5722',
