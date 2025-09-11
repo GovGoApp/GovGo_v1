@@ -4009,16 +4009,34 @@ def render_favorites_list(favs, toggles):
     prevent_initial_call=True,
 )
 def toggle_bookmark(n_clicks_list, results, favs):
-
+    # Conjunto de favoritos atual
     fav_set = {str(x.get('numero_controle_pncp')) for x in (favs or [])}
-    pncp_ids = []
+
+    # Obter a lista de componentes atualmente correspondidos pelo padrão (na ordem do layout)
+    ctx = callback_context
+    layout_pncp_ids = []
+    try:
+        # ctx.inputs é um dict com chaves JSON do id -> propriedade
+        keys = list((ctx.inputs or {}).keys()) if ctx else []
+        import json as _json
+        for k in keys:
+            try:
+                tid = _json.loads(k.split('.')[0])
+                if isinstance(tid, dict) and tid.get('type') == 'bookmark-btn':
+                    layout_pncp_ids.append(str(tid.get('pncp')))
+            except Exception:
+                continue
+    except Exception:
+        layout_pncp_ids = []
+
+    # Mapear PNCPs dos resultados (para localizar índice clicado)
+    results_pncp_ids = []
     for r in (results or []):
         d = (r or {}).get('details', {}) or {}
         pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
-        pncp_ids.append(str(pid) if pid is not None else 'N/A')
+        results_pncp_ids.append(str(pid) if pid is not None else 'N/A')
 
-    # Determine if a click occurred and which index
-    ctx = callback_context
+    # Determine if a click occurred and which index dentre os resultados
     clicked_pid = None
     clicked_idx = None
     if ctx and ctx.triggered:
@@ -4027,8 +4045,8 @@ def toggle_bookmark(n_clicks_list, results, favs):
             import json as _json
             t = _json.loads(id_str)
             clicked_pid = str(t.get('pncp'))
-            # localizar índice correspondente ao pncp para checar n_clicks
-            for i, pid in enumerate(pncp_ids):
+            # localizar índice correspondente ao pncp nos resultados
+            for i, pid in enumerate(results_pncp_ids):
                 if str(pid) == clicked_pid:
                     clicked_idx = i
                     break
@@ -4123,8 +4141,11 @@ def toggle_bookmark(n_clicks_list, results, favs):
     updated_favs = _sort_favorites_list(updated_favs)
     # Ícones imediatos (com base no updated_favs)
     fav_set_after = {str(x.get('numero_controle_pncp')) for x in (updated_favs or [])}
+    # Se não há componentes correspondidos no layout no momento, retornar lista vazia
+    if not layout_pncp_ids:
+        return [], updated_favs
     children_out = []
-    for pid in pncp_ids:
+    for pid in layout_pncp_ids:
         icon_class = 'fas fa-bookmark' if pid in fav_set_after else 'far fa-bookmark'
         children_out.append(html.I(className=icon_class))
 
@@ -4135,17 +4156,38 @@ def toggle_bookmark(n_clicks_list, results, favs):
     Output({'type': 'bookmark-btn', 'pncp': ALL}, 'children', allow_duplicate=True),
     Input('store-favorites', 'data'),
     State('store-results-sorted', 'data'),
+    State({'type': 'bookmark-btn', 'pncp': ALL}, 'n_clicks'),  # usado apenas para obter a contagem/ordem atual
     prevent_initial_call=True,
 )
-def sync_bookmark_icons(favs, results):
+def sync_bookmark_icons(favs, results, current_n_clicks):
+    # Conjunto de favoritos atualizado
     fav_set = {str(x.get('numero_controle_pncp')) for x in (favs or [])}
-    pncp_ids = []
-    for r in (results or []):
-        d = (r or {}).get('details', {}) or {}
-        pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
-        pncp_ids.append(str(pid) if pid is not None else 'N/A')
+
+    # Extrair os ids dos componentes atualmente montados no layout (ordem do layout)
+    ctx = callback_context
+    layout_pncp_ids = []
+    try:
+        keys = list((ctx.states or {}).keys()) if ctx else []
+        import json as _json
+        for k in keys:
+            if not k.endswith('.n_clicks'):
+                continue
+            try:
+                tid = _json.loads(k.split('.')[0])
+                if isinstance(tid, dict) and tid.get('type') == 'bookmark-btn':
+                    layout_pncp_ids.append(str(tid.get('pncp')))
+            except Exception:
+                continue
+    except Exception:
+        layout_pncp_ids = []
+
+    # Se não há componentes no layout, retornar lista vazia para casar com o spec de saída []
+    if not layout_pncp_ids:
+        return []
+
+    # Montar ícones conforme favoritos
     children_out = []
-    for pid in pncp_ids:
+    for pid in layout_pncp_ids:
         is_fav = pid in fav_set
         icon_class = 'fas fa-bookmark' if is_fav else 'far fa-bookmark'
         children_out.append(html.I(className=icon_class))
