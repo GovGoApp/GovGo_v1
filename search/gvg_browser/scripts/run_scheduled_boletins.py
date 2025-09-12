@@ -21,8 +21,6 @@ try:
     from search.gvg_browser.gvg_boletim import (
         list_active_schedules_all,
         record_boletim_results,
-        fetch_unsent_results_for_boletim,
-        mark_results_sent,
         touch_last_run,
     )
     from search.search_v1.GvG_Search_Function import gvg_search  # retorna dict com 'results'
@@ -32,11 +30,9 @@ except Exception:
     import sys, os
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from gvg_boletim import (
-    list_active_schedules_all,
-    record_boletim_results,
-    fetch_unsent_results_for_boletim,
-    mark_results_sent,
-    touch_last_run,
+        list_active_schedules_all,
+        record_boletim_results,
+        touch_last_run,
     )
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
     from search_v1.GvG_Search_Function import gvg_search  # retorna dict com 'results'
@@ -261,11 +257,7 @@ def run_once(now: Optional[datetime] = None) -> None:
         # marcar last_run
         touch_last_run(sid, now)
 
-        # opcional: marcar como enviados imediatamente (desligável no futuro)
-        unsent = fetch_unsent_results_for_boletim(sid, baseline_iso)
-        ids = [x['id'] for x in unsent]
-        if ids:
-            mark_results_sent(ids, now)
+    # envio por email será tratado em script separado (last_sent_at)
 
 
 if __name__ == '__main__':

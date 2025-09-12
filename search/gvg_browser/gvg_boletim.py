@@ -454,3 +454,53 @@ __all__ = [
     'fetch_user_boletins', 'create_user_boletim', 'deactivate_user_boletim',
     'list_active_schedules_all', 'record_boletim_results', 'fetch_unsent_results_for_boletim', 'mark_results_sent', 'touch_last_run'
 ]
+
+# --- Helpers adicionais para envio ---
+def get_user_email(user_id: str) -> Optional[str]:
+    conn=None; cur=None
+    try:
+        conn = create_connection()
+        if not conn:
+            return None
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT email FROM auth.users WHERE id = %s", (user_id,))
+            row = cur.fetchone()
+            return (row[0] if row else None) or None
+        except Exception:
+            return None
+    finally:
+        try:
+            if cur: cur.close()
+        finally:
+            if conn: conn.close()
+
+def set_last_sent(boletim_id: int, dt: datetime) -> bool:
+    conn=None; cur=None
+    try:
+        conn = create_connection()
+        if not conn:
+            return False
+        cur = conn.cursor()
+        try:
+            cur.execute("UPDATE public.user_schedule SET last_sent_at = %s, updated_at = now() WHERE id = %s", (dt, boletim_id))
+        except Exception as e1:
+            # Caso a coluna não exista ainda ou tabela seja legada, apenas ignora
+            try:
+                dbg('BOLETIM', f"WARN set_last_sent: {e1}")
+            except Exception:
+                pass
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            if conn: conn.rollback()
+        except Exception:
+            pass
+        return False
+    finally:
+        try:
+            if cur: cur.close()
+        finally:
+            if conn: conn.close()
+
