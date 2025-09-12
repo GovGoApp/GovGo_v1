@@ -1,0 +1,29 @@
+====================================================================================================
+INICIANDO BUSCA GOVGO (PROMPT MODE)
+====================================================================================================
+Query: "aquisição de generos alimentares sudeste e nordeste tirando capitais"
+Tipo: Semântica
+Abordagem: Filtro
+Relevância: Flexível (nível 2)
+Ordenação: Similaridade
+Max Resultados: 30
+TOP Categorias: 10
+Filtrar Encerradas: True
+Negation Embeddings: True
+Processamento Inteligente Ativo: True
+====================================================================================================
+Buscando TOP 10 categorias com termos-base: 'aquisição de gêneros alimentares'
+TOP CATEGORIAS
+Rank  Código      Similaridade  Descrição
+1     M008908905098060.5791        MATERIAL :: ALIMENTAR :: CARNES, AVES E PEIXES :: EMBUTIDO
+2     M008908915197940.5787        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: LEGUME PROCESSA
+3     M008908905022060.5670        MATERIAL :: ALIMENTAR :: CARNES, AVES E PEIXES :: CARNE PROCESSADA
+4     M008908905045540.5670        MATERIAL :: ALIMENTAR :: CARNES, AVES E PEIXES :: CARNE PROCESSADA
+5     M008708710102130.5659        MATERIAL :: SUPRIMENTOS AGRÍCOLAS :: FORRAGENS E ALIMENTOS :: ÓLEO VEG
+6     M008908905021560.5629        MATERIAL :: ALIMENTAR :: CARNES, AVES E PEIXES :: FRIOS
+7     M008908915197930.5627        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: LEGUMINOSA PROC
+8     M008908905009040.5604        MATERIAL :: ALIMENTAR :: CARNES, AVES E PEIXES :: CRUSTÁCEO IN NATURA
+9     M008908915197910.5558        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: OLEAGINOSA
+10    M008908905098070.5552        MATERIAL :: ALIMENTAR :: CARNES, AVES E PEIXES :: CARNE IN NATURA
+Tempo total: 54.63s | Confiança: 34.3100 | Resultados: 30
+Export JSON: Resultados_Busca\Busca_AQUISIÇÃO_DE_GENEROS_ALIMENTAR_S1_A3_R2_O1_II_20250911_212557.json

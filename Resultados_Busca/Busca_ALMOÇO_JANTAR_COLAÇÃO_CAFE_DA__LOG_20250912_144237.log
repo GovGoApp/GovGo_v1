@@ -1,0 +1,29 @@
+====================================================================================================
+INICIANDO BUSCA GOVGO (PROMPT MODE)
+====================================================================================================
+Query: "almoço, jantar, colação, cafe da manhã"
+Tipo: Semântica
+Abordagem: Filtro
+Relevância: Flexível (nível 2)
+Ordenação: Similaridade
+Max Resultados: 30
+TOP Categorias: 10
+Filtrar Encerradas: True
+Negation Embeddings: True
+Processamento Inteligente Ativo: True
+====================================================================================================
+Buscando TOP 10 categorias com termos-base: 'almoço jantar colação café da manhã'
+TOP CATEGORIAS
+Rank  Código      Similaridade  Descrição
+1     S063212807128070.5374        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: BUFFET :: BUFFET
+2     S063206321036970.5311        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: SERVIÇOS DE FORNECIME
+3     M008908955048050.5255        MATERIAL :: ALIMENTAR :: CAFÉ, CHÁ E CHOCOLATE :: CHÁ ALIMENTAÇÃO
+4     S063206321152100.5253        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: SERVIÇOS DE FORNECIME
+5     M008908955068700.5241        MATERIAL :: ALIMENTAR :: CAFÉ, CHÁ E CHOCOLATE :: ERVA - MATE
+6     M008908955160610.5241        MATERIAL :: ALIMENTAR :: CAFÉ, CHÁ E CHOCOLATE :: ERVA MATE
+7     M008908920197760.5067        MATERIAL :: ALIMENTAR :: PRODUTOS DE PANIFICAÇÃO E CEREAIS :: CEREAL M
+8     M008908955197650.5064        MATERIAL :: ALIMENTAR :: CAFÉ, CHÁ E CHOCOLATE :: ACHOCOLATADO
+9     M008908910197310.4915        MATERIAL :: ALIMENTAR :: OVOS E LATICÍNIOS :: LEITE DE ARROZ
+10    S063206321037000.4908        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: SERVIÇOS DE FORNECIME
+Tempo total: 46.70s | Confiança: 53.1200 | Resultados: 8
+Export JSON: Resultados_Busca\Busca_ALMOÇO_JANTAR_COLAÇÃO_CAFE_DA__S1_A3_R2_O1_II_20250912_144323.json

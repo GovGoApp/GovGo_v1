@@ -255,3 +255,7 @@ create table public.user_boletins (
     )
   )
 ) 
+
+# ex. config_snapshot: {"sort_mode": 1, "max_results": 30, "search_type": 1, "filter_expired": true, "relevance_level": 2, "search_approach": 3, "top_categories_count": 10}
+# ex. schedule_detail: {"slots": ["manha", "tarde", "noite"]}
+# ex. channels: ["email", "whatsapp"]

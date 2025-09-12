@@ -1,0 +1,29 @@
+====================================================================================================
+INICIANDO BUSCA GOVGO (PROMPT MODE)
+====================================================================================================
+Query: "almoço, jantar, colação, cafe da manhã"
+Tipo: Semântica
+Abordagem: Filtro
+Relevância: Flexível (nível 2)
+Ordenação: Similaridade
+Max Resultados: 30
+TOP Categorias: 10
+Filtrar Encerradas: True
+Negation Embeddings: True
+Processamento Inteligente Ativo: True
+====================================================================================================
+Buscando TOP 10 categorias com termos-base: 'almoço, jantar, colação, café da manhã'
+TOP CATEGORIAS
+Rank  Código      Similaridade  Descrição
+1     S063206321036970.5426        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: SERVIÇOS DE FORNECIME
+2     S063212807128070.5405        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: BUFFET :: BUFFET
+3     S063206321152100.5376        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: SERVIÇOS DE FORNECIME
+4     S063206321037000.5174        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: SERVIÇOS DE FORNECIME
+5     M008908955048050.5010        MATERIAL :: ALIMENTAR :: CAFÉ, CHÁ E CHOCOLATE :: CHÁ ALIMENTAÇÃO
+6     M008908955160610.4997        MATERIAL :: ALIMENTAR :: CAFÉ, CHÁ E CHOCOLATE :: ERVA MATE
+7     M008908955068700.4997        MATERIAL :: ALIMENTAR :: CAFÉ, CHÁ E CHOCOLATE :: ERVA - MATE
+8     S063206329255000.4954        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: OUTROS SERVIÇOS DE FO
+9     M008908920197760.4883        MATERIAL :: ALIMENTAR :: PRODUTOS DE PANIFICAÇÃO E CEREAIS :: CEREAL M
+10    M008908955197650.4765        MATERIAL :: ALIMENTAR :: CAFÉ, CHÁ E CHOCOLATE :: ACHOCOLATADO
+Tempo total: 31.51s | Confiança: 55.4800 | Resultados: 12
+Export JSON: Resultados_Busca\Busca_ALMOÇO_JANTAR_COLAÇÃO_CAFE_DA__S1_A3_R2_O1_II_20250911_212719.json

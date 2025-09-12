@@ -1,0 +1,29 @@
+====================================================================================================
+INICIANDO BUSCA GOVGO (PROMPT MODE)
+====================================================================================================
+Query: "Alimentação sistema prisional"
+Tipo: Semântica
+Abordagem: Filtro
+Relevância: Flexível (nível 2)
+Ordenação: Similaridade
+Max Resultados: 30
+TOP Categorias: 10
+Filtrar Encerradas: True
+Negation Embeddings: True
+Processamento Inteligente Ativo: True
+====================================================================================================
+Buscando TOP 10 categorias com termos-base: 'alimentação sistema prisional'
+TOP CATEGORIAS
+Rank  Código      Similaridade  Descrição
+1     S085908599202490.5504        SERVIÇO :: OUTROS SERVIÇOS DE SUPORTE :: OUTROS SERVIÇOS DE SUPORTE N.
+2     S063206321037000.5458        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: SERVIÇOS DE FORNECIME
+3     M008908905098060.5300        MATERIAL :: ALIMENTAR :: CARNES, AVES E PEIXES :: EMBUTIDO
+4     M008908915197940.5272        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: LEGUME PROCESSA
+5     M008908940009290.5254        MATERIAL :: ALIMENTAR :: ALIMENTOS ESPECIAIS DIETÉTICOS E PREPARADOS A
+6     M008908940173010.5249        MATERIAL :: ALIMENTAR :: ALIMENTOS ESPECIAIS DIETÉTICOS E PREPARADOS A
+7     S063212807128070.5245        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: BUFFET :: BUFFET
+8     M008908970113900.5228        MATERIAL :: ALIMENTAR :: RAÇÕES EMBALADAS :: RAÇÃO HUMANA DE EMERGÊNCI
+9     M008908915197930.5212        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: LEGUMINOSA PROC
+10    M008908905021560.5210        MATERIAL :: ALIMENTAR :: CARNES, AVES E PEIXES :: FRIOS
+Tempo total: 41.70s | Confiança: 58.0700 | Resultados: 12
+Export JSON: Resultados_Busca\Busca_ALIMENTAÇÃO_SISTEMA_PRISIONAL_S1_A3_R2_O1_II_20250912_144236.json

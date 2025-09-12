@@ -1,0 +1,29 @@
+====================================================================================================
+INICIANDO BUSCA GOVGO (PROMPT MODE)
+====================================================================================================
+Query: "aquisição de generos alimentares"
+Tipo: Semântica
+Abordagem: Filtro
+Relevância: Flexível (nível 2)
+Ordenação: Similaridade
+Max Resultados: 30
+TOP Categorias: 10
+Filtrar Encerradas: True
+Negation Embeddings: True
+Processamento Inteligente Ativo: True
+====================================================================================================
+Buscando TOP 10 categorias com termos-base: 'aquisição de generos alimentares'
+TOP CATEGORIAS
+Rank  Código      Similaridade  Descrição
+1     M008908915197940.5808        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: LEGUME PROCESSA
+2     M008908905098050.5751        MATERIAL :: ALIMENTAR :: CARNES, AVES E PEIXES :: FRUTOS DO MAR
+3     M008908905098060.5724        MATERIAL :: ALIMENTAR :: CARNES, AVES E PEIXES :: EMBUTIDO
+4     M008908905021560.5636        MATERIAL :: ALIMENTAR :: CARNES, AVES E PEIXES :: FRIOS
+5     M008908905022060.5634        MATERIAL :: ALIMENTAR :: CARNES, AVES E PEIXES :: CARNE PROCESSADA
+6     M008908905045540.5634        MATERIAL :: ALIMENTAR :: CARNES, AVES E PEIXES :: CARNE PROCESSADA
+7     M008908920138840.5627        MATERIAL :: ALIMENTAR :: PRODUTOS DE PANIFICAÇÃO E CEREAIS :: FARINHA 
+8     M008708710102130.5622        MATERIAL :: SUPRIMENTOS AGRÍCOLAS :: FORRAGENS E ALIMENTOS :: ÓLEO VEG
+9     M008908915197910.5594        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: OLEAGINOSA
+10    M008908905009040.5577        MATERIAL :: ALIMENTAR :: CARNES, AVES E PEIXES :: CRUSTÁCEO IN NATURA
+Tempo total: 63.74s | Confiança: 67.3000 | Resultados: 30
+Export JSON: Resultados_Busca\Busca_AQUISIÇÃO_DE_GENEROS_ALIMENTAR_S1_A3_R2_O1_II_20250912_143736.json

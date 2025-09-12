@@ -1,0 +1,29 @@
+====================================================================================================
+INICIANDO BUSCA GOVGO (PROMPT MODE)
+====================================================================================================
+Query: "órgão ou entidade EBSERH"
+Tipo: Semântica
+Abordagem: Filtro
+Relevância: Flexível (nível 2)
+Ordenação: Similaridade
+Max Resultados: 30
+TOP Categorias: 10
+Filtrar Encerradas: True
+Negation Embeddings: True
+Processamento Inteligente Ativo: True
+====================================================================================================
+Buscando TOP 10 categorias com termos-base: 'EBSERH'
+TOP CATEGORIAS
+Rank  Código      Similaridade  Descrição
+1     S093109311183500.5149        SERVIÇO :: SERVIÇOS DE SAÚDE HUMANA :: SERVIÇOS HOSPITALARES :: ENFERM
+2     S093109311152370.5080        SERVIÇO :: SERVIÇOS DE SAÚDE HUMANA :: SERVIÇOS HOSPITALARES :: ESTERI
+3     S093109311178500.5033        SERVIÇO :: SERVIÇOS DE SAÚDE HUMANA :: SERVIÇOS HOSPITALARES :: ESTUDO
+4     S093109311301220.4993        SERVIÇO :: SERVIÇOS DE SAÚDE HUMANA :: SERVIÇOS HOSPITALARES :: COLANG
+5     S093109311069200.4987        SERVIÇO :: SERVIÇOS DE SAÚDE HUMANA :: SERVIÇOS HOSPITALARES :: ECOENC
+6     S093109311094400.4987        SERVIÇO :: SERVIÇOS DE SAÚDE HUMANA :: SERVIÇOS HOSPITALARES :: MEDICI
+7     S093109311178920.4975        SERVIÇO :: SERVIÇOS DE SAÚDE HUMANA :: SERVIÇOS HOSPITALARES :: RADIOL
+8     S093109311258010.4975        SERVIÇO :: SERVIÇOS DE SAÚDE HUMANA :: SERVIÇOS HOSPITALARES :: GERENC
+9     S093109311165430.4967        SERVIÇO :: SERVIÇOS DE SAÚDE HUMANA :: SERVIÇOS HOSPITALARES :: PRONTO
+10    S093109311011550.4960        SERVIÇO :: SERVIÇOS DE SAÚDE HUMANA :: SERVIÇOS HOSPITALARES :: ENSAIO
+Tempo total: 35.38s | Confiança: 51.5100 | Resultados: 8
+Export JSON: Resultados_Busca\Busca_ÓRGÃO_OU_ENTIDADE_EBSERH_S1_A3_R2_O1_II_20250911_212941.json

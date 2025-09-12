@@ -1,0 +1,29 @@
+====================================================================================================
+INICIANDO BUSCA GOVGO (PROMPT MODE)
+====================================================================================================
+Query: "hortifruti no sudeste, norte e nordeste"
+Tipo: Semântica
+Abordagem: Filtro
+Relevância: Flexível (nível 2)
+Ordenação: Similaridade
+Max Resultados: 30
+TOP Categorias: 10
+Filtrar Encerradas: True
+Negation Embeddings: True
+Processamento Inteligente Ativo: True
+====================================================================================================
+Buscando TOP 10 categorias com termos-base: 'hortifruti'
+TOP CATEGORIAS
+Rank  Código      Similaridade  Descrição
+1     M008908915197910.4519        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: OLEAGINOSA
+2     M008908915197890.4509        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: FRUTA
+3     M008908915197900.4497        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: POLPA DE FRUTA
+4     M008908915301470.4392        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: VERDURA PROCESS
+5     M008908915133880.4359        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: VERDURA IN NATU
+6     M008908915197730.4359        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: VERDURA IN NATU
+7     M008908915199350.4314        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: VEGETAL DO MAR
+8     M008908915197920.4235        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: LEGUMINOSA
+9     M008908915197940.4220        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: LEGUME PROCESSA
+10    M008908915197630.4205        MATERIAL :: ALIMENTAR :: FRUTAS, VERDURAS E LEGUMES :: CACAU
+Tempo total: 32.85s | Confiança: 42.4300 | Resultados: 13
+Export JSON: Resultados_Busca\Busca_HORTIFRUTI_NO_SUDESTE_NORTE_E__S1_A3_R2_O1_II_20250912_144152.json

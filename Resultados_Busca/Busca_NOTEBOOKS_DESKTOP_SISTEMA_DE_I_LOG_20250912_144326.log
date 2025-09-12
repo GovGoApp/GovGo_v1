@@ -1,0 +1,29 @@
+====================================================================================================
+INICIANDO BUSCA GOVGO (PROMPT MODE)
+====================================================================================================
+Query: "notebooks, desktop, sistema de informatica"
+Tipo: Semântica
+Abordagem: Filtro
+Relevância: Flexível (nível 2)
+Ordenação: Similaridade
+Max Resultados: 30
+TOP Categorias: 10
+Filtrar Encerradas: True
+Negation Embeddings: True
+Processamento Inteligente Ativo: True
+====================================================================================================
+Buscando TOP 10 categorias com termos-base: 'notebooks desktop sistema de informática'
+TOP CATEGORIAS
+Rank  Código      Similaridade  Descrição
+1     M007007010084350.6484        MATERIAL :: INFORMÁTICA - EQUIPAMENTOS,  PEÇAS, ACESSÓRIOS E SUPRIMENT
+2     M007007060162440.6042        MATERIAL :: INFORMÁTICA - EQUIPAMENTOS,  PEÇAS, ACESSÓRIOS E SUPRIMENT
+3     M007007040096360.5879        MATERIAL :: INFORMÁTICA - EQUIPAMENTOS,  PEÇAS, ACESSÓRIOS E SUPRIMENT
+4     M007007010064840.5854        MATERIAL :: INFORMÁTICA - EQUIPAMENTOS,  PEÇAS, ACESSÓRIOS E SUPRIMENT
+5     M007007060148290.5821        MATERIAL :: INFORMÁTICA - EQUIPAMENTOS,  PEÇAS, ACESSÓRIOS E SUPRIMENT
+6     M007407420002860.5782        MATERIAL :: MÁQUINAS PARA ESCRITÓRIO, SISTEMAS DE PROCESSAMENTO DE  TE
+7     M007007010148110.5740        MATERIAL :: INFORMÁTICA - EQUIPAMENTOS,  PEÇAS, ACESSÓRIOS E SUPRIMENT
+8     M007007010192460.5719        MATERIAL :: INFORMÁTICA - EQUIPAMENTOS,  PEÇAS, ACESSÓRIOS E SUPRIMENT
+9     M007407490158750.5692        MATERIAL :: MÁQUINAS PARA ESCRITÓRIO, SISTEMAS DE PROCESSAMENTO DE  TE
+10    M007007060103070.5663        MATERIAL :: INFORMÁTICA - EQUIPAMENTOS,  PEÇAS, ACESSÓRIOS E SUPRIMENT
+Tempo total: 26.32s | Confiança: 59.2000 | Resultados: 14
+Export JSON: Resultados_Busca\Busca_NOTEBOOKS_DESKTOP_SISTEMA_DE_I_S1_A3_R2_O1_II_20250912_144353.json

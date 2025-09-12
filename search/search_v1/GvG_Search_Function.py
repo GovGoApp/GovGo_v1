@@ -96,7 +96,6 @@ from gvg_search_core import (
     keyword_search,
     hybrid_search,
     toggle_intelligent_processing,
-    toggle_intelligent_debug,
     get_intelligent_status,
     set_relevance_filter_level,
     get_relevance_filter_status,

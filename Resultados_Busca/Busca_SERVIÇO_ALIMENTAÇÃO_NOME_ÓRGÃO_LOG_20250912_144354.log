@@ -1,0 +1,29 @@
+====================================================================================================
+INICIANDO BUSCA GOVGO (PROMPT MODE)
+====================================================================================================
+Query: "serviço alimentação; nome órgão EBSERH"
+Tipo: Semântica
+Abordagem: Filtro
+Relevância: Flexível (nível 2)
+Ordenação: Similaridade
+Max Resultados: 30
+TOP Categorias: 10
+Filtrar Encerradas: True
+Negation Embeddings: True
+Processamento Inteligente Ativo: True
+====================================================================================================
+Buscando TOP 10 categorias com termos-base: 'serviço alimentação'
+TOP CATEGORIAS
+Rank  Código      Similaridade  Descrição
+1     S063212807128070.7375        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: BUFFET :: BUFFET
+2     S063206321036970.7265        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: SERVIÇOS DE FORNECIME
+3     S063206321037000.7233        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: SERVIÇOS DE FORNECIME
+4     S063206321152100.7129        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: SERVIÇOS DE FORNECIME
+5     S063205320053200.6988        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: REFEICOES INDUSTRIAIS
+6     S063206329255000.6958        SERVIÇO :: SERVIÇOS DE FORNECIMENTO DE COMIDA :: OUTROS SERVIÇOS DE FO
+7     S083108311300020.6823        SERVIÇO :: SERVIÇOS DE CONSULTORIA E DE GERÊNCIA/GESTÃO :: SERVIÇOS DE
+8     S085108512193990.6347        SERVIÇO :: SERVIÇOS DE AGÊNCIAS DE EMPREGOS E FORNECIMENTO DE PESSOAL 
+9     S085108512228610.6319        SERVIÇO :: SERVIÇOS DE AGÊNCIAS DE EMPREGOS E FORNECIMENTO DE PESSOAL 
+10    S093109311202810.6261        SERVIÇO :: SERVIÇOS DE SAÚDE HUMANA :: SERVIÇOS HOSPITALARES :: NUTRIC
+Nenhum resultado encontrado (tempo 33.66s)
+Export JSON: Resultados_Busca\Busca_SERVIÇO_ALIMENTAÇÃO_NOME_ÓRGÃO_S1_A3_R2_O1_II_20250912_144428.json
