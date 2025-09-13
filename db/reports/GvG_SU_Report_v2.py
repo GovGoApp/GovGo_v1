@@ -30,7 +30,7 @@ def debug_print(message):
         print(f"[DEBUG] {message}")
 
 # Carregar configurações do DB diretamente do arquivo .env
-env_path = os.path.join(os.path.dirname(__file__), '..', '..', '.env')
+env_path = os.path.join(os.path.dirname(__file__), '.env')
 debug_print(f"Caminho do .env: {env_path}")
 debug_print(f"Arquivo .env existe: {os.path.exists(env_path)}")
 
@@ -43,13 +43,13 @@ if os.path.exists(env_path):
                 config[key] = value
 
 
-# Base paths
-BASE_PATH = "C:\\Users\\Haroldo Duraes\\Desktop\\GOvGO\\v0\\#DATA\\PNCP\\"
-LOGO_PATH = "C:\\Users\\Haroldo Duraes\\Desktop\\GOvGO\\v0\\#LOGO\\LOGO_TEXTO_GOvGO_TRIM_v3.png"
-REPORTS_PATH = os.path.join(BASE_PATH, "REPORTS")
+# Paths
+LOGO_PATH = "https://hemztmtbejcbhgfmsvfq.supabase.co/storage/v1/object/public/govgo/LOGO/LOGO_TEXTO_GOvGO_TRIM_v3.png"
 
-if not os.path.exists(REPORTS_PATH):
-    os.makedirs(REPORTS_PATH)
+# BASE_PATH: pasta acima deste arquivo; REPORTS_PATH: subpasta 'reports'
+BASE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+REPORTS_PATH = os.path.join(BASE_PATH, 'reports')
+os.makedirs(REPORTS_PATH, exist_ok=True)
 
 # OpenAI configuration
 api_key = config.get('OPENAI_API_KEY')
@@ -528,7 +528,7 @@ def b64_image(image_path):
 # Componente de logo usando a imagem local
 logo = html.Div(
     html.Img(
-        src=b64_image(LOGO_PATH),
+        src=LOGO_PATH,
         style=styles['logo']
     )
 )
@@ -607,7 +607,7 @@ history_modal = html.Div([
 header = html.Div([
     # Logo à esquerda com título
     html.Div([
-        html.Img(src=b64_image(LOGO_PATH), style={'height': '40px'}),
+        html.Img(src=LOGO_PATH, style={'height': '40px'}),
         html.H4("Supabase Reports v2", style={'marginLeft': '15px', 'color': '#003A70'})
     ], style={'display': 'flex', 'alignItems': 'center'}),
     
