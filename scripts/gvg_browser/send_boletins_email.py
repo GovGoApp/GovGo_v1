@@ -35,7 +35,7 @@ def _style_inline(d: Dict[str, Any]) -> str:
 
 
 def _fetch_boletins_to_send() -> List[Dict[str, Any]]:
-    """Retorna boletins candidatos (last_run_at > last_sent_at) com metadados."""
+    """Retorna boletins que têm run novo a enviar: last_run_at > last_sent_at."""
     conn=None; cur=None
     out: List[Dict[str, Any]] = []
     try:
@@ -47,8 +47,7 @@ def _fetch_boletins_to_send() -> List[Dict[str, Any]]:
         try:
             cur.execute(
                 """
-                SELECT id, user_id, query_text, schedule_type, schedule_detail,
-                       last_run_at, last_sent_at
+                SELECT id, user_id, query_text, last_run_at, COALESCE(last_sent_at, to_timestamp(0)) AS last_sent_at
                   FROM public.user_schedule
                  WHERE active = true
                    AND last_run_at IS NOT NULL
@@ -64,7 +63,7 @@ def _fetch_boletins_to_send() -> List[Dict[str, Any]]:
                 pass
             cur.execute(
                 """
-                SELECT id, user_id, query_text, schedule_type, schedule_detail, last_run_at
+                SELECT id, user_id, query_text, last_run_at
                   FROM public.user_boletins
                  WHERE active = true AND last_run_at IS NOT NULL
                 """
@@ -159,83 +158,11 @@ def _render_html_boletim(query_text: str, items: List[Dict[str, Any]]) -> str:
 def run_once(now: Optional[datetime] = None) -> None:
     now = now or datetime.now(timezone.utc)
     boletins = _fetch_boletins_to_send()
-    try:
-        dow_map = {0: 'seg', 1: 'ter', 2: 'qua', 3: 'qui', 4: 'sex', 5: 'sab', 6: 'dom'}
-        dow = dow_map.get(now.weekday())
-        dbg('BOLETIM', f"Envio: {len(boletins)} boletim(ns) candidatos em {now.strftime('%Y-%m-%d')} (dow={dow})")
-    except Exception:
-        pass
+    dbg('BOLETIM', f"Envio: {len(boletins)} boletim(ns) prontos para enviar")
     for b in boletins:
         sid = b['id']
         uid = b['user_id']
         query = b.get('query_text') or ''
-        stype = (b.get('schedule_type') or '').upper()
-        sdetail = b.get('schedule_detail') or {}
-        if isinstance(sdetail, str):
-            try:
-                sdetail = json.loads(sdetail)
-            except Exception:
-                sdetail = {}
-        last_sent = b.get('last_sent_at')
-
-        def _to_dt(x: Any) -> Optional[datetime]:
-            if not x:
-                return None
-            if isinstance(x, datetime):
-                return x if x.tzinfo else x.replace(tzinfo=timezone.utc)
-            if isinstance(x, str):
-                try:
-                    return datetime.fromisoformat(x.replace('Z', '+00:00'))
-                except Exception:
-                    try:
-                        return datetime.strptime(x[:10], '%Y-%m-%d').replace(tzinfo=timezone.utc)
-                    except Exception:
-                        return None
-            return None
-
-        ls_dt = _to_dt(last_sent)
-        now_date = now.astimezone(timezone.utc).date()
-        sent_today = (ls_dt.astimezone(timezone.utc).date() == now_date) if ls_dt else False
-
-        # Dias configurados
-        dow_map = {0: 'seg', 1: 'ter', 2: 'qua', 3: 'qui', 4: 'sex', 5: 'sab', 6: 'dom'}
-        cur_dow = dow_map.get(now.weekday())
-        cfg_days = (sdetail or {}).get('days') if isinstance(sdetail, dict) else None
-        days = []
-        if stype in ('DIARIO', 'MULTIDIARIO'):
-            days = list(cfg_days) if cfg_days else ['seg', 'ter', 'qua', 'qui', 'sex']
-        elif stype == 'SEMANAL':
-            days = list(cfg_days) if cfg_days else []
-        if cur_dow not in days:
-            try:
-                dbg('BOLETIM', f"Skip envio id={sid}: hoje='{cur_dow}' ∉ days={days}")
-            except Exception:
-                pass
-            continue
-
-        # Frequência
-        if stype in ('DIARIO', 'SEMANAL'):
-            if sent_today:
-                try:
-                    dbg('BOLETIM', f"Skip envio id={sid}: já enviado hoje (last_sent_at={ls_dt})")
-                except Exception:
-                    pass
-                continue
-        elif stype == 'MULTIDIARIO':
-            min_int = None
-            try:
-                v = (sdetail or {}).get('min_interval_minutes')
-                if isinstance(v, (int, float)):
-                    min_int = int(v)
-            except Exception:
-                min_int = None
-            if min_int and ls_dt and (now - ls_dt).total_seconds() < min_int * 60:
-                try:
-                    dbg('BOLETIM', f"Skip envio id={sid}: intervalo mínimo {min_int}min não cumprido (último envio={ls_dt})")
-                except Exception:
-                    pass
-                continue
-
         email = get_user_email(uid)
         if not email:
             dbg('BOLETIM', f"Sem email para user={uid}; pulando boletim id={sid}")

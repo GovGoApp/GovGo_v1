@@ -12,7 +12,7 @@ Notas:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import json
 
@@ -120,62 +120,6 @@ def run_once(now: Optional[datetime] = None) -> None:
         sid = s['id']
         uid = s['user_id']
         query = s['query_text']
-        # Checagem de frequência por tipo de agenda antes de executar
-        stype = (s.get('schedule_type') or '').upper()
-        sdetail = s.get('schedule_detail') or {}
-        if isinstance(sdetail, str):
-            try:
-                sdetail = json.loads(sdetail)
-            except Exception:
-                sdetail = {}
-        last_run = s.get('last_run_at')
-
-        def _to_dt(x: Any) -> Optional[datetime]:
-            if not x:
-                return None
-            if isinstance(x, datetime):
-                # Assume timezone-aware; se for naive, trata como UTC
-                return x if x.tzinfo else x.replace(tzinfo=timezone.utc)
-            if isinstance(x, str):
-                try:
-                    # Tenta formatos comuns ISO
-                    return datetime.fromisoformat(x.replace('Z', '+00:00'))
-                except Exception:
-                    try:
-                        # Fallback: apenas data YYYY-MM-DD
-                        return datetime.strptime(x[:10], '%Y-%m-%d').replace(tzinfo=timezone.utc)
-                    except Exception:
-                        return None
-            return None
-
-        lr_dt = _to_dt(last_run)
-        now_date = now.astimezone(timezone.utc).date()
-        ran_today = (lr_dt.astimezone(timezone.utc).date() == now_date) if lr_dt else False
-
-        # MULTIDIARIO: respeita min_interval_minutes se definido em schedule_detail
-        min_int = None
-        try:
-            v = (sdetail or {}).get('min_interval_minutes')
-            if isinstance(v, (int, float)):
-                min_int = int(v)
-        except Exception:
-            min_int = None
-
-        if stype in ('DIARIO', 'SEMANAL'):
-            if ran_today:
-                try:
-                    dbg('BOLETIM', f"Skip boletim {sid}: já executado hoje (last_run_at={lr_dt})")
-                except Exception:
-                    pass
-                continue
-        elif stype == 'MULTIDIARIO' and min_int and lr_dt:
-            if now - lr_dt < timedelta(minutes=min_int):
-                try:
-                    dbg('BOLETIM', f"Skip boletim {sid}: intervalo mínimo {min_int}min não cumprido (último={lr_dt})")
-                except Exception:
-                    pass
-                continue
-
         dbg('BOLETIM', f"Executando boletim {sid} para user {uid}: '{query}'")
 
         # Extrai configurações do snapshot do boletim
