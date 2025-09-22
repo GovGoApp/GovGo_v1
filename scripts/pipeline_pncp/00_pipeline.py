@@ -17,13 +17,12 @@ from pathlib import Path
 
 def main() -> int:
     folder = Path(__file__).resolve().parent
-    v1_root = folder.parent
-    logs_dir = v1_root / "logs"
+    logs_dir = folder / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     ts = os.environ.get("PIPELINE_TIMESTAMP")
     if not ts:
-        ts = datetime.now().strftime("%Y%m%d_%H%M")
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         os.environ["PIPELINE_TIMESTAMP"] = ts
 
     steps = [

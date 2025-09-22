@@ -27,6 +27,8 @@ V1_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))  # .../v1
 LOGS_DIR = os.path.join(SCRIPT_DIR, "logs")
 os.makedirs(LOGS_DIR, exist_ok=True)
 
+# Carrega .env local da pasta do pipeline e, como fallback, o .env da raiz v1
+load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
 load_dotenv(os.path.join(V1_ROOT, ".env"))
 
 DB_CONFIG = {

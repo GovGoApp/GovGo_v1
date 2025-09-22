@@ -49,6 +49,9 @@ fi
 
 # Variáveis úteis (opcional)
 export PIPELINE_DEBUG="${PIPELINE_DEBUG:-1}"
+if [[ -z "${PIPELINE_TIMESTAMP:-}" ]]; then
+  export PIPELINE_TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+fi
 
 # Executar pipeline
 exec "$PY" 00_pipeline.py
