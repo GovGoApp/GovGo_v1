@@ -1,0 +1,350 @@
+2025-09-22T08:00:15.006248616Z ==> Running 'bash -lc "bash run_pipeline.sh"'
+2025-09-22T08:00:15.373244398Z ==> Using Python version 3.13.4 (default)
+2025-09-22T08:00:15.397221924Z ==> Docs on specifying a Python version: https://render.com/docs/python-version
+2025-09-22T08:00:23.593021316Z ==> Using Poetry version 2.1.3 (default)
+2025-09-22T08:00:23.685579081Z ==> Docs on specifying a Poetry version: https://render.com/docs/poetry-version
+2025-09-22T08:00:23.777305051Z Traceback (most recent call last):
+2025-09-22T08:00:23.777321301Z   File "<stdin>", line 3, in <module>
+2025-09-22T08:00:23.777324771Z AttributeError: module 'importlib' has no attribute 'util'
+2025-09-22T08:00:23.780255693Z [bootstrap] Installing deps (missing detected)...
+
+2025-09-22T08:00:24.802077952Z   Downloading openai-1.108.1-py3-none-any.whl.metadata (29 kB)
+2025-09-22T08:00:24.90669924Z Collecting psycopg2-binary>=2.9.9 (from -r requirements.txt (line 3))
+2025-09-22T08:00:24.909397458Z   Downloading psycopg2_binary-2.9.10-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.9 kB)
+2025-09-22T08:00:25.277237965Z Collecting numpy>=1.24.0 (from -r requirements.txt (line 4))
+2025-09-22T08:00:25.280307339Z   Downloading numpy-2.3.3-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (62 kB)
+2025-09-22T08:00:25.491297228Z Collecting pandas>=2.0.0 (from -r requirements.txt (line 5))
+2025-09-22T08:00:25.493988916Z   Downloading pandas-2.3.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (91 kB)
+2025-09-22T08:00:25.60674877Z Collecting requests>=2.31.0 (from -r requirements.txt (line 6))
+2025-09-22T08:00:25.609787564Z   Downloading requests-2.32.5-py3-none-any.whl.metadata (4.9 kB)
+2025-09-22T08:00:25.662921728Z Collecting python-dotenv>=1.0.0 (from -r requirements.txt (line 7))
+2025-09-22T08:00:25.665426383Z   Downloading python_dotenv-1.1.1-py3-none-any.whl.metadata (24 kB)
+2025-09-22T08:00:25.719078566Z Collecting rich>=13.0.0 (from -r requirements.txt (line 8))
+2025-09-22T08:00:25.721475879Z   Downloading rich-14.1.0-py3-none-any.whl.metadata (18 kB)
+2025-09-22T08:00:25.779050632Z Collecting anyio<5,>=3.5.0 (from openai>=1.0.0->-r requirements.txt (line 2))
+2025-09-22T08:00:25.782399821Z   Downloading anyio-4.10.0-py3-none-any.whl.metadata (4.0 kB)
+2025-09-22T08:00:25.806653002Z Collecting distro<2,>=1.7.0 (from openai>=1.0.0->-r requirements.txt (line 2))
+2025-09-22T08:00:25.809284129Z   Downloading distro-1.9.0-py3-none-any.whl.metadata (6.8 kB)
+2025-09-22T08:00:25.84141659Z Collecting httpx<1,>=0.23.0 (from openai>=1.0.0->-r requirements.txt (line 2))
+2025-09-22T08:00:25.843983206Z   Downloading httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+2025-09-22T08:00:25.967138834Z Collecting jiter<1,>=0.4.0 (from openai>=1.0.0->-r requirements.txt (line 2))
+2025-09-22T08:00:25.97027451Z   Downloading jiter-0.11.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (5.2 kB)
+2025-09-22T08:00:26.186145036Z Collecting pydantic<3,>=1.9.0 (from openai>=1.0.0->-r requirements.txt (line 2))
+2025-09-22T08:00:26.189088558Z   Downloading pydantic-2.11.9-py3-none-any.whl.metadata (68 kB)
+2025-09-22T08:00:26.215105281Z Collecting sniffio (from openai>=1.0.0->-r requirements.txt (line 2))
+2025-09-22T08:00:26.218023013Z   Downloading sniffio-1.3.1-py3-none-any.whl.metadata (3.9 kB)
+2025-09-22T08:00:26.283327993Z Collecting tqdm>4 (from openai>=1.0.0->-r requirements.txt (line 2))
+2025-09-22T08:00:26.286243065Z   Downloading tqdm-4.67.1-py3-none-any.whl.metadata (57 kB)
+2025-09-22T08:00:26.323390875Z Collecting typing-extensions<5,>=4.11 (from openai>=1.0.0->-r requirements.txt (line 2))
+2025-09-22T08:00:26.326363618Z   Downloading typing_extensions-4.15.0-py3-none-any.whl.metadata (3.3 kB)
+2025-09-22T08:00:26.386581098Z Collecting idna>=2.8 (from anyio<5,>=3.5.0->openai>=1.0.0->-r requirements.txt (line 2))
+2025-09-22T08:00:26.389187824Z   Downloading idna-3.10-py3-none-any.whl.metadata (10 kB)
+2025-09-22T08:00:26.422435825Z Collecting certifi (from httpx<1,>=0.23.0->openai>=1.0.0->-r requirements.txt (line 2))
+2025-09-22T08:00:26.425229255Z   Downloading certifi-2025.8.3-py3-none-any.whl.metadata (2.4 kB)
+2025-09-22T08:00:26.460646414Z Collecting httpcore==1.* (from httpx<1,>=0.23.0->openai>=1.0.0->-r requirements.txt (line 2))
+2025-09-22T08:00:26.463513835Z   Downloading httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+2025-09-22T08:00:26.487961199Z Collecting h11>=0.16 (from httpcore==1.*->httpx<1,>=0.23.0->openai>=1.0.0->-r requirements.txt (line 2))
+2025-09-22T08:00:26.490791Z   Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+2025-09-22T08:00:26.513851799Z Collecting annotated-types>=0.6.0 (from pydantic<3,>=1.9.0->openai>=1.0.0->-r requirements.txt (line 2))
+2025-09-22T08:00:26.516567628Z   Downloading annotated_types-0.7.0-py3-none-any.whl.metadata (15 kB)
+2025-09-22T08:00:27.770918118Z Collecting pydantic-core==2.33.2 (from pydantic<3,>=1.9.0->openai>=1.0.0->-r requirements.txt (line 2))
+2025-09-22T08:00:27.774004792Z   Downloading pydantic_core-2.33.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.8 kB)
+2025-09-22T08:00:27.800575265Z Collecting typing-inspection>=0.4.0 (from pydantic<3,>=1.9.0->openai>=1.0.0->-r requirements.txt (line 2))
+2025-09-22T08:00:27.803399905Z   Downloading typing_inspection-0.4.1-py3-none-any.whl.metadata (2.6 kB)
+2025-09-22T08:00:27.841344439Z Collecting python-dateutil>=2.8.2 (from pandas>=2.0.0->-r requirements.txt (line 5))
+2025-09-22T08:00:27.843759192Z   Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl.metadata (8.4 kB)
+2025-09-22T08:00:27.907494405Z Collecting pytz>=2020.1 (from pandas>=2.0.0->-r requirements.txt (line 5))
+2025-09-22T08:00:27.91057687Z   Downloading pytz-2025.2-py2.py3-none-any.whl.metadata (22 kB)
+2025-09-22T08:00:27.937544359Z Collecting tzdata>=2022.7 (from pandas>=2.0.0->-r requirements.txt (line 5))
+2025-09-22T08:00:27.940167905Z   Downloading tzdata-2025.2-py2.py3-none-any.whl.metadata (1.4 kB)
+2025-09-22T08:00:28.083902069Z Collecting charset_normalizer<4,>=2 (from requests>=2.31.0->-r requirements.txt (line 6))
+2025-09-22T08:00:28.08730706Z   Downloading charset_normalizer-3.4.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (36 kB)
+2025-09-22T08:00:28.166445226Z Collecting urllib3<3,>=1.21.1 (from requests>=2.31.0->-r requirements.txt (line 6))
+2025-09-22T08:00:28.169077693Z   Downloading urllib3-2.5.0-py3-none-any.whl.metadata (6.5 kB)
+2025-09-22T08:00:28.207510336Z Collecting markdown-it-py>=2.2.0 (from rich>=13.0.0->-r requirements.txt (line 8))
+2025-09-22T08:00:28.210443418Z   Downloading markdown_it_py-4.0.0-py3-none-any.whl.metadata (7.3 kB)
+2025-09-22T08:00:28.26399353Z Collecting pygments<3.0.0,>=2.13.0 (from rich>=13.0.0->-r requirements.txt (line 8))
+2025-09-22T08:00:28.266483354Z   Downloading pygments-2.19.2-py3-none-any.whl.metadata (2.5 kB)
+2025-09-22T08:00:28.291152632Z Collecting mdurl~=0.1 (from markdown-it-py>=2.2.0->rich>=13.0.0->-r requirements.txt (line 8))
+2025-09-22T08:00:28.293969792Z   Downloading mdurl-0.1.2-py3-none-any.whl.metadata (1.6 kB)
+2025-09-22T08:00:28.320367611Z Collecting six>=1.5 (from python-dateutil>=2.8.2->pandas>=2.0.0->-r requirements.txt (line 5))
+2025-09-22T08:00:28.323002118Z   Downloading six-1.17.0-py2.py3-none-any.whl.metadata (1.7 kB)
+2025-09-22T08:00:28.34560329Z Downloading openai-1.108.1-py3-none-any.whl (948 kB)
+2025-09-22T08:00:28.37318045Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 948.4/948.4 kB 28.9 MB/s eta 0:00:00
+2025-09-22T08:00:28.376167103Z Downloading anyio-4.10.0-py3-none-any.whl (107 kB)
+2025-09-22T08:00:28.387968542Z Downloading distro-1.9.0-py3-none-any.whl (20 kB)
+2025-09-22T08:00:28.398890267Z Downloading httpx-0.28.1-py3-none-any.whl (73 kB)
+2025-09-22T08:00:28.410844539Z Downloading httpcore-1.0.9-py3-none-any.whl (78 kB)
+2025-09-22T08:00:28.422918374Z Downloading jiter-0.11.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (347 kB)
+2025-09-22T08:00:28.439737333Z Downloading pydantic-2.11.9-py3-none-any.whl (444 kB)
+2025-09-22T08:00:28.45479092Z Downloading pydantic_core-2.33.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.0 MB)
+2025-09-22T08:00:28.47616264Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.0/2.0 MB 92.5 MB/s eta 0:00:00
+2025-09-22T08:00:28.478576512Z Downloading typing_extensions-4.15.0-py3-none-any.whl (44 kB)
+2025-09-22T08:00:28.493891905Z Downloading psycopg2_binary-2.9.10-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.0 MB)
+2025-09-22T08:00:28.533660871Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.0/3.0 MB 74.7 MB/s eta 0:00:00
+2025-09-22T08:00:28.536410331Z Downloading numpy-2.3.3-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (16.6 MB)
+2025-09-22T08:00:29.491255998Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.6/16.6 MB 17.2 MB/s eta 0:00:00
+2025-09-22T08:00:29.49473868Z Downloading pandas-2.3.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (12.1 MB)
+2025-09-22T08:00:29.89597926Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 12.1/12.1 MB 29.7 MB/s eta 0:00:00
+2025-09-22T08:00:29.899039095Z Downloading requests-2.32.5-py3-none-any.whl (64 kB)
+2025-09-22T08:00:29.912109797Z Downloading charset_normalizer-3.4.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (151 kB)
+2025-09-22T08:00:29.925990113Z Downloading idna-3.10-py3-none-any.whl (70 kB)
+2025-09-22T08:00:29.938698219Z Downloading urllib3-2.5.0-py3-none-any.whl (129 kB)
+2025-09-22T08:00:29.95167326Z Downloading python_dotenv-1.1.1-py3-none-any.whl (20 kB)
+2025-09-22T08:00:29.96292723Z Downloading rich-14.1.0-py3-none-any.whl (243 kB)
+2025-09-22T08:00:29.97700618Z Downloading pygments-2.19.2-py3-none-any.whl (1.2 MB)
+2025-09-22T08:00:29.993441572Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 70.0 MB/s eta 0:00:00
+2025-09-22T08:00:29.99613801Z Downloading annotated_types-0.7.0-py3-none-any.whl (13 kB)
+2025-09-22T08:00:30.00797796Z Downloading certifi-2025.8.3-py3-none-any.whl (161 kB)
+2025-09-22T08:00:30.021174645Z Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+2025-09-22T08:00:30.032965444Z Downloading markdown_it_py-4.0.0-py3-none-any.whl (87 kB)
+2025-09-22T08:00:30.044808924Z Downloading mdurl-0.1.2-py3-none-any.whl (10.0 kB)
+2025-09-22T08:00:30.056089955Z Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl (229 kB)
+2025-09-22T08:00:30.069828619Z Downloading pytz-2025.2-py2.py3-none-any.whl (509 kB)
+2025-09-22T08:00:30.085236043Z Downloading six-1.17.0-py2.py3-none-any.whl (11 kB)
+2025-09-22T08:00:30.096766378Z Downloading sniffio-1.3.1-py3-none-any.whl (10 kB)
+2025-09-22T08:00:30.108084269Z Downloading tqdm-4.67.1-py3-none-any.whl (78 kB)
+2025-09-22T08:00:30.120040152Z Downloading typing_inspection-0.4.1-py3-none-any.whl (14 kB)
+2025-09-22T08:00:30.130431526Z Downloading tzdata-2025.2-py2.py3-none-any.whl (347 kB)
+2025-09-22T08:00:30.398349487Z Installing collected packages: pytz, urllib3, tzdata, typing-extensions, tqdm, sniffio, six, python-dotenv, pygments, psycopg2-binary, numpy, mdurl, jiter, idna, h11, distro, charset_normalizer, certifi, annotated-types, typing-inspection, requests, python-dateutil, pydantic-core, markdown-it-py, httpcore, anyio, rich, pydantic, pandas, httpx, openai
+2025-09-22T08:00:47.495346965Z 
+2025-09-22T08:00:47.499286445Z Successfully installed annotated-types-0.7.0 anyio-4.10.0 certifi-2025.8.3 charset_normalizer-3.4.3 distro-1.9.0 h11-0.16.0 httpcore-1.0.9 httpx-0.28.1 idna-3.10 jiter-0.11.0 markdown-it-py-4.0.0 mdurl-0.1.2 numpy-2.3.3 openai-1.108.1 pandas-2.3.2 psycopg2-binary-2.9.10 pydantic-2.11.9 pydantic-core-2.33.2 pygments-2.19.2 python-dateutil-2.9.0.post0 python-dotenv-1.1.1 pytz-2025.2 requests-2.32.5 rich-14.1.0 six-1.17.0 sniffio-1.3.1 tqdm-4.67.1 typing-extensions-4.15.0 typing-inspection-0.4.1 tzdata-2025.2 urllib3-2.5.0
+2025-09-22T08:00:47.623032963Z 
+2025-09-22T08:00:47.623053034Z [notice] A new release of pip is available: 25.1.1 -> 25.2
+2025-09-22T08:00:47.623055954Z [notice] To update, run: pip install --upgrade pip
+2025-09-22T08:00:49.393294494Z ╭──────────────────────────────────────────────────────────────────────────────╮
+2025-09-22T08:00:49.393316314Z │ 🚀 [1/3] DOWNLOAD DA API PNCP V1                                             │
+2025-09-22T08:00:49.393320744Z ╰──────────────────────────────────────────────────────────────────────────────╯
+2025-09-22T08:00:50.426389298Z ✅ Conexão com banco estabelecida
+2025-09-22T08:00:50.663268257Z ℹ️  Processando 1 datas com 20 workers: 20250922 até 20250922
+2025-09-22T08:00:50.663688744Z 
+2025-09-22T08:00:50.663698744Z 📊 ESTATÍSTICAS DA SESSÃO:
+2025-09-22T08:00:50.66402308Z • Workers configurados: 20
+2025-09-22T08:00:50.664357426Z • Rate limiting: REMOVIDO (máximo throughput)
+2025-09-22T08:00:50.664666111Z • Paralelismo: REAL (lotes balanceados)
+2025-09-22T08:00:50.665014377Z • Constraints: OTIMIZADAS (verificação prévia)
+2025-09-22T08:00:51.012040133Z ℹ️  Iniciando download OTIMIZADO para 20250922 (14 modalidades)
+2025-09-22T08:00:53.530387022Z 🔧 Código 6: 6 contratos
+2025-09-22T08:00:54.053915133Z 🔧 Código 8: 3 contratos
+2025-09-22T08:00:54.278617545Z ✅ Download concluído: 9 contratos encontrados
+2025-09-22T08:00:54.279337907Z ℹ️  Baixando 9 contratatações
+2025-09-22T08:01:01.654506516Z 🔧 Worker 1: Processando lote de 1 contratações
+2025-09-22T08:01:01.655893221Z 🔧 Worker 2: Processando lote de 1 contratações
+2025-09-22T08:01:01.657379087Z 🔧 Worker 3: Processando lote de 1 contratações
+2025-09-22T08:01:01.658795222Z 🔧 Worker 4: Processando lote de 1 contratações
+2025-09-22T08:01:01.660165016Z 🔧 Worker 5: Processando lote de 1 contratações
+2025-09-22T08:01:01.66204524Z 🔧 Worker 6: Processando lote de 1 contratações
+2025-09-22T08:01:01.663646288Z 🔧 Worker 7: Processando lote de 1 contratações
+2025-09-22T08:01:01.664802679Z 🔧 Worker 8: Processando lote de 1 contratações
+2025-09-22T08:01:01.666035391Z 🔧 Worker 9: Processando lote de 1 contratações
+2025-09-22T08:01:01.800149223Z 🔧 Worker 1: Encontrados 1 itens para 06296024000116-1-000023/2025
+2025-09-22T08:01:01.800716203Z 🔧 Worker 1: Concluído - 1 contratos processados, 1 itens encontrados em 1 
+2025-09-22T08:01:01.800723623Z contratações
+2025-09-22T08:01:01.801338114Z 🔧 Worker 1: 1 contratos processados, 1 itens encontrados
+2025-09-22T08:01:01.802510765Z 🔧 Worker 3: Encontrados 2 itens para 18299511000111-1-000023/2025
+2025-09-22T08:01:01.803066345Z 🔧 Worker 3: Concluído - 1 contratos processados, 2 itens encontrados em 1 
+2025-09-22T08:01:01.803077645Z contratações
+2025-09-22T08:01:01.803591224Z 🔧 Worker 3: 1 contratos processados, 2 itens encontrados
+2025-09-22T08:01:01.811909792Z 🔧 Worker 5: Encontrados 2 itens para 88243688000181-1-000158/2025
+2025-09-22T08:01:01.812455752Z 🔧 Worker 8: Encontrados 1 itens para 90871831000121-1-000031/2025
+2025-09-22T08:01:01.813062662Z 🔧 Worker 5: Concluído - 1 contratos processados, 2 itens encontrados em 1 
+2025-09-22T08:01:01.813072093Z contratações
+2025-09-22T08:01:01.813696253Z 🔧 Worker 8: Concluído - 1 contratos processados, 1 itens encontrados em 1 
+2025-09-22T08:01:01.813705154Z contratações
+2025-09-22T08:01:01.814252903Z 🔧 Worker 5: 1 contratos processados, 2 itens encontrados
+2025-09-22T08:01:01.814683321Z 🔧 Worker 8: 1 contratos processados, 1 itens encontrados
+2025-09-22T08:01:01.815973144Z 🔧 Worker 2: Encontrados 4 itens para 88496468000160-1-000267/2025
+2025-09-22T08:01:01.816499674Z 🔧 Worker 2: Concluído - 1 contratos processados, 4 itens encontrados em 1 
+2025-09-22T08:01:01.816505543Z contratações
+2025-09-22T08:01:01.817012773Z 🔧 Worker 2: 1 contratos processados, 4 itens encontrados
+2025-09-22T08:01:01.823391336Z 🔧 Worker 4: Encontrados 3 itens para 93235968000188-1-000187/2025
+2025-09-22T08:01:01.824001027Z 🔧 Worker 4: Concluído - 1 contratos processados, 3 itens encontrados em 1 
+2025-09-22T08:01:01.824009677Z contratações
+2025-09-22T08:01:01.824485475Z 🔧 Worker 4: 1 contratos processados, 3 itens encontrados
+2025-09-22T08:01:01.826102444Z 🔧 Worker 9: Encontrados 1 itens para 14885499000176-1-000003/2025
+2025-09-22T08:01:01.826586713Z 🔧 Worker 9: Concluído - 1 contratos processados, 1 itens encontrados em 1 
+2025-09-22T08:01:01.826592103Z contratações
+2025-09-22T08:01:01.827095912Z 🔧 Worker 9: 1 contratos processados, 1 itens encontrados
+2025-09-22T08:01:01.839057124Z 🔧 Worker 6: Encontrados 10 itens para 90256652000184-1-000232/2025
+2025-09-22T08:01:01.839078775Z 🔧 Worker 6: Concluído - 1 contratos processados, 10 itens encontrados em 1 
+2025-09-22T08:01:01.839081785Z contratações
+2025-09-22T08:01:01.840646852Z 🔧 Worker 6: 1 contratos processados, 10 itens encontrados
+2025-09-22T08:01:01.844048653Z 🔧 Worker 7: Encontrados 10 itens para 04216419000136-1-000045/2025
+2025-09-22T08:01:01.844067293Z 🔧 Worker 7: Concluído - 1 contratos processados, 10 itens encontrados em 1 
+2025-09-22T08:01:01.844070063Z contratações
+2025-09-22T08:01:01.844665214Z 🔧 Worker 7: 1 contratos processados, 10 itens encontrados
+2025-09-22T08:01:01.847095957Z ✅ Baixando 34 itens encontrados em 9 contratações
+2025-09-22T08:01:09.769467092Z ✅ Inseridos: 9 contratações, 34 itens
+2025-09-22T08:01:10.118199206Z   Processando 22/09/2025 com 20 workers ━━━━━━━━━━━━━━━━━━━ 100% 0:00:19 0:00:00
+2025-09-22T08:01:10.118597403Z 
+2025-09-22T08:01:10.118603433Z ✅ PROCESSAMENTO PARALELO CONCLUÍDO!
+2025-09-22T08:01:10.118953639Z 📅 Datas processadas com sucesso: 1/1
+2025-09-22T08:01:10.119236184Z 📋 Contratações inseridas: 9
+2025-09-22T08:01:10.119499679Z 📦 Itens inseridos: 34
+2025-09-22T08:01:10.119800734Z ⚡ Workers utilizados: 20
+2025-09-22T08:01:10.120388745Z ✅ Sessão concluída com sucesso! Log salvo em: log_20250922_0800.log
+2025-09-22T08:01:10.120914524Z ℹ️  Conexão com banco fechada
+2025-09-22T08:01:11.570244857Z ╭──────────────────────────────────────────────────────────────────────────────╮
+2025-09-22T08:01:11.570262598Z │ [2/3] GERAÇÃO DE EMBEDDINGS                                                  │
+2025-09-22T08:01:11.570265018Z ╰──────────────────────────────────────────────────────────────────────────────╯
+2025-09-22T08:01:16.275237303Z ✅ Pool de conexões ESTÁVEL criado: 24 conexões máximas
+2025-09-22T08:01:16.76601244Z ℹ️  Última data de embedding processada: 20250921
+2025-09-22T08:01:17.222819253Z ℹ️  Última data processada geral: 20250922
+2025-09-22T08:01:17.223450324Z ℹ️  Processando embeddings do intervalo: 20250921 (exclusivo) até 20250922 
+2025-09-22T08:01:17.223459445Z (inclusivo)
+2025-09-22T08:01:17.229924619Z ℹ️  Intervalo calculado: 22/09/2025 até 22/09/2025 (1 dias)
+2025-09-22T08:01:17.230166584Z ℹ️  
+2025-09-22T08:01:17.230571561Z ℹ️  📅 Data 22/09/2025: processando...
+2025-09-22T08:01:17.230987448Z ℹ️  Processando embeddings para data: 22/09/2025
+2025-09-22T08:01:23.735336447Z ℹ️  Data 22/09/2025: processando 9 contratações
+2025-09-22T08:01:23.735735784Z 🔧 🔧 DEBUG MODE: Mostrando 9 workers individuais
+2025-09-22T08:01:23.741409725Z 🔧 🔧 Worker 1: Iniciando processamento de 1 contratos
+2025-09-22T08:01:23.742139038Z 🔧 🔧 Worker 2: Iniciando processamento de 1 contratos
+2025-09-22T08:01:23.74284815Z 🔧 🔧 Worker 1: Processando 1 contratos válidos
+2025-09-22T08:01:23.743530353Z 🔧 🔧 Worker 2: Processando 1 contratos válidos
+2025-09-22T08:01:23.744212945Z 🔧 🔧 Worker 3: Iniciando processamento de 1 contratos
+2025-09-22T08:01:23.744907797Z 🔧 🔧 Worker 1: Batch size otimizado: 1 (de 1 textos)
+2025-09-22T08:01:23.74561547Z 🔧 🔧 Worker 4: Iniciando processamento de 1 contratos
+2025-09-22T08:01:23.746324902Z 🔧 🔧 Worker 2: Batch size otimizado: 1 (de 1 textos)
+2025-09-22T08:01:23.746821251Z 🔧 🔧 Worker 3: Processando 1 contratos válidos
+2025-09-22T08:01:23.747729587Z 🔧 🔧 Worker 5: Iniciando processamento de 1 contratos
+2025-09-22T08:01:23.748562002Z 🔧 🔧 Worker 1: Processando 1 lotes de embedding
+2025-09-22T08:01:23.749681822Z 🔧 🔧 Worker 4: Processando 1 contratos válidos
+2025-09-22T08:01:23.75072678Z 🔧 🔧 Worker 6: Iniciando processamento de 1 contratos
+2025-09-22T08:01:23.752363309Z 🔧 🔧 Worker 2: Processando 1 lotes de embedding
+2025-09-22T08:01:23.754407686Z 🔧 🔧 Worker 7: Iniciando processamento de 1 contratos
+2025-09-22T08:01:23.754952475Z 🔧 🔧 Worker 3: Batch size otimizado: 1 (de 1 textos)
+2025-09-22T08:01:23.755818781Z 🔧 🔧 Worker 8: Iniciando processamento de 1 contratos
+2025-09-22T08:01:23.756377481Z 🔧 🔧 Worker 5: Processando 1 contratos válidos
+2025-09-22T08:01:23.756480403Z 🔧 🔧 Worker 9: Iniciando processamento de 1 contratos
+2025-09-22T08:01:23.757514901Z 🔧 🔧 Worker 1: Lote 1/1 - 1 textos
+2025-09-22T08:01:23.757672024Z 🔧 🔧 Worker 4: Batch size otimizado: 1 (de 1 textos)
+2025-09-22T08:01:23.758180933Z 🔧 🔧 Worker 6: Processando 1 contratos válidos
+2025-09-22T08:01:23.758301745Z 🔧 🔧 Worker 2: Lote 1/1 - 1 textos
+2025-09-22T08:01:23.758790193Z 🔧 🔧 Worker 7: Processando 1 contratos válidos
+2025-09-22T08:01:23.758936106Z 🔧 🔧 Worker 3: Processando 1 lotes de embedding
+2025-09-22T08:01:23.759538247Z 🔧 🔧 Worker 8: Processando 1 contratos válidos
+2025-09-22T08:01:23.760628416Z 🔧 🔧 Worker 5: Batch size otimizado: 1 (de 1 textos)
+2025-09-22T08:01:23.760785889Z 🔧 🔧 Worker 9: Processando 1 contratos válidos
+2025-09-22T08:01:23.760967692Z 🔧 🔧 Worker 4: Processando 1 lotes de embedding
+2025-09-22T08:01:23.761616383Z 🔧 🔧 Worker 6: Batch size otimizado: 1 (de 1 textos)
+2025-09-22T08:01:23.762142363Z 🔧 🔧 Worker 7: Batch size otimizado: 1 (de 1 textos)
+2025-09-22T08:01:23.762268955Z 🔧 🔧 Worker 3: Lote 1/1 - 1 textos
+2025-09-22T08:01:23.762711413Z 🔧 🔧 Worker 8: Batch size otimizado: 1 (de 1 textos)
+2025-09-22T08:01:23.763213872Z 🔧 🔧 Worker 5: Processando 1 lotes de embedding
+2025-09-22T08:01:23.763340744Z 🔧 🔧 Worker 9: Batch size otimizado: 1 (de 1 textos)
+2025-09-22T08:01:23.763829203Z 🔧 🔧 Worker 4: Lote 1/1 - 1 textos
+2025-09-22T08:01:23.763938455Z 🔧 🔧 Worker 6: Processando 1 lotes de embedding
+2025-09-22T08:01:23.764470014Z 🔧 🔧 Worker 7: Processando 1 lotes de embedding
+2025-09-22T08:01:23.764707419Z 🔧 🔧 Worker 8: Processando 1 lotes de embedding
+2025-09-22T08:01:23.765186767Z 🔧 🔧 Worker 5: Lote 1/1 - 1 textos
+2025-09-22T08:01:23.765807828Z 🔧 🔧 Worker 9: Processando 1 lotes de embedding
+2025-09-22T08:01:23.766877267Z 🔧 🔧 Worker 6: Lote 1/1 - 1 textos
+2025-09-22T08:01:23.766999889Z 🔧 🔧 Worker 7: Lote 1/1 - 1 textos
+2025-09-22T08:01:23.767460627Z 🔧 🔧 Worker 8: Lote 1/1 - 1 textos
+2025-09-22T08:01:23.767923736Z 🔧 🔧 Worker 9: Lote 1/1 - 1 textos
+2025-09-22T08:01:24.869835005Z 🔧 🔧 Worker 1: Gerados 1 embeddings para lote 1
+2025-09-22T08:01:24.913559022Z 🔧 🔧 Worker 6: Gerados 1 embeddings para lote 1
+2025-09-22T08:01:24.952945881Z 🔧 🔧 Worker 2: Gerados 1 embeddings para lote 1
+2025-09-22T08:01:24.989264276Z 🔧 🔧 Worker 9: Gerados 1 embeddings para lote 1
+2025-09-22T08:01:25.012656152Z 🔧 🔧 Worker 7: Gerados 1 embeddings para lote 1
+2025-09-22T08:01:25.051846058Z 🔧 🔧 Worker 8: Gerados 1 embeddings para lote 1
+2025-09-22T08:01:25.135228869Z 🔧 🔧 Worker 3: Gerados 1 embeddings para lote 1
+2025-09-22T08:01:25.187282563Z 🔧 🔧 Worker 5: Gerados 1 embeddings para lote 1
+2025-09-22T08:01:27.101553377Z 🔧 🔧 Worker 1: Inseridos 1 embeddings no lote 1
+2025-09-22T08:01:27.102122607Z 🔧 🔧 Worker 6: Inseridos 1 embeddings no lote 1
+2025-09-22T08:01:27.10283519Z 🔧 🔧 Worker 1: Concluído - 1 embeddings gerados de 1 contratos
+2025-09-22T08:01:27.103527732Z 🔧 🔧 Worker 2: Inseridos 1 embeddings no lote 1
+2025-09-22T08:01:27.104292236Z 🔧 🔧 Worker 9: Inseridos 1 embeddings no lote 1
+2025-09-22T08:01:27.104879956Z 🔧 🔧 Worker 6: Concluído - 1 embeddings gerados de 1 contratos
+2025-09-22T08:01:27.105480887Z 🔧 🔧 Worker 7: Inseridos 1 embeddings no lote 1
+2025-09-22T08:01:27.106490135Z 🔧 🔧 Worker 2: Concluído - 1 embeddings gerados de 1 contratos
+2025-09-22T08:01:27.107589064Z 🔧 🔧 Worker 8: Inseridos 1 embeddings no lote 1
+2025-09-22T08:01:27.108151845Z 🔧 🔧 Worker 9: Concluído - 1 embeddings gerados de 1 contratos
+2025-09-22T08:01:27.108216226Z 🔧 🔧 Worker 7: Concluído - 1 embeddings gerados de 1 contratos
+2025-09-22T08:01:27.108294157Z 🔧 🔧 Worker 8: Concluído - 1 embeddings gerados de 1 contratos
+2025-09-22T08:01:27.353727996Z 🔧 🔧 Worker 3: Inseridos 1 embeddings no lote 1
+2025-09-22T08:01:27.354230145Z 🔧 🔧 Worker 3: Concluído - 1 embeddings gerados de 1 contratos
+2025-09-22T08:01:28.031375069Z 🔧 🔧 Worker 5: Inseridos 1 embeddings no lote 1
+2025-09-22T08:01:28.031872038Z 🔧 🔧 Worker 5: Concluído - 1 embeddings gerados de 1 contratos
+2025-09-22T08:01:30.413124707Z 🔧 🔧 Worker 4: Gerados 1 embeddings para lote 1
+2025-09-22T08:01:31.231319696Z 🔧 🔧 Worker 4: Inseridos 1 embeddings no lote 1
+2025-09-22T08:01:31.231758374Z 🔧 🔧 Worker 4: Concluído - 1 embeddings gerados de 1 contratos
+2025-09-22T08:01:31.238730968Z   📊 ULTRA DEBUG: Data 20250922 (9 workers) ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:07
+2025-09-22T08:01:31.238740348Z   ✅ Worker 1: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:03
+2025-09-22T08:01:31.238743108Z   ✅ Worker 2: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:03
+2025-09-22T08:01:31.238745448Z   ✅ Worker 3: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:03
+2025-09-22T08:01:31.238747579Z   ✅ Worker 4: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:07
+2025-09-22T08:01:31.238750048Z   ✅ Worker 5: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:04
+2025-09-22T08:01:31.238752219Z   ✅ Worker 6: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:03
+2025-09-22T08:01:31.238754228Z   ✅ Worker 7: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:03
+2025-09-22T08:01:31.238756248Z   ✅ Worker 8: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:03
+2025-09-22T08:01:31.23884635Z   ✅ Worker 9: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:03
+2025-09-22T08:01:31.239327429Z ✅ ✅ Data 22/09/2025 concluída: 9 embeddings gerados, 0 erros
+2025-09-22T08:01:31.58854472Z ✅ Data de embedding atualizada para: 20250922
+2025-09-22T08:01:31.588915816Z ✅ Processamento concluído em 14.4s
+2025-09-22T08:01:31.589210202Z ℹ️  Datas processadas: 1
+2025-09-22T08:01:31.589512287Z ℹ️  Contratações processadas: 9
+2025-09-22T08:01:31.589793832Z ℹ️  Embeddings gerados: 9
+2025-09-22T08:01:31.590103918Z ℹ️  Embeddings em cache: 0
+2025-09-22T08:01:31.590365922Z ℹ️  Erros: 0
+2025-09-22T08:01:31.590682058Z ✅ PROCESSAMENTO CONCLUÍDO
+2025-09-22T08:01:31.591540433Z ℹ️  🔒 Pool de conexões fechado com segurança
+2025-09-22T08:01:31.968977966Z ================================================================================
+2025-09-22T08:01:31.96924658Z 🚀 CATEGORIZAÇÃO DE CONTRATOS
+2025-09-22T08:01:31.969455044Z ================================================================================
+2025-09-22T08:01:32.651410305Z 
+2025-09-22T08:01:32.651426895Z 📊 FASE 1: Verificando datas do sistema...
+2025-09-22T08:01:33.10844677Z 📅 Last Categorization Date (LCD): 20250921
+2025-09-22T08:01:33.108695715Z 📅 Last Embedded Date (LED): 20250922
+2025-09-22T08:01:33.116715847Z 🎯 Próxima data a processar: 20250922
+2025-09-22T08:01:33.117190276Z 
+2025-09-22T08:01:33.117197946Z 📋 FASE 2: Gerando lista de datas entre 20250922 e 20250922...
+2025-09-22T08:01:33.117514102Z 📈 Total de datas para processar: 1
+2025-09-22T08:01:33.117951819Z 
+2025-09-22T08:01:33.117958519Z 🔄 [1/1] 2025-09-22
+2025-09-22T08:01:33.118281295Z 
+2025-09-22T08:01:33.118297055Z 📅 Processando data: 2025-09-22
+2025-09-22T08:01:35.509430586Z     📋 9 contratos precisam categorização
+2025-09-22T08:01:35.509748102Z     📦 Dividindo em 1 lotes de até 100 contratos
+2025-09-22T08:01:35.510110389Z     ⚡ Usando 1 workers (otimizado para 1 batches)
+2025-09-22T08:01:45.584134411Z   🚀 2025-09-22 | ✅ 9 | ⏭️ 0 | ❌ 0 ━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:10 / 0:00:00
+2025-09-22T08:01:45.584521647Z     ✅ Concluído: 9 categorizados | 0 pulados | 0 erros
+2025-09-22T08:01:45.932417944Z     ✅ LCD atualizada para: 20250922
+2025-09-22T08:01:45.932689309Z 
+2025-09-22T08:01:45.932702409Z ================================================================================
+2025-09-22T08:01:45.932910633Z 📊 RESULTADOS FINAIS
+2025-09-22T08:01:45.933139737Z ================================================================================
+2025-09-22T08:01:45.933467693Z ⏱️  Tempo total: 0.0h (13s)
+2025-09-22T08:01:45.933730078Z 📅 Datas processadas: 1/1
+2025-09-22T08:01:45.933988682Z 📋 Total de contratos:
+2025-09-22T08:01:45.934230137Z    ✅ Categorizados: 9
+2025-09-22T08:01:45.934465001Z    ⏭️  Pulados: 0
+2025-09-22T08:01:45.934694045Z    ❌ Erros: 0
+2025-09-22T08:01:45.93496346Z    📊 Total: 9
+2025-09-22T08:01:45.935257565Z 🏃 Taxa média: 0.7 contratos/segundo
+2025-09-22T08:01:45.935496909Z 📅 LCD final: 20250922
+2025-09-22T08:01:45.935730743Z ================================================================================
+2025-09-22T08:01:45.953810364Z ================================================================================
+2025-09-22T08:01:45.953829675Z GOVGO v1 - PIPELINE (Python) - SESSÃO: 20250922_0800
+2025-09-22T08:01:45.953834285Z Diretório: /opt/render/project/src/scripts
+2025-09-22T08:01:45.953837965Z ================================================================================
+2025-09-22T08:01:45.953841285Z 
+2025-09-22T08:01:45.953844885Z --------------------------------------------------------------------------------
+2025-09-22T08:01:45.953848515Z [ETAPA_1_DOWNLOAD] Executando: 03_download_pncp_contracts.py --debug
+2025-09-22T08:01:45.953851885Z --------------------------------------------------------------------------------
+2025-09-22T08:01:45.953891306Z [OK] ETAPA_1_DOWNLOAD concluída com sucesso
+2025-09-22T08:01:45.953897486Z 
+2025-09-22T08:01:45.953900996Z --------------------------------------------------------------------------------
+2025-09-22T08:01:45.953904506Z [ETAPA_2_EMBEDDINGS] Executando: 04_generate_embeddings.py --debug
+2025-09-22T08:01:45.953907916Z --------------------------------------------------------------------------------
+2025-09-22T08:01:45.953911446Z [OK] ETAPA_2_EMBEDDINGS concluída com sucesso
+2025-09-22T08:01:45.953914756Z 
+2025-09-22T08:01:45.953918076Z --------------------------------------------------------------------------------
+2025-09-22T08:01:45.953921466Z [ETAPA_3_CATEGORIZACAO] Executando: 05_categorize_contracts.py 
+2025-09-22T08:01:45.953924976Z --------------------------------------------------------------------------------
+2025-09-22T08:01:45.953928406Z [OK] ETAPA_3_CATEGORIZACAO concluída com sucesso
+2025-09-22T08:01:45.953931677Z 
+2025-09-22T08:01:45.953935266Z ================================================================================
+2025-09-22T08:01:45.953938697Z [SUCESSO] PIPELINE CONCLUÍDO SEM ERROS — Sessão: 20250922_0800
+2025-09-22T08:01:45.953942227Z ================================================================================

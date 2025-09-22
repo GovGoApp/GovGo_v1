@@ -7,7 +7,7 @@ plotly==5.24.1
 psycopg2-binary==2.9.9
 
 # DataFrames e exportação Excel
-pandas==2.2.2
+pandas>=2.0.0
 XlsxWriter==3.2.0
 
 # OpenAI (cliente oficial v1+)

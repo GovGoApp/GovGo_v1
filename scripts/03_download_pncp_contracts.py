@@ -487,6 +487,7 @@ def fetch_items_for_contract_batch(contracts_batch, worker_id, debug_mode=False)
     
     return batch_items, contracts_processed, contracts_with_items, items_found
 
+## NAO UTILIZADA
 def fetch_items_for_contract_robust(numero_controle_pncp, debug_mode=False):
     """Busca itens para uma contratação específica - MANTIDA PARA COMPATIBILIDADE"""
     try:

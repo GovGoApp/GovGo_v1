@@ -10,6 +10,55 @@ O sistema GovGo V1 processa contratos públicos em 3 etapas principais integrada
 2. **🧠 Geração de Embeddings** - Vetorização semântica usando OpenAI
 3. **🎯 Categorização IA** - Classificação automática com pgvector similarity search
 
+## ✅ Novo pipeline simplificado (recomendado)
+
+Nova implementação leve, com menos dependências e compatível com cron do Render. Arquivos em `scripts/pipeline_pncp/`:
+
+1) 01_pipeline_pncp_download.py
+- Download de contratações e itens (API PNCP) para tabelas BDS1
+- Mapeamento inline sem DEPARA, idempotente (ON CONFLICT)
+- Log unificado em `logs/log_<PIPELINE_TIMESTAMP>.log`
+
+Uso:
+```bash
+python scripts/pipeline_pncp/01_pipeline_pncp_download.py            # usa last_processed_date
+python scripts/pipeline_pncp/01_pipeline_pncp_download.py --test 20250901
+python scripts/pipeline_pncp/01_pipeline_pncp_download.py --start 20250901 --end 20250903 --workers 16
+```
+
+2) 02_pipeline_pncp_embeddings.py
+- Gera embeddings para contratações sem vetor em `contratacao_emb`
+- Batch sequencial estável para OpenAI, idempotente
+
+Uso:
+```bash
+python scripts/pipeline_pncp/02_pipeline_pncp_embeddings.py          # usa últimas datas (system_config)
+python scripts/pipeline_pncp/02_pipeline_pncp_embeddings.py --test 20250901
+```
+
+3) 03_pipeline_pncp_categorization.py
+- Categorização via pgvector: top_categories/top_similarities/confidence
+- Idempotente (UPDATE com top_categories IS NULL), batches sequenciais
+
+Uso:
+```bash
+python scripts/pipeline_pncp/03_pipeline_pncp_categorization.py      # LCD+1 até LED
+python scripts/pipeline_pncp/03_pipeline_pncp_categorization.py --test 20250901 --batch-size 300 --top-k 5
+```
+
+Execução diária (Render cron):
+```bash
+# 01 → 02 → 03 (na mesma janela do dia)
+python scripts/pipeline_pncp/01_pipeline_pncp_download.py ; \
+python scripts/pipeline_pncp/02_pipeline_pncp_embeddings.py ; \
+python scripts/pipeline_pncp/03_pipeline_pncp_categorization.py
+```
+
+Requisitos mínimos:
+- Python 3.12+
+- pacotes: `psycopg2-binary`, `requests`, `python-dotenv`, `openai` (somente para 02)
+- `.env` com SUPABASE_* e (para 02) `OPENAI_API_KEY`
+
 ## 🚀 Execução Automática DIÁRIA
 
 ### Pipeline Integrado (OBRIGATÓRIO DIÁRIO)
@@ -61,9 +110,9 @@ python 01_create_database_schema.py
 python 02_import_initial_data.py
 ```
 
-### Pipeline Diário Automatizado
+### Pipeline Diário Automatizado (legado)
 
-#### 03_download_pncp_contracts.py
+#### 03_download_pncp_contracts.py (legado)
 **📥 Download Paralelo PNCP**
 - Conecta à API oficial do PNCP (Portal Nacional de Contratações Públicas)
 - Download paralelo com 20 workers simultâneos
@@ -76,7 +125,7 @@ python 02_import_initial_data.py
 python 03_download_pncp_contracts.py
 ```
 
-#### 04_generate_embeddings.py
+#### 04_generate_embeddings.py (legado)
 **🧠 Geração de Embeddings OpenAI**
 - Usa modelo `text-embedding-3-large` (3072 dimensões)
 - Concatena objeto da compra + descrições de itens
@@ -89,7 +138,7 @@ python 03_download_pncp_contracts.py
 python 04_generate_embeddings.py
 ```
 
-#### 05_categorize_contracts.py
+#### 05_categorize_contracts.py (legado)
 **🎯 Categorização com IA + pgvector**
 - Similarity search entre embeddings de contratos e categorias
 - Processamento paralelo adaptativo (4-20 workers)
@@ -102,7 +151,7 @@ python 04_generate_embeddings.py
 python 05_categorize_contracts.py
 ```
 
-## � Estrutura do Banco PostgreSQL
+## 🗄️ Estrutura do Banco PostgreSQL
 
 ### Tabelas Principais
 - **`contratacao`** - Dados raw dos contratos PNCP (campos oficiais)

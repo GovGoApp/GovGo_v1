@@ -1,0 +1,350 @@
+==> Running 'bash -lc "bash run_pipeline.sh"'
+==> Using Python version 3.13.4 (default)
+==> Docs on specifying a Python version: https://render.com/docs/python-version
+==> Using Poetry version 2.1.3 (default)
+==> Docs on specifying a Poetry version: https://render.com/docs/poetry-version
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+AttributeError: module 'importlib' has no attribute 'util'
+[bootstrap] Installing deps (missing detected)...
+
+  Downloading openai-1.108.1-py3-none-any.whl.metadata (29 kB)
+Collecting psycopg2-binary>=2.9.9 (from -r requirements.txt (line 3))
+  Downloading psycopg2_binary-2.9.10-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.9 kB)
+Collecting numpy>=1.24.0 (from -r requirements.txt (line 4))
+  Downloading numpy-2.3.3-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (62 kB)
+Collecting pandas>=2.0.0 (from -r requirements.txt (line 5))
+  Downloading pandas-2.3.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (91 kB)
+Collecting requests>=2.31.0 (from -r requirements.txt (line 6))
+  Downloading requests-2.32.5-py3-none-any.whl.metadata (4.9 kB)
+Collecting python-dotenv>=1.0.0 (from -r requirements.txt (line 7))
+  Downloading python_dotenv-1.1.1-py3-none-any.whl.metadata (24 kB)
+Collecting rich>=13.0.0 (from -r requirements.txt (line 8))
+  Downloading rich-14.1.0-py3-none-any.whl.metadata (18 kB)
+Collecting anyio<5,>=3.5.0 (from openai>=1.0.0->-r requirements.txt (line 2))
+  Downloading anyio-4.10.0-py3-none-any.whl.metadata (4.0 kB)
+Collecting distro<2,>=1.7.0 (from openai>=1.0.0->-r requirements.txt (line 2))
+  Downloading distro-1.9.0-py3-none-any.whl.metadata (6.8 kB)
+Collecting httpx<1,>=0.23.0 (from openai>=1.0.0->-r requirements.txt (line 2))
+  Downloading httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+Collecting jiter<1,>=0.4.0 (from openai>=1.0.0->-r requirements.txt (line 2))
+  Downloading jiter-0.11.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (5.2 kB)
+Collecting pydantic<3,>=1.9.0 (from openai>=1.0.0->-r requirements.txt (line 2))
+  Downloading pydantic-2.11.9-py3-none-any.whl.metadata (68 kB)
+Collecting sniffio (from openai>=1.0.0->-r requirements.txt (line 2))
+  Downloading sniffio-1.3.1-py3-none-any.whl.metadata (3.9 kB)
+Collecting tqdm>4 (from openai>=1.0.0->-r requirements.txt (line 2))
+  Downloading tqdm-4.67.1-py3-none-any.whl.metadata (57 kB)
+Collecting typing-extensions<5,>=4.11 (from openai>=1.0.0->-r requirements.txt (line 2))
+  Downloading typing_extensions-4.15.0-py3-none-any.whl.metadata (3.3 kB)
+Collecting idna>=2.8 (from anyio<5,>=3.5.0->openai>=1.0.0->-r requirements.txt (line 2))
+  Downloading idna-3.10-py3-none-any.whl.metadata (10 kB)
+Collecting certifi (from httpx<1,>=0.23.0->openai>=1.0.0->-r requirements.txt (line 2))
+  Downloading certifi-2025.8.3-py3-none-any.whl.metadata (2.4 kB)
+Collecting httpcore==1.* (from httpx<1,>=0.23.0->openai>=1.0.0->-r requirements.txt (line 2))
+  Downloading httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+Collecting h11>=0.16 (from httpcore==1.*->httpx<1,>=0.23.0->openai>=1.0.0->-r requirements.txt (line 2))
+  Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+Collecting annotated-types>=0.6.0 (from pydantic<3,>=1.9.0->openai>=1.0.0->-r requirements.txt (line 2))
+  Downloading annotated_types-0.7.0-py3-none-any.whl.metadata (15 kB)
+Collecting pydantic-core==2.33.2 (from pydantic<3,>=1.9.0->openai>=1.0.0->-r requirements.txt (line 2))
+  Downloading pydantic_core-2.33.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.8 kB)
+Collecting typing-inspection>=0.4.0 (from pydantic<3,>=1.9.0->openai>=1.0.0->-r requirements.txt (line 2))
+  Downloading typing_inspection-0.4.1-py3-none-any.whl.metadata (2.6 kB)
+Collecting python-dateutil>=2.8.2 (from pandas>=2.0.0->-r requirements.txt (line 5))
+  Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl.metadata (8.4 kB)
+Collecting pytz>=2020.1 (from pandas>=2.0.0->-r requirements.txt (line 5))
+  Downloading pytz-2025.2-py2.py3-none-any.whl.metadata (22 kB)
+Collecting tzdata>=2022.7 (from pandas>=2.0.0->-r requirements.txt (line 5))
+  Downloading tzdata-2025.2-py2.py3-none-any.whl.metadata (1.4 kB)
+Collecting charset_normalizer<4,>=2 (from requests>=2.31.0->-r requirements.txt (line 6))
+  Downloading charset_normalizer-3.4.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (36 kB)
+Collecting urllib3<3,>=1.21.1 (from requests>=2.31.0->-r requirements.txt (line 6))
+  Downloading urllib3-2.5.0-py3-none-any.whl.metadata (6.5 kB)
+Collecting markdown-it-py>=2.2.0 (from rich>=13.0.0->-r requirements.txt (line 8))
+  Downloading markdown_it_py-4.0.0-py3-none-any.whl.metadata (7.3 kB)
+Collecting pygments<3.0.0,>=2.13.0 (from rich>=13.0.0->-r requirements.txt (line 8))
+  Downloading pygments-2.19.2-py3-none-any.whl.metadata (2.5 kB)
+Collecting mdurl~=0.1 (from markdown-it-py>=2.2.0->rich>=13.0.0->-r requirements.txt (line 8))
+  Downloading mdurl-0.1.2-py3-none-any.whl.metadata (1.6 kB)
+Collecting six>=1.5 (from python-dateutil>=2.8.2->pandas>=2.0.0->-r requirements.txt (line 5))
+  Downloading six-1.17.0-py2.py3-none-any.whl.metadata (1.7 kB)
+Downloading openai-1.108.1-py3-none-any.whl (948 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 948.4/948.4 kB 28.9 MB/s eta 0:00:00
+Downloading anyio-4.10.0-py3-none-any.whl (107 kB)
+Downloading distro-1.9.0-py3-none-any.whl (20 kB)
+Downloading httpx-0.28.1-py3-none-any.whl (73 kB)
+Downloading httpcore-1.0.9-py3-none-any.whl (78 kB)
+Downloading jiter-0.11.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (347 kB)
+Downloading pydantic-2.11.9-py3-none-any.whl (444 kB)
+Downloading pydantic_core-2.33.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.0/2.0 MB 92.5 MB/s eta 0:00:00
+Downloading typing_extensions-4.15.0-py3-none-any.whl (44 kB)
+Downloading psycopg2_binary-2.9.10-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.0/3.0 MB 74.7 MB/s eta 0:00:00
+Downloading numpy-2.3.3-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (16.6 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.6/16.6 MB 17.2 MB/s eta 0:00:00
+Downloading pandas-2.3.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (12.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 12.1/12.1 MB 29.7 MB/s eta 0:00:00
+Downloading requests-2.32.5-py3-none-any.whl (64 kB)
+Downloading charset_normalizer-3.4.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (151 kB)
+Downloading idna-3.10-py3-none-any.whl (70 kB)
+Downloading urllib3-2.5.0-py3-none-any.whl (129 kB)
+Downloading python_dotenv-1.1.1-py3-none-any.whl (20 kB)
+Downloading rich-14.1.0-py3-none-any.whl (243 kB)
+Downloading pygments-2.19.2-py3-none-any.whl (1.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 70.0 MB/s eta 0:00:00
+Downloading annotated_types-0.7.0-py3-none-any.whl (13 kB)
+Downloading certifi-2025.8.3-py3-none-any.whl (161 kB)
+Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+Downloading markdown_it_py-4.0.0-py3-none-any.whl (87 kB)
+Downloading mdurl-0.1.2-py3-none-any.whl (10.0 kB)
+Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl (229 kB)
+Downloading pytz-2025.2-py2.py3-none-any.whl (509 kB)
+Downloading six-1.17.0-py2.py3-none-any.whl (11 kB)
+Downloading sniffio-1.3.1-py3-none-any.whl (10 kB)
+Downloading tqdm-4.67.1-py3-none-any.whl (78 kB)
+Downloading typing_inspection-0.4.1-py3-none-any.whl (14 kB)
+Downloading tzdata-2025.2-py2.py3-none-any.whl (347 kB)
+Installing collected packages: pytz, urllib3, tzdata, typing-extensions, tqdm, sniffio, six, python-dotenv, pygments, psycopg2-binary, numpy, mdurl, jiter, idna, h11, distro, charset_normalizer, certifi, annotated-types, typing-inspection, requests, python-dateutil, pydantic-core, markdown-it-py, httpcore, anyio, rich, pydantic, pandas, httpx, openai
+
+Successfully installed annotated-types-0.7.0 anyio-4.10.0 certifi-2025.8.3 charset_normalizer-3.4.3 distro-1.9.0 h11-0.16.0 httpcore-1.0.9 httpx-0.28.1 idna-3.10 jiter-0.11.0 markdown-it-py-4.0.0 mdurl-0.1.2 numpy-2.3.3 openai-1.108.1 pandas-2.3.2 psycopg2-binary-2.9.10 pydantic-2.11.9 pydantic-core-2.33.2 pygments-2.19.2 python-dateutil-2.9.0.post0 python-dotenv-1.1.1 pytz-2025.2 requests-2.32.5 rich-14.1.0 six-1.17.0 sniffio-1.3.1 tqdm-4.67.1 typing-extensions-4.15.0 typing-inspection-0.4.1 tzdata-2025.2 urllib3-2.5.0
+
+[notice] A new release of pip is available: 25.1.1 -> 25.2
+[notice] To update, run: pip install --upgrade pip
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ 🚀 [1/3] DOWNLOAD DA API PNCP V1                                             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+✅ Conexão com banco estabelecida
+ℹ️  Processando 1 datas com 20 workers: 20250922 até 20250922
+
+📊 ESTATÍSTICAS DA SESSÃO:
+• Workers configurados: 20
+• Rate limiting: REMOVIDO (máximo throughput)
+• Paralelismo: REAL (lotes balanceados)
+• Constraints: OTIMIZADAS (verificação prévia)
+ℹ️  Iniciando download OTIMIZADO para 20250922 (14 modalidades)
+🔧 Código 6: 6 contratos
+🔧 Código 8: 3 contratos
+✅ Download concluído: 9 contratos encontrados
+ℹ️  Baixando 9 contratatações
+🔧 Worker 1: Processando lote de 1 contratações
+🔧 Worker 2: Processando lote de 1 contratações
+🔧 Worker 3: Processando lote de 1 contratações
+🔧 Worker 4: Processando lote de 1 contratações
+🔧 Worker 5: Processando lote de 1 contratações
+🔧 Worker 6: Processando lote de 1 contratações
+🔧 Worker 7: Processando lote de 1 contratações
+🔧 Worker 8: Processando lote de 1 contratações
+🔧 Worker 9: Processando lote de 1 contratações
+🔧 Worker 1: Encontrados 1 itens para 06296024000116-1-000023/2025
+🔧 Worker 1: Concluído - 1 contratos processados, 1 itens encontrados em 1 
+contratações
+🔧 Worker 1: 1 contratos processados, 1 itens encontrados
+🔧 Worker 3: Encontrados 2 itens para 18299511000111-1-000023/2025
+🔧 Worker 3: Concluído - 1 contratos processados, 2 itens encontrados em 1 
+contratações
+🔧 Worker 3: 1 contratos processados, 2 itens encontrados
+🔧 Worker 5: Encontrados 2 itens para 88243688000181-1-000158/2025
+🔧 Worker 8: Encontrados 1 itens para 90871831000121-1-000031/2025
+🔧 Worker 5: Concluído - 1 contratos processados, 2 itens encontrados em 1 
+contratações
+🔧 Worker 8: Concluído - 1 contratos processados, 1 itens encontrados em 1 
+contratações
+🔧 Worker 5: 1 contratos processados, 2 itens encontrados
+🔧 Worker 8: 1 contratos processados, 1 itens encontrados
+🔧 Worker 2: Encontrados 4 itens para 88496468000160-1-000267/2025
+🔧 Worker 2: Concluído - 1 contratos processados, 4 itens encontrados em 1 
+contratações
+🔧 Worker 2: 1 contratos processados, 4 itens encontrados
+🔧 Worker 4: Encontrados 3 itens para 93235968000188-1-000187/2025
+🔧 Worker 4: Concluído - 1 contratos processados, 3 itens encontrados em 1 
+contratações
+🔧 Worker 4: 1 contratos processados, 3 itens encontrados
+🔧 Worker 9: Encontrados 1 itens para 14885499000176-1-000003/2025
+🔧 Worker 9: Concluído - 1 contratos processados, 1 itens encontrados em 1 
+contratações
+🔧 Worker 9: 1 contratos processados, 1 itens encontrados
+🔧 Worker 6: Encontrados 10 itens para 90256652000184-1-000232/2025
+🔧 Worker 6: Concluído - 1 contratos processados, 10 itens encontrados em 1 
+contratações
+🔧 Worker 6: 1 contratos processados, 10 itens encontrados
+🔧 Worker 7: Encontrados 10 itens para 04216419000136-1-000045/2025
+🔧 Worker 7: Concluído - 1 contratos processados, 10 itens encontrados em 1 
+contratações
+🔧 Worker 7: 1 contratos processados, 10 itens encontrados
+✅ Baixando 34 itens encontrados em 9 contratações
+✅ Inseridos: 9 contratações, 34 itens
+  Processando 22/09/2025 com 20 workers ━━━━━━━━━━━━━━━━━━━ 100% 0:00:19 0:00:00
+
+✅ PROCESSAMENTO PARALELO CONCLUÍDO!
+📅 Datas processadas com sucesso: 1/1
+📋 Contratações inseridas: 9
+📦 Itens inseridos: 34
+⚡ Workers utilizados: 20
+✅ Sessão concluída com sucesso! Log salvo em: log_20250922_0800.log
+ℹ️  Conexão com banco fechada
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ [2/3] GERAÇÃO DE EMBEDDINGS                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+✅ Pool de conexões ESTÁVEL criado: 24 conexões máximas
+ℹ️  Última data de embedding processada: 20250921
+ℹ️  Última data processada geral: 20250922
+ℹ️  Processando embeddings do intervalo: 20250921 (exclusivo) até 20250922 
+(inclusivo)
+ℹ️  Intervalo calculado: 22/09/2025 até 22/09/2025 (1 dias)
+ℹ️  
+ℹ️  📅 Data 22/09/2025: processando...
+ℹ️  Processando embeddings para data: 22/09/2025
+ℹ️  Data 22/09/2025: processando 9 contratações
+🔧 🔧 DEBUG MODE: Mostrando 9 workers individuais
+🔧 🔧 Worker 1: Iniciando processamento de 1 contratos
+🔧 🔧 Worker 2: Iniciando processamento de 1 contratos
+🔧 🔧 Worker 1: Processando 1 contratos válidos
+🔧 🔧 Worker 2: Processando 1 contratos válidos
+🔧 🔧 Worker 3: Iniciando processamento de 1 contratos
+🔧 🔧 Worker 1: Batch size otimizado: 1 (de 1 textos)
+🔧 🔧 Worker 4: Iniciando processamento de 1 contratos
+🔧 🔧 Worker 2: Batch size otimizado: 1 (de 1 textos)
+🔧 🔧 Worker 3: Processando 1 contratos válidos
+🔧 🔧 Worker 5: Iniciando processamento de 1 contratos
+🔧 🔧 Worker 1: Processando 1 lotes de embedding
+🔧 🔧 Worker 4: Processando 1 contratos válidos
+🔧 🔧 Worker 6: Iniciando processamento de 1 contratos
+🔧 🔧 Worker 2: Processando 1 lotes de embedding
+🔧 🔧 Worker 7: Iniciando processamento de 1 contratos
+🔧 🔧 Worker 3: Batch size otimizado: 1 (de 1 textos)
+🔧 🔧 Worker 8: Iniciando processamento de 1 contratos
+🔧 🔧 Worker 5: Processando 1 contratos válidos
+🔧 🔧 Worker 9: Iniciando processamento de 1 contratos
+🔧 🔧 Worker 1: Lote 1/1 - 1 textos
+🔧 🔧 Worker 4: Batch size otimizado: 1 (de 1 textos)
+🔧 🔧 Worker 6: Processando 1 contratos válidos
+🔧 🔧 Worker 2: Lote 1/1 - 1 textos
+🔧 🔧 Worker 7: Processando 1 contratos válidos
+🔧 🔧 Worker 3: Processando 1 lotes de embedding
+🔧 🔧 Worker 8: Processando 1 contratos válidos
+🔧 🔧 Worker 5: Batch size otimizado: 1 (de 1 textos)
+🔧 🔧 Worker 9: Processando 1 contratos válidos
+🔧 🔧 Worker 4: Processando 1 lotes de embedding
+🔧 🔧 Worker 6: Batch size otimizado: 1 (de 1 textos)
+🔧 🔧 Worker 7: Batch size otimizado: 1 (de 1 textos)
+🔧 🔧 Worker 3: Lote 1/1 - 1 textos
+🔧 🔧 Worker 8: Batch size otimizado: 1 (de 1 textos)
+🔧 🔧 Worker 5: Processando 1 lotes de embedding
+🔧 🔧 Worker 9: Batch size otimizado: 1 (de 1 textos)
+🔧 🔧 Worker 4: Lote 1/1 - 1 textos
+🔧 🔧 Worker 6: Processando 1 lotes de embedding
+🔧 🔧 Worker 7: Processando 1 lotes de embedding
+🔧 🔧 Worker 8: Processando 1 lotes de embedding
+🔧 🔧 Worker 5: Lote 1/1 - 1 textos
+🔧 🔧 Worker 9: Processando 1 lotes de embedding
+🔧 🔧 Worker 6: Lote 1/1 - 1 textos
+🔧 🔧 Worker 7: Lote 1/1 - 1 textos
+🔧 🔧 Worker 8: Lote 1/1 - 1 textos
+🔧 🔧 Worker 9: Lote 1/1 - 1 textos
+🔧 🔧 Worker 1: Gerados 1 embeddings para lote 1
+🔧 🔧 Worker 6: Gerados 1 embeddings para lote 1
+🔧 🔧 Worker 2: Gerados 1 embeddings para lote 1
+🔧 🔧 Worker 9: Gerados 1 embeddings para lote 1
+🔧 🔧 Worker 7: Gerados 1 embeddings para lote 1
+🔧 🔧 Worker 8: Gerados 1 embeddings para lote 1
+🔧 🔧 Worker 3: Gerados 1 embeddings para lote 1
+🔧 🔧 Worker 5: Gerados 1 embeddings para lote 1
+🔧 🔧 Worker 1: Inseridos 1 embeddings no lote 1
+🔧 🔧 Worker 6: Inseridos 1 embeddings no lote 1
+🔧 🔧 Worker 1: Concluído - 1 embeddings gerados de 1 contratos
+🔧 🔧 Worker 2: Inseridos 1 embeddings no lote 1
+🔧 🔧 Worker 9: Inseridos 1 embeddings no lote 1
+🔧 🔧 Worker 6: Concluído - 1 embeddings gerados de 1 contratos
+🔧 🔧 Worker 7: Inseridos 1 embeddings no lote 1
+🔧 🔧 Worker 2: Concluído - 1 embeddings gerados de 1 contratos
+🔧 🔧 Worker 8: Inseridos 1 embeddings no lote 1
+🔧 🔧 Worker 9: Concluído - 1 embeddings gerados de 1 contratos
+🔧 🔧 Worker 7: Concluído - 1 embeddings gerados de 1 contratos
+🔧 🔧 Worker 8: Concluído - 1 embeddings gerados de 1 contratos
+🔧 🔧 Worker 3: Inseridos 1 embeddings no lote 1
+🔧 🔧 Worker 3: Concluído - 1 embeddings gerados de 1 contratos
+🔧 🔧 Worker 5: Inseridos 1 embeddings no lote 1
+🔧 🔧 Worker 5: Concluído - 1 embeddings gerados de 1 contratos
+🔧 🔧 Worker 4: Gerados 1 embeddings para lote 1
+🔧 🔧 Worker 4: Inseridos 1 embeddings no lote 1
+🔧 🔧 Worker 4: Concluído - 1 embeddings gerados de 1 contratos
+  📊 ULTRA DEBUG: Data 20250922 (9 workers) ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:07
+  ✅ Worker 1: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:03
+  ✅ Worker 2: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:03
+  ✅ Worker 3: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:03
+  ✅ Worker 4: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:07
+  ✅ Worker 5: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:04
+  ✅ Worker 6: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:03
+  ✅ Worker 7: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:03
+  ✅ Worker 8: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:03
+  ✅ Worker 9: Concluído (1 contratos)      ━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:03
+✅ ✅ Data 22/09/2025 concluída: 9 embeddings gerados, 0 erros
+✅ Data de embedding atualizada para: 20250922
+✅ Processamento concluído em 14.4s
+ℹ️  Datas processadas: 1
+ℹ️  Contratações processadas: 9
+ℹ️  Embeddings gerados: 9
+ℹ️  Embeddings em cache: 0
+ℹ️  Erros: 0
+✅ PROCESSAMENTO CONCLUÍDO
+ℹ️  🔒 Pool de conexões fechado com segurança
+================================================================================
+🚀 CATEGORIZAÇÃO DE CONTRATOS
+================================================================================
+
+📊 FASE 1: Verificando datas do sistema...
+📅 Last Categorization Date (LCD): 20250921
+📅 Last Embedded Date (LED): 20250922
+🎯 Próxima data a processar: 20250922
+
+📋 FASE 2: Gerando lista de datas entre 20250922 e 20250922...
+📈 Total de datas para processar: 1
+
+🔄 [1/1] 2025-09-22
+
+📅 Processando data: 2025-09-22
+    📋 9 contratos precisam categorização
+    📦 Dividindo em 1 lotes de até 100 contratos
+    ⚡ Usando 1 workers (otimizado para 1 batches)
+  🚀 2025-09-22 | ✅ 9 | ⏭️ 0 | ❌ 0 ━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:10 / 0:00:00
+    ✅ Concluído: 9 categorizados | 0 pulados | 0 erros
+    ✅ LCD atualizada para: 20250922
+
+================================================================================
+📊 RESULTADOS FINAIS
+================================================================================
+⏱️  Tempo total: 0.0h (13s)
+📅 Datas processadas: 1/1
+📋 Total de contratos:
+   ✅ Categorizados: 9
+   ⏭️  Pulados: 0
+   ❌ Erros: 0
+   📊 Total: 9
+🏃 Taxa média: 0.7 contratos/segundo
+📅 LCD final: 20250922
+================================================================================
+================================================================================
+GOVGO v1 - PIPELINE (Python) - SESSÃO: 20250922_0800
+Diretório: /opt/render/project/src/scripts
+================================================================================
+
+--------------------------------------------------------------------------------
+[ETAPA_1_DOWNLOAD] Executando: 03_download_pncp_contracts.py --debug
+--------------------------------------------------------------------------------
+[OK] ETAPA_1_DOWNLOAD concluída com sucesso
+
+--------------------------------------------------------------------------------
+[ETAPA_2_EMBEDDINGS] Executando: 04_generate_embeddings.py --debug
+--------------------------------------------------------------------------------
+[OK] ETAPA_2_EMBEDDINGS concluída com sucesso
+
+--------------------------------------------------------------------------------
+[ETAPA_3_CATEGORIZACAO] Executando: 05_categorize_contracts.py 
+--------------------------------------------------------------------------------
+[OK] ETAPA_3_CATEGORIZACAO concluída com sucesso
+
+================================================================================
+[SUCESSO] PIPELINE CONCLUÍDO SEM ERROS — Sessão: 20250922_0800
+================================================================================
