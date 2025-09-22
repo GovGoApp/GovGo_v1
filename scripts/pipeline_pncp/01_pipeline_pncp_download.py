@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 # ---------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 V1_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))  # .../v1
-LOGS_DIR = os.path.join(V1_ROOT, "logs")
+LOGS_DIR = os.path.join(SCRIPT_DIR, "logs")
 os.makedirs(LOGS_DIR, exist_ok=True)
 
 load_dotenv(os.path.join(V1_ROOT, ".env"))
@@ -433,6 +433,7 @@ def process_date(conn, date_str: str, max_workers: int) -> Tuple[int, int]:
         futures = {ex.submit(fetch_contratacoes_by_modalidade, date_str, cod): cod for cod in range(1, 15)}
         mod_total = len(futures)
         mod_done = 0
+        last_pct_mod = -1
         for fut in as_completed(futures):
             try:
                 data = fut.result() or []
@@ -441,7 +442,12 @@ def process_date(conn, date_str: str, max_workers: int) -> Tuple[int, int]:
                 log_line(f"Erro ao buscar modalidade {futures[fut]}: {e}")
             finally:
                 mod_done += 1
-                log_line(f"Modalidades: {mod_done}/{mod_total}")
+                pct = int((mod_done * 100) / max(1, mod_total))
+                if pct == 100 or pct - last_pct_mod >= 5:
+                    fill = int(round(pct * 20 / 100))
+                    bar = "█" * fill + "░" * (20 - fill)
+                    log_line(f"Contratações: {pct}% [{bar}] ({mod_done}/{mod_total})")
+                    last_pct_mod = pct
 
     if not contratos_raw:
         log_line("Sem contratações para a data.")
@@ -479,6 +485,7 @@ def process_date(conn, date_str: str, max_workers: int) -> Tuple[int, int]:
         futures = [ex.submit(fetch_itens_batch, b) for b in batches]
         batch_total = len(futures)
         batch_done = 0
+        last_pct_items = -1
         for fut in as_completed(futures):
             try:
                 itens_raw.extend(fut.result() or [])
@@ -486,7 +493,12 @@ def process_date(conn, date_str: str, max_workers: int) -> Tuple[int, int]:
                 log_line(f"Erro ao buscar itens (lote): {e}")
             finally:
                 batch_done += 1
-                log_line(f"Itens lotes: {batch_done}/{batch_total}")
+                pct = int((batch_done * 100) / max(1, batch_total))
+                if pct == 100 or pct - last_pct_items >= 5:
+                    fill = int(round(pct * 20 / 100))
+                    bar = "█" * fill + "░" * (20 - fill)
+                    log_line(f"Itens: {pct}% [{bar}] ({batch_done}/{batch_total})")
+                    last_pct_items = pct
 
     # Normalizar, dedup (numero_controle_pncp + numero_item) e inserir
     itens_norm: List[Dict[str, Any]] = []
@@ -515,7 +527,8 @@ def build_dates(start: str | None, end: str | None) -> List[str]:
     if start is None:
         start = dt.datetime.now().strftime("%Y%m%d")
     if end is None:
-        end = start
+        # Sem --end, processa até hoje (múltiplos dias)
+        end = dt.datetime.now().strftime("%Y%m%d")
     dates: List[str] = []
     cur = dt.datetime.strptime(start, "%Y%m%d")
     end_dt = dt.datetime.strptime(end, "%Y%m%d")

@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 # ---------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 V1_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))  # .../v1
-LOGS_DIR = os.path.join(V1_ROOT, "logs")
+LOGS_DIR = os.path.join(SCRIPT_DIR, "logs")
 os.makedirs(LOGS_DIR, exist_ok=True)
 
 load_dotenv(os.path.join(V1_ROOT, ".env"))
@@ -222,6 +222,7 @@ def process_date(conn, date_yyyymmdd: str, top_k: int, batch_size: int) -> Dict[
 
     total_batches = math.ceil(total / max(1, batch_size))
     batch_idx = 0
+    last_pct = -1
     for i in range(0, total, batch_size):
         batch_idx += 1
         batch = rows[i:i + batch_size]
@@ -244,7 +245,13 @@ def process_date(conn, date_yyyymmdd: str, top_k: int, batch_size: int) -> Dict[
             errors += len(batch)
             log_line(f"Erro no lote ({i}-{i+len(batch)-1}): {e}")
         finally:
-            log_line(f"Categorização lotes: {batch_idx}/{total_batches} (+{success}✓/{skipped}↷/{errors}✗ acumulado)")
+            done = min(i + batch_size, total)
+            pct = int((done * 100) / max(1, total))
+            if pct == 100 or pct - last_pct >= 5:
+                fill = int(round(pct * 20 / 100))
+                bar = "█" * fill + "░" * (20 - fill)
+                log_line(f"Categorização: {pct}% [{bar}] ({done}/{total}) ✓{success} ↷{skipped} ✗{errors}")
+                last_pct = pct
 
     log_line(f"Data {date_yyyymmdd}: {success} categorizados, {skipped} pulados, {errors} erros")
     return {"success": success, "skipped": skipped, "errors": errors}

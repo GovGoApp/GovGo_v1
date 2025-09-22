@@ -1,0 +1,7 @@
+# Dependências para 00_pipeline.py, 01_pipeline_pncp_download.py, 02_pipeline_pncp_embeddings.py, 03_pipeline_pncp_categorization.py
+# 00 usa apenas biblioteca padrão; 01/02/03 precisam dos pacotes abaixo
+
+python-dotenv>=1.0.0
+requests>=2.31.0
+psycopg2-binary>=2.9.9
+openai>=1.30.0

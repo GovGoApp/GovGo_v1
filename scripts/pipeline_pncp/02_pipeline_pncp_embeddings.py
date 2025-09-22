@@ -25,7 +25,7 @@ from openai import OpenAI
 # ---------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 V1_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))  # .../v1
-LOGS_DIR = os.path.join(V1_ROOT, "logs")
+LOGS_DIR = os.path.join(SCRIPT_DIR, "logs")
 os.makedirs(LOGS_DIR, exist_ok=True)
 
 load_dotenv(os.path.join(V1_ROOT, ".env"))
@@ -219,8 +219,10 @@ def process_date(conn, date_str: str, batch_size: int) -> int:
         return 0
 
     total = 0
-    total_batches = math.ceil(len(regs) / max(1, batch_size))
+    n = len(regs)
+    total_batches = math.ceil(n / max(1, batch_size))
     batch_idx = 0
+    last_pct = -1
     for i in range(0, len(regs), batch_size):
         batch_idx += 1
         chunk = regs[i:i + batch_size]
@@ -228,7 +230,13 @@ def process_date(conn, date_str: str, batch_size: int) -> int:
         embs = generate_embeddings_batch(texts)
         inserted = insert_embeddings(conn, chunk, embs)
         total += inserted
-        log_line(f"Embeddings lotes: {batch_idx}/{total_batches} (+{inserted})")
+        done = min(i + batch_size, n)
+        pct = int((done * 100) / max(1, n))
+        if pct == 100 or pct - last_pct >= 5:
+            fill = int(round(pct * 20 / 100))
+            bar = "█" * fill + "░" * (20 - fill)
+            log_line(f"Embeddings: {pct}% [{bar}] ({done}/{n}) +{inserted}")
+            last_pct = pct
     log_line(f"Concluído {date_str}: {total} embeddings novos")
     return total
 
