@@ -228,6 +228,7 @@ def process_date(conn, date_yyyymmdd: str, top_k: int, batch_size: int) -> Dict[
     for i in range(0, total, batch_size):
         batch_idx += 1
         batch = rows[i:i + batch_size]
+        s0, k0, e0 = success, skipped, errors
         try:
             for r in batch:
                 comp = compute_top_categories(conn, r["embeddings"], top_k)
@@ -252,7 +253,11 @@ def process_date(conn, date_yyyymmdd: str, top_k: int, batch_size: int) -> Dict[
             if pct == 100 or pct - last_pct >= 5:
                 fill = int(round(pct * 20 / 100))
                 bar = "█" * fill + "░" * (20 - fill)
-                log_line(f"Categorização: {pct}% [{bar}] ({done}/{total}) ✓{success} ↷{skipped} ✗{errors}")
+                ds, dk, de = success - s0, skipped - k0, errors - e0
+                log_line(
+                    f"Categorização: {pct}% [{bar}] ({done}/{total}) "
+                    f"Δ(✓ {ds}/↷ {dk}/✗ {de}) Σ(✓ {success}/↷ {skipped}/✗{errors}) (tentados {len(batch)})"
+                )
                 last_pct = pct
 
     log_line(f"Data {date_yyyymmdd}: {success} categorizados, {skipped} pulados, {errors} erros")

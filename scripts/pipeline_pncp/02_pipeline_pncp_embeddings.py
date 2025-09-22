@@ -202,12 +202,13 @@ def insert_embeddings(conn, registros: List[Dict[str, Any]], embeddings: List[Li
 
     sql = (
         "INSERT INTO contratacao_emb (numero_controle_pncp, modelo_embedding, metadata, embeddings) "
-        "VALUES %s ON CONFLICT (numero_controle_pncp) DO NOTHING"
+        "VALUES %s ON CONFLICT (numero_controle_pncp) DO NOTHING RETURNING numero_controle_pncp"
     )
     with conn.cursor() as cur:
         execute_values(cur, sql, rows, template='(%s, %s, %s, %s::vector)', page_size=200)
+        inserted_rows = cur.fetchall() or []
     conn.commit()
-    return len(rows)
+    return len(inserted_rows)
 
 # ---------------------------------------------------------------------
 # Processamento de uma data
@@ -237,7 +238,7 @@ def process_date(conn, date_str: str, batch_size: int) -> int:
         if pct == 100 or pct - last_pct >= 5:
             fill = int(round(pct * 20 / 100))
             bar = "█" * fill + "░" * (20 - fill)
-            log_line(f"Embeddings: {pct}% [{bar}] ({done}/{n}) +{inserted}")
+            log_line(f"Embeddings: {pct}% [{bar}] ({done}/{n}) Δ+{inserted} Σ{total} (tentados {len(chunk)})")
             last_pct = pct
     log_line(f"Concluído {date_str}: {total} embeddings novos")
     return total
