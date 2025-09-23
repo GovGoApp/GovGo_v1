@@ -13,6 +13,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 import importlib.util
+import importlib.util
 
 
 def main() -> int:
@@ -25,9 +26,10 @@ def main() -> int:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         os.environ["PIPELINE_TIMESTAMP"] = ts
 
+    # Executar etapas como módulos (-m) para assegurar contexto de pacote
     steps = [
-        ("ETAPA_1_EXECUCAO", "01_run_scheduled_boletins.py", []),
-        ("ETAPA_2_ENVIO", "02_send_boletins_email.py", []),
+        ("ETAPA_1_EXECUCAO", "search.gvg_browser.scripts.01_run_scheduled_boletins", []),
+        ("ETAPA_2_ENVIO", "search.gvg_browser.scripts.02_send_boletins_email", []),
     ]
 
     print("================================================================================")
@@ -67,26 +69,27 @@ def main() -> int:
             print(f"[bootstrap][ERRO] Falha no pip install: {e}")
             return 1
 
-    for step_name, script_name, args in steps:
-        script_path = folder / script_name
-        if not script_path.exists():
-            print(f"[ERRO] Script não encontrado: {script_path}")
+    for step_name, module_name, args in steps:
+        # validar módulo
+        if importlib.util.find_spec(module_name) is None:
+            print(f"[ERRO] Módulo não encontrado: {module_name}")
             return 1
 
         env = base_env.copy()
         env["PIPELINE_STEP"] = step_name
 
         print("\n--------------------------------------------------------------------------------")
-        print(f"[{step_name}] Executando: {script_name} {' '.join(args)}")
+        print(f"[{step_name}] Executando módulo: {module_name} {' '.join(args)}")
         print("--------------------------------------------------------------------------------")
 
         try:
-            subprocess.run([sys.executable, str(script_path), *args], cwd=str(folder), env=env, check=True)
+            # Executa como módulo a partir da raiz do projeto (proj_root)
+            subprocess.run([sys.executable, "-m", module_name, *args], cwd=str(Path(proj_root)), env=env, check=True)
         except subprocess.CalledProcessError as e:
-            print(f"[ERRO] {script_name} retornou código {e.returncode}")
+            print(f"[ERRO] {module_name} retornou código {e.returncode}")
             return e.returncode or 1
         except Exception as e:
-            print(f"[ERRO] Falha ao executar {script_name}: {e}")
+            print(f"[ERRO] Falha ao executar {module_name}: {e}")
             return 1
 
         print(f"[OK] {step_name} concluída")
