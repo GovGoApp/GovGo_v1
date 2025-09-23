@@ -47,7 +47,7 @@ def main() -> int:
         except Exception:
             return False
 
-    essential = ["sqlalchemy", "psycopg2", "dotenv", "requests", "pandas", "numpy"]
+    essential = ["sqlalchemy", "psycopg2", "dotenv", "requests", "pandas", "numpy", "rich"]
     missing = [m for m in essential if not _has_mod(m)]
     if missing:
         print(f"[bootstrap] Dependências ausentes: {', '.join(missing)} — instalando...")
@@ -59,7 +59,7 @@ def main() -> int:
                 subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(req_file)], check=True)
             else:
                 # fallback minimal
-                subprocess.run([sys.executable, "-m", "pip", "install", "SQLAlchemy", "psycopg2-binary", "python-dotenv", "requests", "pandas", "numpy"], check=True)
+                subprocess.run([sys.executable, "-m", "pip", "install", "SQLAlchemy", "psycopg2-binary", "python-dotenv", "requests", "pandas", "numpy", "rich"], check=True)
         except subprocess.CalledProcessError as e:
             print(f"[bootstrap][ERRO] pip install retornou código {e.returncode}")
             return e.returncode or 1

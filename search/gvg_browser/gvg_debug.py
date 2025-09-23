@@ -17,10 +17,22 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional
 
-from rich.console import Console
-
-# Console global para logs coloridos
-_console = Console(highlight=False, soft_wrap=False)
+try:
+    from rich.console import Console  # type: ignore
+    _console = Console(highlight=False, soft_wrap=False)  # Console global
+except Exception:
+    class _PlainConsole:
+        def print(self, *args, **kwargs):  # ignore styles, behave like print
+            try:
+                msg = " ".join(str(a) for a in args)
+                end = kwargs.get('end', '\n')
+                print(msg, end=end)
+            except Exception:
+                try:
+                    print(*args, **kwargs)
+                except Exception:
+                    pass
+    _console = _PlainConsole()
 
 # Estilos por área (cores Rich)
 _AREA_STYLE_MAP: Dict[str, str] = {
