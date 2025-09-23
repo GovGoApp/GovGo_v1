@@ -189,6 +189,106 @@ def compute_top_categories(conn, embedding_vector, top_k: int) -> Tuple[List[str
         return None
 
 
+def get_pending_ids_for_date(conn, date_yyyymmdd: str) -> List[int]:
+    """Retorna apenas os IDs (id_contratacao_emb) pendentes para a data.
+    Evita trafegar embeddings para o cliente.
+    """
+    target = yyyymmdd_to_date_str(date_yyyymmdd)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT ce.id_contratacao_emb
+                  FROM contratacao_emb ce
+                  JOIN contratacao c ON c.numero_controle_pncp = ce.numero_controle_pncp
+                 WHERE c.data_publicacao_pncp IS NOT NULL
+                   AND DATE(c.data_publicacao_pncp) >= %s::date
+                   AND DATE(c.data_publicacao_pncp) < (%s::date + INTERVAL '1 day')
+                   AND ce.embeddings IS NOT NULL
+                   AND ce.top_categories IS NULL
+                 ORDER BY ce.id_contratacao_emb
+                """,
+                (target, target),
+            )
+            return [r[0] for r in (cur.fetchall() or [])]
+    except Exception as e:
+        log_line(f"Erro ao buscar IDs pendentes {date_yyyymmdd}: {e}")
+        return []
+
+
+def update_batch_categories_sql(conn, ids: List[int], top_k: int) -> int:
+    """Calcula top_k categorias totalmente no banco e atualiza em lote.
+    Retorna a quantidade de linhas atualizadas (sucesso). Não faz commit.
+    """
+    if not ids:
+        return 0
+    try:
+        with conn.cursor() as cur:
+
+            cur.execute(
+                """
+                WITH pending AS (
+                    SELECT ce.id_contratacao_emb, ce.embeddings
+                      FROM contratacao_emb ce
+                     WHERE ce.id_contratacao_emb = ANY(%s::int[])
+                       AND ce.top_categories IS NULL
+                ),
+                best AS (
+                    SELECT p.id_contratacao_emb,
+                           array_agg(s.cod_cat ORDER BY s.sim DESC) AS top_categories,
+                           array_agg(s.sim ORDER BY s.sim DESC) AS top_similarities
+                      FROM pending p
+                  JOIN LATERAL (
+                     SELECT c.cod_cat,
+                           ROUND((1 - (c.cat_embeddings <=> p.embeddings))::numeric, 4)::double precision AS sim
+                       FROM categoria c
+                      WHERE c.cat_embeddings IS NOT NULL
+                      ORDER BY c.cat_embeddings <=> p.embeddings
+                      LIMIT %s
+                  ) s ON TRUE
+                     GROUP BY p.id_contratacao_emb
+                ),
+                scored AS (
+                    SELECT b.id_contratacao_emb,
+                           b.top_categories,
+                           b.top_similarities,
+                           CASE
+                             WHEN array_length(b.top_similarities,1) IS NULL
+                               OR array_length(b.top_similarities,1) < 2
+                               OR b.top_similarities[1] = 0
+                               THEN 0.0
+                             ELSE ROUND(
+                                 (1 - EXP(
+                                     -10 * (
+                                         COALESCE((
+                                             SELECT SUM((b.top_similarities[1] - s) * (1.0/(i)))
+                                               FROM unnest(b.top_similarities[2:]) WITH ORDINALITY AS t(s,i)
+                                         ), 0) / b.top_similarities[1]
+                                     )
+                                 ))::numeric,
+                                 4
+                             )::double precision
+                           END AS confidence
+                      FROM best b
+                )
+                UPDATE contratacao_emb ce
+                   SET top_categories   = s.top_categories,
+                       top_similarities = s.top_similarities,
+                       confidence       = s.confidence
+                  FROM scored s
+                 WHERE ce.id_contratacao_emb = s.id_contratacao_emb
+                   AND ce.top_categories IS NULL
+                RETURNING ce.id_contratacao_emb
+                """,
+                (ids, top_k),
+            )
+            updated_rows = cur.fetchall() or []
+            return len(updated_rows)
+    except Exception as e:
+        log_line(f"Erro na atualização em lote (ids~{len(ids)}): {e}")
+        raise
+
+
 def update_contract_category(conn, id_contratacao_emb: int, cats: List[str], sims: List[float], conf: float) -> bool:
     try:
         with conn.cursor() as cur:
@@ -212,8 +312,9 @@ def update_contract_category(conn, id_contratacao_emb: int, cats: List[str], sim
 
 def process_date(conn, date_yyyymmdd: str, top_k: int, batch_size: int) -> Dict[str, int]:
     log_line(f"Processando categorização {date_yyyymmdd}...")
-    rows = get_pending_contracts_for_date(conn, date_yyyymmdd)
-    total = len(rows)
+    # Novo fluxo: busca apenas IDs; cálculo e update 100% no SQL por lote
+    pending_ids = get_pending_ids_for_date(conn, date_yyyymmdd)
+    total = len(pending_ids)
     if total == 0:
         log_line("Sem pendências para a data.")
         return {"success": 0, "skipped": 0, "errors": 0}
@@ -227,36 +328,28 @@ def process_date(conn, date_yyyymmdd: str, top_k: int, batch_size: int) -> Dict[
     last_pct = -1
     for i in range(0, total, batch_size):
         batch_idx += 1
-        batch = rows[i:i + batch_size]
+        batch_ids = pending_ids[i:i + batch_size]
         s0, k0, e0 = success, skipped, errors
+        attempted = len(batch_ids)
         try:
-            for r in batch:
-                comp = compute_top_categories(conn, r["embeddings"], top_k)
-                if not comp:
-                    skipped += 1
-                    continue
-                cats, sims = comp
-                conf = calculate_confidence(sims)
-                if update_contract_category(conn, r["id_contratacao_emb"], cats, sims, conf):
-                    success += 1
-                else:
-                    # já categorizado por outra execução
-                    skipped += 1
+            updated = update_batch_categories_sql(conn, batch_ids, top_k)
+            success += updated
+            skipped += max(0, attempted - updated)
             conn.commit()
         except Exception as e:
             conn.rollback()
-            errors += len(batch)
-            log_line(f"Erro no lote ({i}-{i+len(batch)-1}): {e}")
+            errors += attempted
+            log_line(f"Erro no lote ({i}-{i+attempted-1}): {e}")
         finally:
             done = min(i + batch_size, total)
             pct = int((done * 100) / max(1, total))
-            if pct == 100 or pct - last_pct >= 5:
+            if pct == 100 or pct - last_pct >= 1:
                 fill = int(round(pct * 20 / 100))
                 bar = "█" * fill + "░" * (20 - fill)
                 ds, dk, de = success - s0, skipped - k0, errors - e0
                 log_line(
                     f"Categorização: {pct}% [{bar}] ({done}/{total}) "
-                    f"Δ(✓ {ds}/↷ {dk}/✗ {de}) Σ(✓ {success}/↷ {skipped}/✗{errors}) (tentados {len(batch)})"
+                    f"Δ(✓ {ds}/↷ {dk}/✗ {de})"
                 )
                 last_pct = pct
 
@@ -271,7 +364,7 @@ def process_date(conn, date_yyyymmdd: str, top_k: int, batch_size: int) -> Dict[
 def main():
     parser = argparse.ArgumentParser(description="Pipeline PNCP 03 – Categorização")
     parser.add_argument("--test", help="Rodar apenas uma data YYYYMMDD")
-    parser.add_argument("--batch-size", type=int, default=int(os.getenv("PNCP_CAT_BATCH", "200")))
+    parser.add_argument("--batch-size", type=int, default=int(os.getenv("PNCP_CAT_BATCH", "100")))
     parser.add_argument("--top-k", type=int, default=int(os.getenv("PNCP_CAT_TOPK", "5")))
     args = parser.parse_args()
 
