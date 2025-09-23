@@ -35,6 +35,9 @@ def main() -> int:
     print("================================================================================")
 
     base_env = os.environ.copy()
+    # Garante PYTHONPATH com a raiz do projeto (../.. da pasta scripts)
+    proj_root = str((folder / ".." / ".." / "..").resolve())
+    base_env["PYTHONPATH"] = proj_root + os.pathsep + base_env.get("PYTHONPATH", "")
 
     for step_name, script_name, args in steps:
         script_path = folder / script_name

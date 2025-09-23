@@ -27,7 +27,7 @@ fi
 check_imports() {
   "$PY" - <<'PYCODE'
 import importlib, sys
-mods = ['requests','psycopg2','dotenv','pandas','numpy']
+mods = ['requests','psycopg2','dotenv','pandas','numpy','sqlalchemy']
 missing = [m for m in mods if importlib.util.find_spec(m) is None]
 if missing:
     print("[bootstrap] Missing:", ",".join(missing))
@@ -53,5 +53,9 @@ if [[ -z "${PIPELINE_TIMESTAMP:-}" ]]; then
   export PIPELINE_TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 fi
 
-# Executar pipeline
+# Garantir PYTHONPATH com raiz do projeto (3 níveis acima deste script)
+PROJ_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+export PYTHONPATH="${PROJ_ROOT}:${PYTHONPATH:-}"
+
+# Executar pipeline (mantendo PYTHONPATH)
 exec "$PY" 00_pipeline_boletim.py
