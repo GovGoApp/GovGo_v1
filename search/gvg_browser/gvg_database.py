@@ -9,7 +9,13 @@ import psycopg2
 import requests
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
-from gvg_debug import debug_log as dbg
+try:
+    from search.gvg_browser.gvg_debug import debug_log as dbg  # type: ignore
+except Exception:
+    try:
+        from .gvg_debug import debug_log as dbg  # type: ignore
+    except Exception:
+        from gvg_debug import debug_log as dbg  # type: ignore
 
 # Carregar configurações
 load_dotenv()

@@ -21,14 +21,21 @@ from typing import List, Dict, Any, Optional
 import json
 
 try:
-    # Execução como pacote (python -m search.gvg_browser...)
-    from .gvg_user import get_current_user
-    from .gvg_database import create_connection
-    from .gvg_debug import debug_log as dbg
-except Exception:  # fallback para execução direta dentro da pasta
-    from gvg_user import get_current_user
-    from gvg_database import create_connection
-    from gvg_debug import debug_log as dbg
+    # Preferir import absoluto de pacote
+    from search.gvg_browser.gvg_user import get_current_user  # type: ignore
+    from search.gvg_browser.gvg_database import create_connection  # type: ignore
+    from search.gvg_browser.gvg_debug import debug_log as dbg  # type: ignore
+except Exception:
+    try:
+        # Tentar relativo (quando importado como parte do pacote)
+        from .gvg_user import get_current_user  # type: ignore
+        from .gvg_database import create_connection  # type: ignore
+        from .gvg_debug import debug_log as dbg  # type: ignore
+    except Exception:
+        # Fallback: execução direta na pasta
+        from gvg_user import get_current_user  # type: ignore
+        from gvg_database import create_connection  # type: ignore
+        from gvg_debug import debug_log as dbg  # type: ignore
 from datetime import datetime, timezone
 
 

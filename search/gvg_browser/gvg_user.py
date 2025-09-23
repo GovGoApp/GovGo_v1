@@ -9,10 +9,22 @@ from __future__ import annotations
 import os
 from typing import List, Optional, Dict, Any, Union
 import datetime as _dt
-from gvg_database import create_connection
-from gvg_debug import debug_log as dbg
-from gvg_schema import get_contratacao_core_columns, PRIMARY_KEY
-from gvg_search_core import _augment_aliases
+try:
+    from search.gvg_browser.gvg_database import create_connection  # type: ignore
+    from search.gvg_browser.gvg_debug import debug_log as dbg  # type: ignore
+    from search.gvg_browser.gvg_schema import get_contratacao_core_columns, PRIMARY_KEY  # type: ignore
+    from search.gvg_browser.gvg_search_core import _augment_aliases  # type: ignore
+except Exception:
+    try:
+        from .gvg_database import create_connection  # type: ignore
+        from .gvg_debug import debug_log as dbg  # type: ignore
+        from .gvg_schema import get_contratacao_core_columns, PRIMARY_KEY  # type: ignore
+        from .gvg_search_core import _augment_aliases  # type: ignore
+    except Exception:
+        from gvg_database import create_connection  # type: ignore
+        from gvg_debug import debug_log as dbg  # type: ignore
+        from gvg_schema import get_contratacao_core_columns, PRIMARY_KEY  # type: ignore
+        from gvg_search_core import _augment_aliases  # type: ignore
 
 # Tenta importar auth para obter usuário da sessão (token em cookies)
 try:
