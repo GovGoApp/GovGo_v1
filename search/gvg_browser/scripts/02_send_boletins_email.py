@@ -11,6 +11,16 @@ from __future__ import annotations
 
 import os
 import json
+import sys
+from pathlib import Path
+
+# Garante que o pacote 'search' (raiz do repo) esteja no sys.path quando rodado via cron
+try:
+    repo_root = str(Path(__file__).resolve().parents[3])
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+except Exception:
+    pass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 

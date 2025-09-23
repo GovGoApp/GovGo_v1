@@ -12,6 +12,7 @@ import sys
 import subprocess
 from datetime import datetime
 from pathlib import Path
+import importlib.util
 
 
 def main() -> int:
@@ -38,6 +39,33 @@ def main() -> int:
     # Garante PYTHONPATH com a raiz do projeto (../.. da pasta scripts)
     proj_root = str((folder / ".." / ".." / "..").resolve())
     base_env["PYTHONPATH"] = proj_root + os.pathsep + base_env.get("PYTHONPATH", "")
+
+    # Bootstrap de dependências: instala requirements se módulos essenciais faltarem
+    def _has_mod(name: str) -> bool:
+        try:
+            return importlib.util.find_spec(name) is not None
+        except Exception:
+            return False
+
+    essential = ["sqlalchemy", "psycopg2", "dotenv", "requests", "pandas", "numpy"]
+    missing = [m for m in essential if not _has_mod(m)]
+    if missing:
+        print(f"[bootstrap] Dependências ausentes: {', '.join(missing)} — instalando...")
+        reqs = folder / "requirements.txt"
+        alt_reqs = Path(proj_root) / "requirements.txt"
+        req_file = reqs if reqs.exists() else (alt_reqs if alt_reqs.exists() else None)
+        try:
+            if req_file:
+                subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(req_file)], check=True)
+            else:
+                # fallback minimal
+                subprocess.run([sys.executable, "-m", "pip", "install", "SQLAlchemy", "psycopg2-binary", "python-dotenv", "requests", "pandas", "numpy"], check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"[bootstrap][ERRO] pip install retornou código {e.returncode}")
+            return e.returncode or 1
+        except Exception as e:
+            print(f"[bootstrap][ERRO] Falha no pip install: {e}")
+            return 1
 
     for step_name, script_name, args in steps:
         script_path = folder / script_name
