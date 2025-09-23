@@ -12,6 +12,7 @@ Notas:
 from __future__ import annotations
 
 import uuid
+import os
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 import json
@@ -37,6 +38,23 @@ except Exception:
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
     from search_v1.GvG_Search_Function import gvg_search  # retorna dict com 'results'
     from gvg_debug import debug_log as dbg
+
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOGS_DIR = os.path.join(SCRIPT_DIR, "logs")
+os.makedirs(LOGS_DIR, exist_ok=True)
+
+# Log compartilhado estilo pipeline (stdout + arquivo único por sessão)
+PIPELINE_TIMESTAMP = os.getenv("PIPELINE_TIMESTAMP") or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+LOG_FILE = os.path.join(LOGS_DIR, f"log_{PIPELINE_TIMESTAMP}.log")
+
+def log_line(msg: str) -> None:
+    try:
+        print(msg, flush=True)
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
 
 
 def _build_rows_from_search(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -92,30 +110,30 @@ def _build_rows_from_search(results: List[Dict[str, Any]]) -> List[Dict[str, Any
 
 def run_once(now: Optional[datetime] = None) -> None:
     now = now or datetime.now(timezone.utc)
+    # Cabeçalho
+    log_line("================================================================================")
+    log_line(f"[1/2] EXECUÇÃO DE BOLETINS — Sessão: {PIPELINE_TIMESTAMP}")
+    log_line(f"Data: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+    log_line("================================================================================")
+
     schedules = list_active_schedules_all(now)
+    log_line(f"Boletins ativos hoje (após filtro de dias): {len(schedules)}")
     # Preview: quais boletins serão executados hoje e o motivo
     try:
         dow_map = {0: 'seg', 1: 'ter', 2: 'qua', 3: 'qui', 4: 'sex', 5: 'sab', 6: 'dom'}
         dow = dow_map.get(now.weekday())
-        dbg('BOLETIM', f"Prévia: {len(schedules)} boletim(ns) hoje {now.strftime('%Y-%m-%d')} (dow={dow})")
-        for s in schedules:
-            stype = (s.get('schedule_type') or '').upper()
-            sdetail = s.get('schedule_detail') or {}
-            if isinstance(sdetail, str):
-                try:
-                    sdetail = json.loads(sdetail)
-                except Exception:
-                    sdetail = {}
-            cfg_days = sdetail.get('days') if isinstance(sdetail, dict) else None
-            days = []
-            if stype in ('DIARIO', 'MULTIDIARIO'):
-                days = list(cfg_days) if cfg_days else ['seg', 'ter', 'qua', 'qui', 'sex']
-            elif stype == 'SEMANAL':
-                days = list(cfg_days) if cfg_days else []
-            motivo = f"hoje='{dow}' ∈ days={days}"
-            dbg('BOLETIM', f"- id={s.get('id')} tipo={stype} {motivo}")
+        log_line(f"Prévia: {len(schedules)} boletim(ns) hoje {now.strftime('%Y-%m-%d')} (dow={dow})")
     except Exception:
         pass
+
+    # Barra de progresso por boletim
+    total = len(schedules)
+    done = 0
+    last_pct = -1
+
+    executed = 0
+    skipped = 0
+
     for s in schedules:
         sid = s['id']
         uid = s['user_id']
@@ -134,15 +152,12 @@ def run_once(now: Optional[datetime] = None) -> None:
             if not x:
                 return None
             if isinstance(x, datetime):
-                # Assume timezone-aware; se for naive, trata como UTC
                 return x if x.tzinfo else x.replace(tzinfo=timezone.utc)
             if isinstance(x, str):
                 try:
-                    # Tenta formatos comuns ISO
                     return datetime.fromisoformat(x.replace('Z', '+00:00'))
                 except Exception:
                     try:
-                        # Fallback: apenas data YYYY-MM-DD
                         return datetime.strptime(x[:10], '%Y-%m-%d').replace(tzinfo=timezone.utc)
                     except Exception:
                         return None
@@ -161,22 +176,29 @@ def run_once(now: Optional[datetime] = None) -> None:
         except Exception:
             min_int = None
 
-        if stype in ('DIARIO', 'SEMANAL'):
-            if ran_today:
-                try:
-                    dbg('BOLETIM', f"Skip boletim {sid}: já executado hoje (last_run_at={lr_dt})")
-                except Exception:
-                    pass
-                continue
-        elif stype == 'MULTIDIARIO' and min_int and lr_dt:
-            if now - lr_dt < timedelta(minutes=min_int):
-                try:
-                    dbg('BOLETIM', f"Skip boletim {sid}: intervalo mínimo {min_int}min não cumprido (último={lr_dt})")
-                except Exception:
-                    pass
-                continue
+        if stype in ('DIARIO', 'SEMANAL') and ran_today:
+            done += 1
+            skipped += 1
+            # Progresso também em skips
+            pct = int((done * 100) / max(1, total))
+            if pct == 100 or pct - last_pct >= 5:
+                fill = int(round(pct * 20 / 100))
+                bar = "█" * fill + "░" * (20 - fill)
+                log_line(f"Execução: {pct}% [{bar}] ({done}/{total})")
+                last_pct = pct
+            continue
+        if stype == 'MULTIDIARIO' and min_int and lr_dt and (now - lr_dt < timedelta(minutes=min_int)):
+            done += 1
+            skipped += 1
+            pct = int((done * 100) / max(1, total))
+            if pct == 100 or pct - last_pct >= 5:
+                fill = int(round(pct * 20 / 100))
+                bar = "█" * fill + "░" * (20 - fill)
+                log_line(f"Execução: {pct}% [{bar}] ({done}/{total})")
+                last_pct = pct
+            continue
 
-        dbg('BOLETIM', f"Executando boletim {sid} para user {uid}: '{query}'")
+        log_line(f"Executando boletim {sid} :: '{query}'")
 
         # Extrai configurações do snapshot do boletim
         cfg = s.get('config_snapshot') or {}
@@ -201,33 +223,17 @@ def run_once(now: Optional[datetime] = None) -> None:
                 channels = [channels]
 
         # Defaults seguros
-        search_type = int(cfg.get('search_type', 3))               # 1=semântica, 2=palavras, 3=híbrida
-        search_approach = int(cfg.get('search_approach', 3))       # 1=direta, 2=correspondência, 3=filtro
-        relevance_level = int(cfg.get('relevance_level', 2))       # 1..3
-        sort_mode = int(cfg.get('sort_mode', 1))                   # 1..3
+        search_type = int(cfg.get('search_type', 3))
+        search_approach = int(cfg.get('search_approach', 3))
+        relevance_level = int(cfg.get('relevance_level', 2))
+        sort_mode = int(cfg.get('sort_mode', 1))
         max_results = int(cfg.get('max_results', 50))
         top_categories_count = int(cfg.get('top_categories_count', 10))
         filter_expired = bool(cfg.get('filter_expired', True))
         negation_emb = bool(cfg.get('negation_emb', True))
 
         # Log dos parâmetros que serão enviados para a busca
-        try:
-            params_preview = {
-                'prompt': query,
-                'search': search_type,
-                'approach': search_approach,
-                'relevance': relevance_level,
-                'order': sort_mode,
-                'max_results': max_results,
-                'top_cat': top_categories_count,
-                'negation_emb': negation_emb,
-                'filter_expired': filter_expired,
-                'schedule_detail': sched_detail,
-                'channels': channels,
-            }
-            dbg('BOLETIM', 'Parâmetros gvg_search: ' + json.dumps(params_preview, ensure_ascii=False))
-        except Exception:
-            pass
+    # (Parâmetros omitidos do log para reduzir ruído)
 
         # Executa busca respeitando o snapshot (com proteção)
         try:
@@ -247,19 +253,19 @@ def run_once(now: Optional[datetime] = None) -> None:
                 return_raw=True,
             )
         except Exception as e:
-            try:
-                dbg('BOLETIM', f"ERRO gvg_search sid={sid} uid={uid}: {e}")
-            except Exception:
-                pass
+            log_line(f"ERRO busca sid={sid}: {e}")
+            done += 1
+            skipped += 1
+            pct = int((done * 100) / max(1, total))
+            if pct == 100 or pct - last_pct >= 5:
+                fill = int(round(pct * 20 / 100))
+                bar = "█" * fill + "░" * (20 - fill)
+                log_line(f"Execução: {pct}% [{bar}] ({done}/{total})")
+                last_pct = pct
             continue
 
         # Log dos parâmetros efetivos reconhecidos pela função
-        try:
-            eff_params = resp.get('params') if isinstance(resp, dict) else None
-            if eff_params:
-                dbg('BOLETIM', 'Parâmetros efetivos: ' + json.dumps(eff_params, ensure_ascii=False))
-        except Exception:
-            pass
+    # (Parâmetros efetivos omitidos do log)
         rows_all = _build_rows_from_search(resp.get('results') or [])
 
         # Delta: manter apenas itens com data_publicacao_pncp >= baseline (last_run_at)
@@ -267,9 +273,7 @@ def run_once(now: Optional[datetime] = None) -> None:
         baseline_iso = None
         if last_run:
             try:
-                # normaliza para YYYY-MM-DD
                 if isinstance(last_run, str):
-                    # tenta parse simples de 'YYYY-MM-DD'
                     baseline_iso = last_run[:10]
                 else:
                     baseline_iso = last_run.strftime('%Y-%m-%d')
@@ -281,7 +285,6 @@ def run_once(now: Optional[datetime] = None) -> None:
                 return None
             if isinstance(d, str):
                 s = d.strip()
-                # formatos aceitos: YYYY-MM-DD, YYYY-MM-DDTHH:MM:SS, DD/MM/YYYY
                 try:
                     if len(s) >= 10 and s[4] == '-' and s[7] == '-':
                         return s[:10]
@@ -289,7 +292,6 @@ def run_once(now: Optional[datetime] = None) -> None:
                     pass
                 try:
                     if '/' in s and len(s) >= 10:
-                        # DD/MM/YYYY -> YYYY-MM-DD
                         dd, mm, yy = s[:10].split('/')
                         return f"{yy}-{mm}-{dd}"
                 except Exception:
@@ -301,19 +303,32 @@ def run_once(now: Optional[datetime] = None) -> None:
             before = len(rows_all)
             rows = [r for r in rows_all if (_parse_date_any(r.get('data_publicacao_pncp')) or '') >= baseline_iso]
             kept = len(rows)
-            try:
-                dbg('BOLETIM', f"Delta baseline={baseline_iso} filtrou {before} -> {kept}")
-            except Exception:
-                pass
+            # só loga delta se houve filtragem
+            if kept != before:
+                log_line(f"Delta baseline={baseline_iso}: {before}->{kept}")
         else:
             rows = rows_all
+
         run_token = uuid.uuid4().hex
         record_boletim_results(sid, uid, run_token, now, rows)
+        log_line(f"Boletim {sid}: resultados gravados = {len(rows)}")
 
         # marcar last_run
         touch_last_run(sid, now)
+        executed += 1
+
+        # Atualiza progresso
+        done += 1
+        pct = int((done * 100) / max(1, total))
+        if pct == 100 or pct - last_pct >= 5:
+            fill = int(round(pct * 20 / 100))
+            bar = "█" * fill + "░" * (20 - fill)
+            log_line(f"Execução: {pct}% [{bar}] ({done}/{total})")
+            last_pct = pct
 
     # envio por email será tratado em script separado (last_sent_at)
+    log_line(f"Resumo: executados={executed}, pulados={skipped}, total={total}")
+    log_line("Concluído: execução de boletins finalizada")
 
 
 if __name__ == '__main__':

@@ -1,0 +1,6 @@
+# Requisitos para pipeline de boletins (01/02) e módulos auxiliares
+python-dotenv
+psycopg2-binary
+requests
+pandas
+numpy

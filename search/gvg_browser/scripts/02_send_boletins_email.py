@@ -9,13 +9,13 @@ Requisitos: SMTP_* no .env; DB configurado.
 """
 from __future__ import annotations
 
+import os
 import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from search.gvg_browser.gvg_boletim import set_last_sent, get_user_email
-    from search.gvg_browser.gvg_debug import debug_log as dbg
     from search.gvg_browser.gvg_database import create_connection
     from search.gvg_browser.gvg_email import send_html_email
     from search.gvg_browser.gvg_styles import styles
@@ -24,10 +24,23 @@ except Exception:
     import sys, os
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from gvg_boletim import set_last_sent, get_user_email
-    from gvg_debug import debug_log as dbg
     from gvg_database import create_connection
     from gvg_email import send_html_email
     from gvg_styles import styles
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOGS_DIR = os.path.join(SCRIPT_DIR, "logs")
+os.makedirs(LOGS_DIR, exist_ok=True)
+
+PIPELINE_TIMESTAMP = os.getenv("PIPELINE_TIMESTAMP") or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+LOG_FILE = os.path.join(LOGS_DIR, f"log_{PIPELINE_TIMESTAMP}.log")
+
+def log_line(msg: str) -> None:
+    try:
+        print(msg, flush=True)
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
 
 
 def _style_inline(d: Dict[str, Any]) -> str:
@@ -58,10 +71,7 @@ def _fetch_boletins_to_send() -> List[Dict[str, Any]]:
             cols = [d[0] for d in cur.description]
             out = [dict(zip(cols, r)) for r in cur.fetchall() or []]
         except Exception as e1:
-            try:
-                dbg('BOLETIM', f"_fetch_boletins_to_send fallback sem last_sent_at ({e1})")
-            except Exception:
-                pass
+        # fallback silencioso: sem logs verbosos
             cur.execute(
                 """
                 SELECT id, user_id, query_text, schedule_type, schedule_detail, last_run_at
@@ -73,10 +83,7 @@ def _fetch_boletins_to_send() -> List[Dict[str, Any]]:
             out = [dict(zip(cols, r)) for r in cur.fetchall() or []]
         return out
     except Exception as e:
-        try:
-            dbg('BOLETIM', f"Erro _fetch_boletins_to_send: {e}")
-        except Exception:
-            pass
+        # erro silencioso: retorna lista vazia
         return []
     finally:
         try:
@@ -115,10 +122,7 @@ def _fetch_latest_run_rows(boletim_id: int) -> Tuple[List[Dict[str, Any]], Optio
         rows = [dict(zip(cols, r)) for r in cur.fetchall() or []]
         return rows, last_run
     except Exception as e:
-        try:
-            dbg('BOLETIM', f"Erro _fetch_latest_run_rows: {e}")
-        except Exception:
-            pass
+        # erro silencioso: retorna vazio
         return [], None
     finally:
         try:
@@ -158,13 +162,21 @@ def _render_html_boletim(query_text: str, items: List[Dict[str, Any]]) -> str:
 
 def run_once(now: Optional[datetime] = None) -> None:
     now = now or datetime.now(timezone.utc)
+    # Cabeçalho
+    log_line("================================================================================")
+    log_line(f"[2/2] ENVIO DE BOLETINS — Sessão: {PIPELINE_TIMESTAMP}")
+    log_line(f"Data: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+    log_line("================================================================================")
+
     boletins = _fetch_boletins_to_send()
-    try:
-        dow_map = {0: 'seg', 1: 'ter', 2: 'qua', 3: 'qui', 4: 'sex', 5: 'sab', 6: 'dom'}
-        dow = dow_map.get(now.weekday())
-        dbg('BOLETIM', f"Envio: {len(boletins)} boletim(ns) candidatos em {now.strftime('%Y-%m-%d')} (dow={dow})")
-    except Exception:
-        pass
+    log_line(f"Boletins candidatos a envio: {len(boletins)}")
+    total = len(boletins)
+    done = 0
+    last_pct = -1
+
+    sent = 0
+    skipped = 0
+
     for b in boletins:
         sid = b['id']
         uid = b['user_id']
@@ -207,19 +219,29 @@ def run_once(now: Optional[datetime] = None) -> None:
         elif stype == 'SEMANAL':
             days = list(cfg_days) if cfg_days else []
         if cur_dow not in days:
-            try:
-                dbg('BOLETIM', f"Skip envio id={sid}: hoje='{cur_dow}' ∉ days={days}")
-            except Exception:
-                pass
+            done += 1
+            skipped += 1
+            # progresso ao pular
+            pct = int((done * 100) / max(1, total))
+            if pct == 100 or pct - last_pct >= 5:
+                fill = int(round(pct * 20 / 100))
+                bar = "█" * fill + "░" * (20 - fill)
+                log_line(f"Envio: {pct}% [{bar}] ({done}/{total})")
+                last_pct = pct
             continue
 
         # Frequência
         if stype in ('DIARIO', 'SEMANAL'):
             if sent_today:
-                try:
-                    dbg('BOLETIM', f"Skip envio id={sid}: já enviado hoje (last_sent_at={ls_dt})")
-                except Exception:
-                    pass
+                done += 1
+                skipped += 1
+                # progresso ao pular
+                pct = int((done * 100) / max(1, total))
+                if pct == 100 or pct - last_pct >= 5:
+                    fill = int(round(pct * 20 / 100))
+                    bar = "█" * fill + "░" * (20 - fill)
+                    log_line(f"Envio: {pct}% [{bar}] ({done}/{total})")
+                    last_pct = pct
                 continue
         elif stype == 'MULTIDIARIO':
             min_int = None
@@ -230,15 +252,28 @@ def run_once(now: Optional[datetime] = None) -> None:
             except Exception:
                 min_int = None
             if min_int and ls_dt and (now - ls_dt).total_seconds() < min_int * 60:
-                try:
-                    dbg('BOLETIM', f"Skip envio id={sid}: intervalo mínimo {min_int}min não cumprido (último envio={ls_dt})")
-                except Exception:
-                    pass
+                done += 1
+                skipped += 1
+                # progresso ao pular
+                pct = int((done * 100) / max(1, total))
+                if pct == 100 or pct - last_pct >= 5:
+                    fill = int(round(pct * 20 / 100))
+                    bar = "█" * fill + "░" * (20 - fill)
+                    log_line(f"Envio: {pct}% [{bar}] ({done}/{total})")
+                    last_pct = pct
                 continue
 
         email = get_user_email(uid)
         if not email:
-            dbg('BOLETIM', f"Sem email para user={uid}; pulando boletim id={sid}")
+            skipped += 1
+            done += 1
+            # atualiza progresso mesmo ao pular
+            pct = int((done * 100) / max(1, total))
+            if pct == 100 or pct - last_pct >= 5:
+                fill = int(round(pct * 20 / 100))
+                bar = "█" * fill + "░" * (20 - fill)
+                log_line(f"Envio: {pct}% [{bar}] ({done}/{total})")
+                last_pct = pct
             continue
         rows, last_run = _fetch_latest_run_rows(sid)
         html = _render_html_boletim(query, rows)
@@ -246,9 +281,21 @@ def run_once(now: Optional[datetime] = None) -> None:
         ok = send_html_email(email, subject, html)
         if ok:
             set_last_sent(sid, now)
-            dbg('BOLETIM', f"Email enviado para {email} (boletim id={sid}, itens={len(rows)})")
+            log_line(f"Enviado: boletim id={sid} para {email} (itens={len(rows)})")
+            sent += 1
         else:
-            dbg('BOLETIM', f"Falha ao enviar email para {email} (boletim id={sid})")
+            log_line(f"Falha envio: boletim id={sid} para {email}")
+
+        # Progresso
+        done += 1
+        pct = int((done * 100) / max(1, total))
+        if pct == 100 or pct - last_pct >= 5:
+            fill = int(round(pct * 20 / 100))
+            bar = "█" * fill + "░" * (20 - fill)
+            log_line(f"Envio: {pct}% [{bar}] ({done}/{total})")
+            last_pct = pct
+
+    log_line(f"Resumo envio: enviados={sent}, pulados={skipped}, candidatos={total}")
 
 
 if __name__ == '__main__':
