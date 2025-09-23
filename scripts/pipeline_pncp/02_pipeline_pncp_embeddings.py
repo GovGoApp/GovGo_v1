@@ -253,8 +253,16 @@ def build_dates_for_embeddings(conn, start: str | None, end: str | None, test: s
     last_emb = get_last_embedding_date(conn)
     last_proc = get_last_processed_date(conn)
 
-    s = dt.datetime.strptime(last_emb, "%Y%m%d") + dt.timedelta(days=1)
-    e = dt.datetime.strptime(last_proc, "%Y%m%d")
+    today = dt.datetime.now().strftime("%Y%m%d")
+    led_dt = dt.datetime.strptime(last_emb, "%Y%m%d")
+    lpd_dt = dt.datetime.strptime(last_proc, "%Y%m%d")
+    # Opção B: se LED == hoje, reprocessa hoje (inclusivo); senão LED+1
+    if last_emb == today:
+        s = led_dt
+    else:
+        s = led_dt + dt.timedelta(days=1)
+    # end = min(LPD, hoje)
+    e = min(lpd_dt, dt.datetime.strptime(today, "%Y%m%d"))
 
     if start:
         s = dt.datetime.strptime(start, "%Y%m%d")

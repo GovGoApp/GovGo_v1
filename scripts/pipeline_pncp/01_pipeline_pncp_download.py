@@ -568,9 +568,15 @@ def main():
             if args.start:
                 start = args.start
             else:
-                last_dt = dt.datetime.strptime(last_date, "%Y%m%d")
-                start = (last_dt + dt.timedelta(days=1)).strftime("%Y%m%d")
-            dates = build_dates(start, args.end)
+                today = dt.datetime.now().strftime("%Y%m%d")
+                if last_date == today:
+                    # Opção B: incluir o dia atual quando LPD == hoje
+                    start = last_date
+                else:
+                    last_dt = dt.datetime.strptime(last_date, "%Y%m%d")
+                    start = (last_dt + dt.timedelta(days=1)).strftime("%Y%m%d")
+            end = args.end or dt.datetime.now().strftime("%Y%m%d")
+            dates = build_dates(start, end)
 
         if dates:
             log_line(f"Intervalo de datas para 01 (LPD): {dates[0]} .. {dates[-1]} ({len(dates)})")

@@ -378,13 +378,17 @@ def main():
         else:
             lcd, led = get_system_dates(conn)
             log_line(f"LCD atual: {lcd} | LED atual: {led}")
-            # Definir início = LCD+1 até LED
+            # Opção B: se LCD == hoje, incluir hoje; senão LCD+1. End = min(LED, hoje)
+            today = dt.datetime.now().strftime("%Y%m%d")
             try:
-                start_dt = dt.datetime.strptime(lcd, "%Y%m%d") + dt.timedelta(days=1)
+                if lcd == today:
+                    start = lcd
+                else:
+                    start_dt = dt.datetime.strptime(lcd, "%Y%m%d") + dt.timedelta(days=1)
+                    start = start_dt.strftime("%Y%m%d")
             except Exception:
-                start_dt = dt.datetime.now()
-            start = start_dt.strftime("%Y%m%d")
-            end = led
+                start = today
+            end = led if led <= today else today
             dates = build_dates(start, end)
 
         if dates:
