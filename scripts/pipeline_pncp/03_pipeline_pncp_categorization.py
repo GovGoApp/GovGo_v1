@@ -347,10 +347,7 @@ def process_date(conn, date_yyyymmdd: str, top_k: int, batch_size: int) -> Dict[
                 fill = int(round(pct * 20 / 100))
                 bar = "█" * fill + "░" * (20 - fill)
                 ds, dk, de = success - s0, skipped - k0, errors - e0
-                log_line(
-                    f"Categorização: {pct}% [{bar}] ({done}/{total}) "
-                    f"Δ(✓ {ds}/↷ {dk}/✗ {de})"
-                )
+                log_line(f"Categorização: {pct}% [{bar}] ({done}/{total}) ")
                 last_pct = pct
 
     log_line(f"Data {date_yyyymmdd}: {success} categorizados, {skipped} pulados, {errors} erros")

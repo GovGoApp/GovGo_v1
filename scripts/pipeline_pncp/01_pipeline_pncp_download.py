@@ -454,7 +454,7 @@ def process_date(conn, date_str: str, max_workers: int) -> Tuple[int, int]:
     if not contratos_raw:
         log_line("Sem contratações para a data.")
         return 0, 0
-
+    log_line("")
     # Dedup por numeroControlePNCP
     uniq_map: Dict[str, Dict[str, Any]] = {}
     for c in contratos_raw:

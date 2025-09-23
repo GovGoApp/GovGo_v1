@@ -238,7 +238,7 @@ def process_date(conn, date_str: str, batch_size: int) -> int:
         if pct == 100 or pct - last_pct >= 5:
             fill = int(round(pct * 20 / 100))
             bar = "█" * fill + "░" * (20 - fill)
-            log_line(f"Embeddings: {pct}% [{bar}] ({done}/{n}) Δ+{inserted} Σ{total} (tentados {len(chunk)})")
+            log_line(f"Embeddings: {pct}% [{bar}] ({done}/{n})")
             last_pct = pct
     log_line(f"Concluído {date_str}: {total} embeddings novos")
     return total
