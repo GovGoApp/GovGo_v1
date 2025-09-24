@@ -43,12 +43,8 @@ if os.path.exists(env_path):
                 config[key] = value
 
 
-# Base paths
-BASE_PATH = "C:\\Users\\Haroldo Duraes\\Desktop\\GOvGO\\v0\\#DATA\\PNCP\\"
-LOGO_PATH = os.getenv(
-    'GVG_LOGO_URL',
-    "C:\\Users\\Haroldo Duraes\\Desktop\\GOvGO\\v0\\#LOGO\\LOGO_TEXTO_GOvGO_TRIM_v3.png"
-)
+LOGO_PATH = "https://hemztmtbejcbhgfmsvfq.supabase.co/storage/v1/object/public/govgo/LOGO/LOGO_TEXTO_GOvGO_TRIM_v3.png"
+
 
 
  # OpenAI configuration usando SOMENTE .env local (sem fallback para variáveis de ambiente do SO)
