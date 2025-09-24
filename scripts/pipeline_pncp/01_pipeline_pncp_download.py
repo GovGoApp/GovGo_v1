@@ -61,6 +61,10 @@ def log_line(msg: str) -> None:
 
 
 def insert_run_stats(conn, stage: str, date_ref: str, inserted_contr: int, inserted_itens: int) -> None:
+    c = int(inserted_contr or 0)
+    i = int(inserted_itens or 0)
+    # Se a coluna date_ref for INTEGER na tabela, envie inteiro; caso seja TEXT/VARCHAR, o PG aceitará o inteiro também
+    date_param = int(date_ref) if isinstance(date_ref, str) and date_ref.isdigit() else date_ref
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -68,9 +72,32 @@ def insert_run_stats(conn, stage: str, date_ref: str, inserted_contr: int, inser
                 INSERT INTO pipeline_run_stats (stage, date_ref, inserted_contratacoes, inserted_itens)
                 VALUES (%s, %s, %s, %s)
                 """,
-                (stage, date_ref, int(inserted_contr or 0), int(inserted_itens or 0)),
+                (stage, date_param, c, i),
             )
         conn.commit()
+        log_line(f"Métricas registradas 01/{date_ref}: +C={c}, +I={i}")
+    except psycopg2.errors.UniqueViolation:
+        # Se houver uma constraint única (ex.: UNIQUE(stage, date_ref)), agregamos os valores
+        conn.rollback()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE pipeline_run_stats
+                    SET inserted_contratacoes = COALESCE(inserted_contratacoes, 0) + %s,
+                        inserted_itens = COALESCE(inserted_itens, 0) + %s,
+                        ts_run = CURRENT_TIMESTAMP
+                    WHERE stage = %s AND date_ref = %s
+                    """,
+                    (c, i, stage, date_param),
+                )
+            conn.commit()
+            log_line(
+                f"Aviso: métrica agregada por UNIQUE(stage,date_ref) 01/{date_ref}: +C={c}, +I={i} (use múltiplas linhas sem UNIQUE para análises intradiárias)"
+            )
+        except Exception as e2:
+            conn.rollback()
+            log_line(f"Aviso: falha ao agregar métricas após UNIQUE (01/{date_ref}): {e2}")
     except Exception as e:
         conn.rollback()
         log_line(f"Aviso: falha ao registrar métricas (01/{date_ref}): {e}")
