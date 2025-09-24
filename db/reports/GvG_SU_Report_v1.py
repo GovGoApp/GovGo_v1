@@ -71,7 +71,8 @@ except Exception as e:
     debug_print(f"Falha ao inicializar OpenAI client: {e}")
 
 # Assistant ID - usar somente chave do .env local
-assistant_id = config.get('OPENAI_ASSISTANT_PNCP_SQL_SUPABASE_v1')
+#assistant_id = config.get('OPENAI_ASSISTANT_PNCP_SQL_SUPABASE_v1')
+assistant_id = config.get('OPENAI_ASSISTANT_PNCP_SQL_SUPABASE_v1_2')
 
 # Supabase Database Configuration
 DB_CONFIG = {
