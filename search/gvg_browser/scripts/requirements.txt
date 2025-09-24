@@ -1,8 +1,10 @@
 # Requisitos para pipeline de boletins (01/02) e módulos auxiliares
-python-dotenv
-psycopg2-binary
+python-dotenv>=1.0.0
+psycopg2-binary>=2.9.9
 requests
 pandas
 numpy
 SQLAlchemy
 rich
+requests>=2.31.0
+openai>=1.30.0
