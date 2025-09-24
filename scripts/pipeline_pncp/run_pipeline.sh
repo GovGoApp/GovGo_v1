@@ -3,6 +3,7 @@
 # - Garante deps via pip apenas se faltarem (ou quando FORCE_PIP_INSTALL=1)
 # - Usa o Python disponível no runtime do Cron
 # - Executa 00_pipeline.py nesta pasta
+# cron expression: 30 10,14,18 * * *
 
 set -Eeuo pipefail
 

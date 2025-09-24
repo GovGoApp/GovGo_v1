@@ -1,17 +1,17 @@
 # Dependências para GvG_SU_Report_v2 (Dash + Supabase via psycopg2)
-dash==2.17.1
-dash-bootstrap-components==1.5.0
-plotly==5.24.1
+dash>=2.17.1
+dash-bootstrap-components>=1.5.0
+plotly>=5.24.1
 
 # Acesso ao PostgreSQL (Supabase)
-psycopg2-binary==2.9.9
+psycopg2-binary>=2.9.9
 
 # DataFrames e exportação Excel
 pandas>=2.0.0
-XlsxWriter==3.2.0
+XlsxWriter>=3.2.0
 
 # OpenAI (cliente oficial v1+)
-openai==1.43.0
+openai>=1.43.0
 
 # Servidor WSGI para produção (Render)
-gunicorn==21.2.0
+gunicorn>=21.2.0
