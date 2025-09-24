@@ -466,7 +466,7 @@ def validate_openai_config():
     if not api_key:
         missing.append('OPENAI_API_KEY')
     if not assistant_id:
-        missing.append('OPENAI_ASSISTANT_PNCP_SQL_SUPABASE_v1')
+        missing.append('OPENAI_ASSISTANT_PNCP_SQL_SUPABASE_v1_2')
     if missing:
         msg = (
             "Config OpenAI ausente no .env local: " + ", ".join(missing) +
