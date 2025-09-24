@@ -17,7 +17,6 @@ from psycopg2.extras import RealDictCursor
 import traceback
 import io
 import dash.dependencies
-import io
 from openai import OpenAI
 
 # Variável de controle para debug
@@ -29,26 +28,16 @@ def debug_print(message):
     if DEBUG:
         print(f"[DEBUG] {message}")
 
-# Carregar configurações do DB diretamente do arquivo .env
-env_path = os.path.join(os.path.dirname(__file__), '.env')
-debug_print(f"Caminho do .env: {env_path}")
-debug_print(f"Arquivo .env existe: {os.path.exists(env_path)}")
-
-config = {}
-if os.path.exists(env_path):
-    with open(env_path, 'r') as f:
-        for line in f:
-            if '=' in line and not line.strip().startswith('#'):
-                key, value = line.strip().split('=', 1)
-                config[key] = value
+# Configurações via variáveis de ambiente (Render/OS) – sem leitura manual de .env
+_env = os.environ
 
 
 LOGO_PATH = "https://hemztmtbejcbhgfmsvfq.supabase.co/storage/v1/object/public/govgo/LOGO/LOGO_TEXTO_GOvGO_TRIM_v3.png"
 
 
 
- # OpenAI configuration usando SOMENTE .env local (sem fallback para variáveis de ambiente do SO)
-api_key = config.get('OPENAI_API_KEY')
+ # OpenAI configuration via variáveis de ambiente
+api_key = os.getenv('OPENAI_API_KEY')
 try:
     if api_key:
         client = OpenAI(api_key=api_key)
@@ -66,27 +55,27 @@ except Exception as e:
     thread = None
     debug_print(f"Falha ao inicializar OpenAI client: {e}")
 
-# Assistant ID - usar somente chave do .env local
-#assistant_id = config.get('OPENAI_ASSISTANT_PNCP_SQL_SUPABASE_v1')
-assistant_id = config.get('OPENAI_ASSISTANT_PNCP_SQL_SUPABASE_v1_2')
+# Assistant ID - usar somente variável OPENAI_ASSISTANT_PNCP_SQL_SUPABASE_v1
+assistant_id = os.getenv('OPENAI_ASSISTANT_PNCP_SQL_SUPABASE_v1')
 
 # Supabase Database Configuration
 DB_CONFIG = {
-    'host': config.get('SUPABASE_HOST'),
-    'port': config.get('SUPABASE_PORT'),
-    'dbname': config.get('SUPABASE_DBNAME'),
-    'user': config.get('SUPABASE_USER'),
-    'password': config.get('SUPABASE_PASSWORD')
+    'host': os.getenv('SUPABASE_HOST'),
+    'port': os.getenv('SUPABASE_PORT'),
+    'dbname': os.getenv('SUPABASE_DBNAME'),
+    'user': os.getenv('SUPABASE_USER'),
+    'password': os.getenv('SUPABASE_PASSWORD')
 }
 
-# Debug das configurações carregadas
-debug_print(f"Configurações carregadas: {len(config)} itens")
+# Debug das configurações carregadas do ambiente
+debug_print("Configurações via os.getenv ativas")
 debug_print(f"DB Host: {DB_CONFIG['host']}")
 debug_print(f"DB User: {DB_CONFIG['user']}")
 debug_print(f"Assistant ID: {assistant_id}")
 
 # Initialize the Dash app
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+server = app.server  # Expor servidor WSGI para Gunicorn
 app.title = 'GOvGO'
 app.title = 'SQL Reports'
 
@@ -466,11 +455,11 @@ def validate_openai_config():
     if not api_key:
         missing.append('OPENAI_API_KEY')
     if not assistant_id:
-        missing.append('OPENAI_ASSISTANT_PNCP_SQL_SUPABASE_v1_2')
+        missing.append('OPENAI_ASSISTANT_PNCP_SQL_SUPABASE_v1')
     if missing:
         msg = (
-            "Config OpenAI ausente no .env local: " + ", ".join(missing) +
-            f". Defina as chaves no arquivo {env_path}."
+            "Config OpenAI ausente: " + ", ".join(missing) +
+            ". Defina-as como variáveis de ambiente."
         )
         debug_print(msg)
         return False, msg
