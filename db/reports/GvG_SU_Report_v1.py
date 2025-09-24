@@ -55,8 +55,8 @@ except Exception as e:
     thread = None
     debug_print(f"Falha ao inicializar OpenAI client: {e}")
 
-# Assistant ID - usar somente variável OPENAI_ASSISTANT_PNCP_SQL_SUPABASE_v1
-assistant_id = os.getenv('OPENAI_ASSISTANT_PNCP_SQL_SUPABASE_v1')
+# Assistant ID - usar somente variável OPENAI_ASSISTANT_PNCP_SQL_SUPABASE_v1_2
+assistant_id = os.getenv('OPENAI_ASSISTANT_PNCP_SQL_SUPABASE_v1_2')
 
 # Supabase Database Configuration
 DB_CONFIG = {
