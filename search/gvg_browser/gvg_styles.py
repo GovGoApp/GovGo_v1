@@ -591,6 +591,8 @@ BASE_CSS = """
 
 # Classe aplicada em dcc.Markdown(children=..., className='markdown-summary')
 MARKDOWN_CSS = (
+    "/** Layout do resumo em Markdown **/\n"
+    ".markdown-summary { padding: 10px 12px; }\n"
     "/** Títulos menores para o resumo em Markdown **/\n"
     ".markdown-summary h1 { font-size: 16px; line-height: 1.25; }\n"
     ".markdown-summary h2 { font-size: 14px; line-height: 1.25; }\n"

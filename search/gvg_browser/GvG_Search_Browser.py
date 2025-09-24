@@ -62,8 +62,10 @@ from gvg_user import (
     fetch_bookmarks,
     add_bookmark,
     remove_bookmark,
+    get_current_user,
     fetch_user_results_for_prompt_text,
 )
+from gvg_database import get_user_resumo, upsert_user_resumo
 from gvg_boletim import (
     create_user_boletim,
     deactivate_user_boletim,
@@ -3601,6 +3603,35 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                     continue
             except Exception:
                 pass
+
+            # Antes de gerar, tentar carregar do BD por usuário
+            try:
+                user = get_current_user() if 'get_current_user' in globals() else {'uid': ''}
+                uid = (user or {}).get('uid') or ''
+            except Exception:
+                uid = ''
+            if uid:
+                try:
+                    db_summary = get_user_resumo(uid, pid)
+                except Exception:
+                    db_summary = None
+                if db_summary:
+                    # Debug: indicar caminho GET (BD)
+                    try:
+                        from gvg_search_core import SQL_DEBUG
+                        if SQL_DEBUG:
+                            sz = len(db_summary) if isinstance(db_summary, str) else 'N/A'
+                            dbg('RESUMO', f"Resumo obtido do BD (chars={sz})")
+                    except Exception:
+                        pass
+                    try:
+                        updated_cache[str(pid)] = {'docs': (docs or []), 'summary': db_summary}
+                    except Exception:
+                        pass
+                    children_out.append([html.Div(dcc.Markdown(children=db_summary, className='markdown-summary'), style=styles['details_content_inner'])])
+                    style_out[-1] = {**style_out[-1], 'display': 'block'}
+                    btn_styles[-1] = inverted_btn_style
+                    continue
             try:
                 from gvg_search_core import SQL_DEBUG
                 if SQL_DEBUG:
@@ -3682,7 +3713,7 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                 from gvg_search_core import SQL_DEBUG
                 if SQL_DEBUG and summary_text is not None:
                     sz = len(summary_text) if isinstance(summary_text, str) else 'N/A'
-                    dbg('RESUMO', f"Resumo gerado (chars={sz})")
+                    dbg('RESUMO', f"Resumo GERADO (chars={sz})")
             except Exception:
                 pass
 
@@ -3693,6 +3724,13 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                 updated_cache[str(pid)] = {'docs': docs, 'summary': summary_text}
             except Exception:
                 pass
+
+            # Persistir no BD por usuário (best-effort)
+            if uid and isinstance(summary_text, str) and summary_text.strip():
+                try:
+                    upsert_user_resumo(uid, pid, summary_text)
+                except Exception:
+                    pass
             # Substitui o spinner pelo conteúdo final (resumo)
             children_out[-1] = [html.Div(dcc.Markdown(children=summary_text, className='markdown-summary'), style=styles['details_content_inner'])]
         else:

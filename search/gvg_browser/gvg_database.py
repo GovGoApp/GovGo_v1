@@ -144,6 +144,94 @@ def fetch_documentos(numero_controle: str):
     except Exception as e:
         dbg('DOCS', f"⚠️ API documentos erro: {e}")
     return documentos
+
+# =========================
+# Resumos por usuário (CRUD)
+# =========================
+from typing import Optional
+
+def get_user_resumo(user_id: str, numero_pncp: str) -> Optional[str]:
+    """Retorna o resumo Markdown salvo para (user_id, numero_pncp) ou None.
+
+    Requer a tabela public.user_resumos com UNIQUE(user_id, numero_controle_pncp).
+    """
+    if not user_id or not numero_pncp:
+        return None
+    conn = None
+    cur = None
+    try:
+        conn = create_connection()
+        if not conn:
+            return None
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT resumo_md
+              FROM public.user_resumos
+             WHERE user_id = %s AND numero_controle_pncp = %s
+             LIMIT 1
+            """,
+            (user_id, str(numero_pncp))
+        )
+        row = cur.fetchone()
+        return row[0] if row and row[0] else None
+    except Exception as e:
+        try:
+            dbg('SQL', f"get_user_resumo erro: {e}")
+        except Exception:
+            pass
+        return None
+    finally:
+        try:
+            if cur:
+                cur.close()
+        finally:
+            if conn:
+                conn.close()
+
+def upsert_user_resumo(user_id: str, numero_pncp: str, resumo_md: str) -> bool:
+    """Insere/atualiza o resumo Markdown para (user_id, numero_pncp).
+
+    Usa ON CONFLICT (user_id, numero_controle_pncp) DO UPDATE para deduplicar.
+    """
+    if not user_id or not numero_pncp or not isinstance(resumo_md, str) or not resumo_md.strip():
+        return False
+    conn = None
+    cur = None
+    try:
+        conn = create_connection()
+        if not conn:
+            return False
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO public.user_resumos (user_id, numero_controle_pncp, resumo_md)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id, numero_controle_pncp)
+            DO UPDATE SET resumo_md = EXCLUDED.resumo_md, updated_at = now()
+            """,
+            (user_id, str(numero_pncp), resumo_md)
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        try:
+            if conn:
+                conn.rollback()
+        except Exception:
+            pass
+        try:
+            dbg('SQL', f"upsert_user_resumo erro: {e}")
+        except Exception:
+            pass
+        return False
+    finally:
+        try:
+            if cur:
+                cur.close()
+        finally:
+            if conn:
+                conn.close()
 """
 gvg_database.py
 Conexões e utilidades de banco (VERSÃO V1 – apenas schema novo).
