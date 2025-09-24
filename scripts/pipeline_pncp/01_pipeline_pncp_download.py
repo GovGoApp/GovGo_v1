@@ -59,6 +59,22 @@ def log_line(msg: str) -> None:
         # Evitar falhar por causa de logging
         pass
 
+
+def insert_run_stats(conn, stage: str, date_ref: str, inserted_contr: int, inserted_itens: int) -> None:
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO pipeline_run_stats (stage, date_ref, inserted_contratacoes, inserted_itens)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (stage, date_ref, int(inserted_contr or 0), int(inserted_itens or 0)),
+            )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        log_line(f"Aviso: falha ao registrar métricas (01/{date_ref}): {e}")
+
 # ---------------------------------------------------------------------
 # HTTP client com retry/backoff simples
 # ---------------------------------------------------------------------
@@ -555,6 +571,7 @@ def main():
 
     conn = get_conn()
     try:
+        # Garante tabela de métricas (somente 01)
         if args.test:
             dates = [args.test]
             log_line(f"Modo teste: {args.test}")
@@ -596,6 +613,8 @@ def main():
                 if not args.test:
                     save_last_processed_date(conn, d)
                     log_line(f"LPD atualizado: {d}")
+                # Registrar métricas da etapa 01 para a data
+                insert_run_stats(conn, stage="01", date_ref=d, inserted_contr=c, inserted_itens=i)
             except Exception as e:
                 log_line(f"Erro ao processar data {d}: {e}")
                 failed.append(d)
