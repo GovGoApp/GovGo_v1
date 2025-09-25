@@ -1,0 +1,447 @@
+# Manual Técnico e de Integração do PNCP
+
+Este documento reúne de forma técnica e ampliada as informações extraídas dos manuais do PNCP – tanto do **Manual de Integração PNCP (Versão 2.3.5)** quanto do **Manual PNCP API Consultas (Versão 1.0)**. O objetivo é fornecer uma visão completa e detalhada dos principais objetos e das estruturas que compõem o sistema PNCP, facilitando a integração, a consulta e a manutenção dos dados referentes às contratações públicas.
+
+---
+
+## Índice
+
+1. [Visão Geral do PNCP](#visão-geral-do-pncp)
+2. [Protocolo de Comunicação e Acesso](#protocolo-de-comunicação-e-acesso)
+3. [Principais Objetos do PNCP](#principais-objetos-do-pncp)
+   - [Plano de Contratações Anual (PCA)](#plano-de-contratações-anual-pca)
+   - [Contratação](#contratação)
+   - [Ata de Registro de Preço](#ata-de-registro-de-preço)
+   - [Contrato](#contrato)
+   - [Itens de Contratação](#itens-de-contratação)
+   - [Documentos](#documentos)
+   - [Órgãos/Entidades e Unidades Administrativas](#órgãosentidades-e-unidades-administrativas)
+4. [Tabelas de Domínio](#tabelas-de-domínio)
+   - [Instrumento Convocatório](#instrumento-convocatório)
+   - [Modalidade de Contratação](#modalidade-de-contratação)
+   - [Modo de Disputa](#modo-de-disputa)
+   - [Critério de Julgamento](#critério-de-julgamento)
+   - [Situação da Contratação e do Item](#situação-da-contratação-e-do-item)
+   - [Tipo de Benefício](#tipo-de-benefício)
+   - [Tipo de Contrato e Termo de Contrato](#tipo-de-contrato-e-termo-de-contrato)
+   - [Categoria do Processo](#categoria-do-processo)
+   - [Tipo de Documento](#tipo-de-documento)
+   - [Natureza Jurídica](#natureza-jurídica)
+   - [Porte da Empresa](#porte-da-empresa)
+   - [Amparo Legal](#amparo-legal)
+   - [Categoria do Item do Plano de Contratações](#categoria-do-item-do-plano-de-contratações)
+   - [Identificador de Usuário](#identificador-de-usuário)
+5. [Considerações Finais](#considerações-finais)
+
+---
+
+## Visão Geral do PNCP
+
+O **Portal Nacional de Contratações Públicas (PNCP)** é uma plataforma de acesso aberto que centraliza dados relativos aos processos de contratações públicas. Sua arquitetura é orientada a serviços RESTful, permitindo:
+- **Consultas Públicas:** Extração de informações sobre licitações, contratações, atas, contratos e planos de contratações anuais.
+- **Integração e Manutenção:** Inclusão, retificação e exclusão de registros, que requerem autenticação (via JSON Web Token – JWT).
+
+O sistema utiliza padrões rigorosos de formatação (ex.: JSON), protocolos HTTP/1.1 e uma extensa padronização dos dados através de tabelas de domínio, garantindo integridade, rastreabilidade e interoperabilidade entre os sistemas.
+
+---
+
+## Protocolo de Comunicação e Acesso
+
+- **Comunicação:**  
+  O PNCP utiliza o protocolo REST/HTTP 1.1 para a troca de dados. Todas as requisições e respostas são formatadas em JSON.  
+  - Para envio de arquivos, o sistema utiliza charset UTF-8 (com exceção dos headers, que podem seguir ISO-8859-1).
+
+- **Autenticação:**  
+  Os endpoints de manutenção (inclusão, retificação, exclusão) exigem autenticação via JWT, obtido por meio de login e senha. O token é retornado no header `Authorization` (precedido da palavra "Bearer") e tem validade limitada (normalmente 1 hora).
+
+- **Ambientes de Acesso:**  
+  - **Ambiente de Homologação:**  
+    - Portal: `https://treina.pncp.gov.br`  
+    - API Base: `https://treina.pncp.gov.br/api/pncp`
+  - **Ambiente de Produção:**  
+    - Portal: `https://pncp.gov.br`  
+    - API Base: `https://pncp.gov.br/api/pncp` (para manutenção)  
+    - API Consultas: `https://pncp.gov.br/api/consulta`
+
+- **Paginação e Performance:**  
+  As respostas das APIs de consulta são paginadas, retornando dados como número total de registros, total de páginas, página atual e número de páginas restantes, permitindo a extração eficiente dos grandes volumes de dados.
+
+---
+
+## Principais Objetos do PNCP
+
+### Plano de Contratações Anual (PCA)
+
+- **Objetivo:**  
+  O PCA reúne, para um determinado ano, todas as intenções de compras de um órgão ou entidade. Funciona como um documento de planejamento que serve de base para futuras contratações.
+
+- **Estrutura e Identificação:**  
+  - **Formato do Número de Controle:**  
+    `99999999999999-0-999999/9999`
+    - **14 dígitos iniciais:** CNPJ do órgão ou entidade.
+    - **Dígito “0”:** Indicador de que se trata de um PCA.
+    - **6 dígitos seguintes:** Número sequencial do plano (reiniciado a cada ano).
+    - **4 dígitos finais:** Ano do plano.
+
+- **Principais Atributos Técnicos:**  
+  - **Dados do Órgão/Entidade:** CNPJ e razão social.
+  - **Unidade Administrativa:** Código e nome.
+  - **Ano do PCA:** Valor numérico (ex.: 2023).
+  - **Datas:** Publicação, inclusão e última atualização.
+  - **Itens do PCA:**  
+    Cada item contém:
+    - Número sequencial do item.
+    - Categoria do item (segundo a tabela de domínio – Material, Serviço, Obras etc.).
+    - Descrição detalhada do item.
+    - Unidade de fornecimento, quantidade estimada, valor unitário e valor total.
+    - Previsão orçamentária e datas desejadas para a contratação.
+
+---
+
+### Contratação
+
+- **Objetivo:**  
+  Representa o processo de licitação ou contratação direta. Engloba todas as informações relacionadas ao procedimento de aquisição, desde o anúncio até a adjudicação.
+
+- **Estrutura e Identificação:**  
+  - **Formato do Número de Controle:**  
+    `99999999999999-1-999999/9999`
+    - **14 dígitos:** CNPJ do órgão responsável.
+    - **Dígito “1”:** Indicador de Contratação.
+    - **6 dígitos sequenciais:** Número sequencial da contratação.
+    - **4 dígitos:** Ano da contratação.
+
+- **Principais Atributos Técnicos:**  
+  - **Dados Processuais:**  
+    - Número de compra ou processo.
+    - Código do instrumento convocatório (ex.: Edital, Aviso de Contratação Direta).
+    - Modalidade de Contratação (segundo a tabela de domínio).
+    - Modo de Disputa (Aberto, Fechado ou outros).
+    - Critério de Julgamento (Menor preço, Maior desconto, etc.).
+  - **Situação:**  
+    - Status da contratação (Divulgada, Revogada, Anulada ou Suspensa).
+  - **Objeto da Contratação:**  
+    - Descrição técnica e detalhada.
+  - **Informações Complementares:**  
+    - Dados orçamentários, datas de abertura e encerramento de propostas.
+  - **Relação com o Órgão e a Unidade Administrativa:**  
+    - Permite filtragens e cruzamentos com o PCA.
+
+---
+
+### Ata de Registro de Preço
+
+- **Objetivo:**  
+  Consolida os preços e as condições negociadas para futuras compras, funcionando como referência para aquisições dentro do período de vigência.
+
+- **Estrutura e Identificação:**  
+  - **Formato do Número de Controle:**  
+    `99999999999999-1-999999/9999-999999`
+    - A parte inicial é idêntica ao número de controle da Contratação.
+    - Os dígitos adicionais representam o número sequencial da ata vinculada àquela contratação.
+
+- **Principais Atributos Técnicos:**  
+  - **Referência:**  
+    - Relacionamento com a Contratação associada.
+  - **Datas e Vigência:**  
+    - Data de publicação e vigência.
+    - Histórico de alterações e retificações.
+  - **Itens Registrados:**  
+    - Itens que podem ser utilizados para efetivar compras conforme as condições negociadas.
+  - **Anexos:**  
+    - Documentos complementares e registros formais.
+
+---
+
+### Contrato
+
+- **Objetivo:**  
+  Formaliza o acordo celebrado entre o órgão público e o fornecedor, definindo obrigações, prazos e condições contratuais.
+
+- **Estrutura e Identificação:**  
+  - **Formato do Número de Controle:**  
+    `99999999999999-2-999999/9999`
+    - **14 dígitos:** CNPJ do órgão contratante.
+    - **Dígito “2”:** Indicador de Contrato.
+    - **6 dígitos sequenciais:** Número do contrato.
+    - **4 dígitos:** Ano do contrato.
+
+- **Principais Atributos Técnicos:**  
+  - **Dados Contratuais:**  
+    - Valor total, vigência, cláusulas contratuais, garantias.
+  - **Partes Contratantes:**  
+    - Dados do órgão e do fornecedor.
+  - **Documentação:**  
+    - Anexos oficiais (minutas, termos aditivos, atas, etc.).
+  - **Histórico:**  
+    - Registros de alterações, retificações e cancelamentos.
+
+---
+
+### Itens de Contratação
+
+- **Objetivo:**  
+  Cada item detalha um objeto ou serviço específico que será adquirido ou contratado, descrevendo suas características e parâmetros financeiros.
+
+- **Principais Atributos Técnicos:**  
+  - **Identificação:**  
+    - Número sequencial do item dentro do PCA ou da Contratação.
+  - **Classificação:**  
+    - Categoria do item (conforme a tabela de domínio – ex.: Material, Serviço, Obras, etc.).
+  - **Detalhamento:**  
+    - Código e descrição do item (pode incluir códigos de catálogos, como o PDM).
+  - **Medidas e Valores:**  
+    - Unidade de fornecimento, quantidade estimada, valor unitário e valor total.
+  - **Datas Relevantes:**  
+    - Data desejada para a contratação e datas de inclusão/atualização do registro.
+
+---
+
+### Documentos
+
+- **Objetivo:**  
+  Agrupa todos os arquivos e registros digitais que acompanham os processos de contratação, como editais, minutas, atas, termos de referência e demais documentos oficiais.
+
+- **Principais Atributos Técnicos:**  
+  - **Tipo de Documento:**  
+    - Classificação conforme a tabela de domínio (ex.: Aviso de Contratação Direta, Edital, Minuta do Contrato, etc.).
+  - **Metadados:**  
+    - Data de inclusão, data de atualização, tamanho, formato e status de validade.
+  - **Relacionamento:**  
+    - Vinculado ao objeto principal (contratação, ata ou contrato) ao qual o documento pertence.
+
+---
+
+### Órgãos/Entidades e Unidades Administrativas
+
+- **Órgãos/Entidades:**  
+  - **Objetivo:**  
+    Representam as instituições públicas responsáveis pelos processos de contratação.
+  - **Principais Atributos:**  
+    - CNPJ, razão social, e demais informações institucionais (endereço, contato).
+  - **Relação:**  
+    - Cada órgão pode ter diversas unidades administrativas.
+
+- **Unidades Administrativas:**  
+  - **Objetivo:**  
+    São as subdivisões internas dos órgãos que gerenciam e executam os processos de contratação.
+  - **Principais Atributos:**  
+    - Código interno da unidade, nome, código IBGE (para localização), sigla da unidade federativa e demais informações de contato.
+
+---
+
+## Tabelas de Domínio
+
+As tabelas de domínio padronizam os valores utilizados em diversas consultas e operações no PNCP, garantindo integridade e consistência dos dados. A seguir, uma descrição detalhada de cada uma:
+
+### Instrumento Convocatório
+
+- **Objetivo:**  
+  Define os tipos de instrumentos que iniciam o processo de contratação.
+- **Exemplos de Valores (códigos e descrições):**
+  - **1 – Edital:** Utilizado em processos competitivos como pregão, concorrência, etc.
+  - **2 – Aviso de Contratação Direta:** Empregado em casos de dispensa com disputa.
+  - **3 – Ato que autoriza a Contratação Direta:** Usado em casos de dispensa sem disputa ou inexigibilidade.
+
+### Modalidade de Contratação
+
+- **Objetivo:**  
+  Especifica o método pelo qual a contratação é realizada.
+- **Exemplos de Valores:**
+  - **1 – Leilão Eletrônico**
+  - **2 – Diálogo Competitivo**
+  - **3 – Concurso**
+  - **4 – Concorrência (Eletrônica ou Presencial)**
+  - **5 – Pregão (Eletrônico ou Presencial)**
+  - **8 – Dispensa de Licitação**
+  - **9 – Inexigibilidade**
+  - **10 – Manifestação de Interesse**
+  - **11 – Pré-qualificação**
+  - **12 – Credenciamento**
+
+### Modo de Disputa
+
+- **Objetivo:**  
+  Indica a forma como se dará o processo competitivo.
+- **Exemplos de Valores:**
+  - **1 – Aberto**
+  - **2 – Fechado**
+  - **3 – Aberto-Fechado**
+  - **4 – Dispensa com Disputa**
+  - **5 – Não se aplica**
+  - **6 – Fechado-Aberto**
+
+### Critério de Julgamento
+
+- **Objetivo:**  
+  Estabelece os parâmetros para a avaliação das propostas.
+- **Exemplos de Valores:**
+  - **1 – Menor preço**
+  - **2 – Maior desconto**
+  - **4 – Técnica e preço**
+  - **5 – Maior lance**
+  - **6 – Maior retorno econômico**
+  - **8 – Melhor técnica**
+  - **9 – Conteúdo artístico**
+
+### Situação da Contratação
+
+- **Objetivo:**  
+  Define o status geral do processo de contratação.
+- **Exemplos de Valores:**
+  - **1 – Divulgada no PNCP**
+  - **2 – Revogada**
+  - **3 – Anulada**
+  - **4 – Suspensa**
+
+### Situação do Item da Contratação
+
+- **Objetivo:**  
+  Indica o status individual de cada item no processo.
+- **Exemplos de Valores:**
+  - **1 – Em Andamento**
+  - **2 – Homologado**
+  - **3 – Anulado/Revogado/Cancelado**
+  - **4 – Deserto**
+  - **5 – Fracassado**
+
+### Tipo de Benefício
+
+- **Objetivo:**  
+  Classifica benefícios aplicados à contratação.
+- **Exemplos de Valores:**
+  - **1 – Participação exclusiva para ME/EPP**
+  - **2 – Subcontratação para ME/EPP**
+  - **3 – Cota reservada para ME/EPP**
+  - **4 – Sem benefício**
+  - **5 – Não se aplica**
+
+### Tipo de Contrato
+
+- **Objetivo:**  
+  Identifica a natureza do contrato celebrado.
+- **Exemplos de Valores:**
+  - **1 – Contrato (termo inicial)**
+  - **2 – Comodato**
+  - **3 – Arrendamento**
+  - **4 – Concessão**
+  - **5 – Termo de Adesão**
+  - **6 – Convênio**
+  - **7 – Empenho**
+  - **8 – Outros**
+  - **9 – Termo de Execução Descentralizada**
+  - **10 – Acordo de Cooperação Técnica**
+  - **11 – Termo de Compromisso**
+  - **12 – Carta Contrato**
+
+### Tipo de Termo de Contrato
+
+- **Objetivo:**  
+  Especifica os ajustes ou alterações contratuais.
+- **Exemplos de Valores:**
+  - **1 – Termo de Rescisão**
+  - **2 – Termo Aditivo**
+  - **3 – Termo de Apostilamento**
+
+### Categoria do Processo
+
+- **Objetivo:**  
+  Classifica o processo com base no objeto ou natureza da contratação.
+- **Exemplos de Valores:**
+  - **1 – Cessão**
+  - **2 – Compras**
+  - **3 – Informática (TIC)**
+  - **4 – Internacional**
+  - **5 – Locação de Imóveis**
+  - **6 – Mão de Obra**
+  - **7 – Obras**
+  - **8 – Serviços**
+  - **9 – Serviços de Engenharia**
+  - **10 – Serviços de Saúde**
+  - **11 – Alienação de bens móveis/imóveis**
+
+### Tipo de Documento
+
+- **Objetivo:**  
+  Padroniza os tipos de documentos utilizados nos processos.
+- **Exemplos de Valores para Contratações:**
+  - **1 – Aviso de Contratação Direta**
+  - **2 – Edital**
+  - **3 – Minuta do Contrato**
+  - **4 – Termo de Referência**
+  - **5 – Anteprojeto**
+  - **6 – Projeto Básico**
+  - **7 – Estudo Técnico Preliminar**
+  - **8 – Projeto Executivo**
+  - **9 – Mapa de Riscos**
+  - **10 – DFD**
+- **Para Atas e Contratos:**
+  - **11 – Ata de Registro de Preço**
+  - **12 – Contrato**
+  - **13 – Termo de Rescisão**
+  - **14 – Termo Aditivo**
+  - **15 – Termo de Apostilamento**
+  - **17 – Nota de Empenho**
+  - **18 – Relatório Final de Contrato**
+  - **16 – Outros documentos (caso não se enquadrem nos códigos anteriores)**
+
+### Natureza Jurídica
+
+- **Objetivo:**  
+  Fornece códigos que identificam a forma legal dos órgãos e entidades.
+- **Exemplos:**  
+  Uma extensa lista de códigos (ex.: 1015 para Órgão Público do Poder Executivo Federal, 1031 para Municipal, 1104 para Autarquia Federal, 1341 para União, 2046 para Sociedade Anônima Aberta, entre outros).
+
+### Porte da Empresa
+
+- **Objetivo:**  
+  Classifica os fornecedores com base no tamanho da empresa.
+- **Exemplos de Valores:**
+  - **1 – ME (Microempresa)**
+  - **2 – EPP (Empresa de Pequeno Porte)**
+  - **3 – Demais Empresas**
+  - **4 – Não se Aplica (para pessoa física)**
+  - **5 – Não Informado**
+
+### Amparo Legal
+
+- **Objetivo:**  
+  Define a base jurídica que respalda o processo de contratação.
+- **Exemplos de Valores:**  
+  Códigos que referenciam artigos e incisos de legislações, especialmente a Lei nº 14.133/2021 e outras normativas correlatas (ex.: Art. 28, I a V; Art. 74, I a III; Art. 75, I a XVII; Art. 76, I e II; dentre outros, com códigos de 1 até 80 ou mais).
+
+### Categoria do Item do Plano de Contratações
+
+- **Objetivo:**  
+  Classifica os itens do PCA de acordo com o tipo de objeto a ser adquirido.
+- **Exemplos de Valores:**
+  - **1 – Material**
+  - **2 – Serviço**
+  - **3 – Obras**
+  - **4 – Serviços de Engenharia**
+  - **5 – Soluções de TIC**
+  - **6 – Locação de Imóveis**
+  - **7 – Alienação/Concessão/Permissão**
+  - **8 – Obras e Serviços de Engenharia**
+
+### Identificador de Usuário
+
+- **Objetivo:**  
+  Um valor único que integra sistemas, identificando de forma unívoca o usuário que consulta ou mantém os registros.
+- **Utilização:**  
+  Essencial para requisições que envolvem dados específicos do autor dos registros e para rastreamento da origem das informações.
+
+---
+
+## Considerações Finais
+
+A estrutura técnica do PNCP é construída para garantir a transparência, a rastreabilidade e a integridade dos dados relativos às contratações públicas. A padronização por meio de tabelas de domínio e a utilização de identificadores controlados (com números de controle formatados) permitem a interoperabilidade entre sistemas e facilitam a integração com diversas plataformas.  
+Além disso, o uso de APIs RESTful, autenticação JWT e respostas paginadas assegura tanto a segurança quanto a performance na extração e atualização dos dados.
+
+Este documento serve como referência técnica para desenvolvedores e integradores que necessitam compreender, implementar e manter as interações com o PNCP, seja para consultas, seja para operações de inclusão, retificação e exclusão de dados.
+
+---
+
+*Nota:*  
+Este manual foi formatado em Markdown para facilitar a impressão e a consulta. Caso sejam necessárias informações adicionais ou a exploração de endpoints específicos (como os detalhados nos manuais de integração e de consultas), recomenda-se a consulta direta aos documentos oficiais do PNCP.
+

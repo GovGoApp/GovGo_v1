@@ -562,7 +562,7 @@ controls_panel = html.Div([
     ),
 
     html.Div([
-        html.Div('Histórico de Consultas', style=styles['card_title']),
+        html.Div('Consultas', style=styles['card_title']),
         html.Button(
             html.I(className="fas fa-chevron-down"),
             id='history-toggle-btn',
