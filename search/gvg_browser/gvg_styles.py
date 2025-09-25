@@ -163,7 +163,7 @@ styles = {
         'height': '40px'
     },
     'header_title': {
-        'marginLeft': '15px', 'color': '#003A70', 'fontWeight': 'bold', 'marginTop': '4px'
+        'fontSize': '16px', 'marginLeft': '15px', 'color': '#003A70', 'fontWeight': 'bold', 'marginTop': '4px'
     },
     # --- Header (top bar) ---
     'header': {
@@ -435,6 +435,21 @@ styles['card_title'] = {
     'color': '#003A70',
     'paddingRight': '8px',
     'paddingBottom': '8px',
+}
+
+# Badge de numeração compatível com e-mail (sem position/flex)
+styles['result_number_email'] = {
+    'display': 'inline-block',
+    'width': '24px',
+    'height': '24px',
+    'lineHeight': '24px',
+    'textAlign': 'center',
+    'backgroundColor': '#FF5722',
+    'color': 'white',
+    'borderRadius': '50%',
+    'fontSize': '12px',
+    'fontWeight': 'bold',
+    'marginBottom': '6px'
 }
 
 # --- Boletins ---

@@ -71,7 +71,7 @@ def _fetch_boletins_to_send() -> List[Dict[str, Any]]:
             cur.execute(
                 """
                 SELECT id, user_id, query_text, schedule_type, schedule_detail,
-                       last_run_at, last_sent_at
+                       channels, config_snapshot, last_run_at, last_sent_at
                   FROM public.user_schedule
                  WHERE active = true
                    AND last_run_at IS NOT NULL
@@ -81,7 +81,7 @@ def _fetch_boletins_to_send() -> List[Dict[str, Any]]:
             cols = [d[0] for d in cur.description]
             out = [dict(zip(cols, r)) for r in cur.fetchall() or []]
         except Exception as e1:
-        # fallback silencioso: sem logs verbosos
+            # fallback silencioso: sem logs verbosos
             cur.execute(
                 """
                 SELECT id, user_id, query_text, schedule_type, schedule_detail, last_run_at
@@ -120,9 +120,11 @@ def _fetch_latest_run_rows(boletim_id: int) -> Tuple[List[Dict[str, Any]], Optio
         last_run = row[0] if row else None
         if not last_run:
             return [], None
+        # Buscar linhas do último run
         cur.execute(
             """
-            SELECT id, payload FROM public.user_boletim
+            SELECT id, numero_controle_pncp, similarity, data_publicacao_pncp, data_encerramento_proposta, payload
+              FROM public.user_boletim
              WHERE boletim_id = %s AND run_at = %s
              ORDER BY similarity DESC NULLS LAST, id ASC
             """,
@@ -141,32 +143,325 @@ def _fetch_latest_run_rows(boletim_id: int) -> Tuple[List[Dict[str, Any]], Optio
             if conn: conn.close()
 
 
-def _render_html_boletim(query_text: str, items: List[Dict[str, Any]]) -> str:
-    """Render simples dos cards com estilos inline baseados em styles['result_card']."""
+def _render_html_boletim(query_text: str, items: List[Dict[str, Any]],
+                         cfg_snapshot: Optional[Dict[str, Any]] = None,
+                         schedule_type: Optional[str] = None,
+                         schedule_detail: Optional[Dict[str, Any]] = None) -> str:
+    """Render de e-mail com cabeçalho (logo + título), cabeçalho de busca e cards no estilo do GSB."""
+    # --- Styles inline a partir de gvg_styles ---
     card_style = _style_inline(styles.get('result_card', {}))
     title_style = _style_inline(styles.get('card_title', {}))
     muted_style = _style_inline(styles.get('muted_text', {}))
+    header_logo_style = _style_inline(styles.get('header_logo', {}))
+    header_title_style = _style_inline(styles.get('header_title', {}))
+    details_body_style = _style_inline(styles.get('details_body', {}))
+    # Preferir estilo compatível com e-mail; fallback para o badge padrão
+    number_badge_style = dict(styles.get('result_number_email', {}) or styles.get('result_number', {}))
+    # Remover propriedades problemáticas em e-mail caso herdadas
+    for k in ['position', 'top', 'left', 'right', 'bottom', 'display', 'alignItems', 'justifyContent', 'padding']:
+        number_badge_style.pop(k, None)
+    number_badge_style_str = _style_inline(number_badge_style)
 
-    parts = [f"<h2 style='{title_style}'>Boletim: {query_text}</h2>"]
+    # --- Helpers de formatação (equivalentes ao GSB, mas locais) ---
+    from datetime import datetime as _dt
+
+    def _format_br_date(date_value) -> str:
+        if not date_value:
+            return 'N/A'
+        s = str(date_value)
+        try:
+            s_clean = s.replace('Z', '')
+            dt = _dt.fromisoformat(s_clean[:19]) if 'T' in s_clean else _dt.strptime(s_clean[:10], '%Y-%m-%d')
+            return dt.strftime('%d/%m/%Y')
+        except Exception:
+            # tenta DD/MM/YYYY já formatado
+            try:
+                _dt.strptime(s[:10], '%d/%m/%Y')
+                return s[:10]
+            except Exception:
+                return s
+
+    def _to_float(value):
+        if value is None:
+            return None
+        try:
+            if isinstance(value, (int, float)):
+                return float(value)
+            import re as _re
+            s = str(value).strip()
+            if not s:
+                return None
+            s = _re.sub(r"[^0-9,\.-]", "", s)
+            if s.count(',') == 1 and s.count('.') >= 1:
+                s = s.replace('.', '').replace(',', '.')
+            elif s.count(',') == 1 and s.count('.') == 0:
+                s = s.replace(',', '.')
+            elif s.count(',') > 1 and s.count('.') == 0:
+                s = s.replace(',', '')
+            return float(s)
+        except Exception:
+            return None
+
+    def _format_money(value) -> str:
+        f = _to_float(value)
+        if f is None:
+            return str(value or '')
+        return f"{f:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+
+    def _parse_date_generic(date_value):
+        if not date_value:
+            return None
+        s = str(date_value).strip()
+        if not s or s.upper() == 'N/A':
+            return None
+        try:
+            if 'T' in s:
+                s0 = s[:19]
+                try:
+                    return _dt.fromisoformat(s0).date()
+                except Exception:
+                    pass
+            try:
+                return _dt.strptime(s[:10], '%Y-%m-%d').date()
+            except Exception:
+                pass
+            try:
+                return _dt.strptime(s[:10], '%d/%m/%Y').date()
+            except Exception:
+                pass
+        except Exception:
+            return None
+        return None
+
+    # Cores de status de encerramento (iguais ao GSB)
+    COLOR_ENC_NA = "#838383"
+    COLOR_ENC_EXPIRED = "#800080"
+    COLOR_ENC_LT3 = "#FF0000EE"
+    COLOR_ENC_LT7 = "#FF6200"
+    COLOR_ENC_LT15 = "#FFB200"
+    COLOR_ENC_LT30 = "#01B33A"
+    COLOR_ENC_GT30 = "#0099FF"
+
+    def _enc_status_and_color(date_value):
+        from datetime import date as _date
+        dt = _parse_date_generic(date_value)
+        if not dt:
+            return 'na', COLOR_ENC_NA
+        today = _date.today()
+        diff = (dt - today).days
+        if diff < 0:
+            return 'expired', COLOR_ENC_EXPIRED
+        if diff <= 3:
+            return 'lt3', COLOR_ENC_LT3
+        if diff <= 7:
+            return 'lt7', COLOR_ENC_LT7
+        if diff <= 15:
+            return 'lt15', COLOR_ENC_LT15
+        if diff <= 30:
+            return 'lt30', COLOR_ENC_LT30
+        return 'gt30', COLOR_ENC_GT30
+
+    def _enc_status_text(status: str, dt_value) -> str:
+        from datetime import date as _date
+        if status == 'na':
+            return 'sem data'
+        if status == 'expired':
+            return 'expirada'
+        try:
+            dt = _parse_date_generic(dt_value)
+            if dt and dt == _date.today():
+                return 'encerra hoje!'
+        except Exception:
+            pass
+        if status == 'lt3':
+            return 'encerra em até 3 dias'
+        if status == 'lt7':
+            return 'encerra em até 7 dias'
+        if status == 'lt15':
+            return 'encerra em até 15 dias'
+        if status == 'lt30':
+            return 'encerra em até 30 dias'
+        if status == 'gt30':
+            return 'encerra > 30 dias'
+        return ''
+
+    # --- Cabeçalho do e-mail ---
+    LOGO_PATH = "https://hemztmtbejcbhgfmsvfq.supabase.co/storage/v1/object/public/govgo/LOGO/LOGO_TEXTO_GOvGO_TRIM_v3.png"
+    # Cabeçalho com título
+    header_html = (
+        f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:8px;'>"
+        f"<img src='{LOGO_PATH}' alt='GovGo' style='{header_logo_style}'/>"
+        f"<h4 style='{header_title_style}'>GvG Search</h4>"
+        f"</div>"
+    )
+
+    # Cabeçalho da busca (consulta + configurações) inspirado no GSB
+    # Mapas de nomes iguais ao GSB
+    SEARCH_TYPES = {1: "Semântica", 2: "Palavras‑chave", 3: "Híbrida"}
+    SEARCH_APPROACHES = {1: "Direta", 2: "Correspondência de Categoria", 3: "Filtro de Categoria"}
+    SORT_MODES = {1: "Similaridade", 2: "Data (Encerramento)", 3: "Valor (Estimado)"}
+    RELEVANCE_LEVELS = {1: "Sem filtro", 2: "Flexível", 3: "Restritivo"}
+
+    cfg = dict(cfg_snapshot or {})
+    st = int(cfg.get('search_type', 3)) if isinstance(cfg.get('search_type'), (int, float, str)) else 3
+    sa = int(cfg.get('search_approach', 3)) if isinstance(cfg.get('search_approach'), (int, float, str)) else 3
+    rl = int(cfg.get('relevance_level', 2)) if isinstance(cfg.get('relevance_level'), (int, float, str)) else 2
+    sm = int(cfg.get('sort_mode', 1)) if isinstance(cfg.get('sort_mode'), (int, float, str)) else 1
+    mr = int(cfg.get('max_results', 50)) if isinstance(cfg.get('max_results'), (int, float, str)) else 50
+    tc = int(cfg.get('top_categories_count', 10)) if isinstance(cfg.get('top_categories_count'), (int, float, str)) else 10
+    cfg_parts = []
+    try:
+        if st in SEARCH_TYPES: cfg_parts.append(f"Tipo: {SEARCH_TYPES[st]}")
+        if sa in SEARCH_APPROACHES: cfg_parts.append(f"Abordagem: {SEARCH_APPROACHES[sa]}")
+        if rl in RELEVANCE_LEVELS: cfg_parts.append(f"Relevância: {RELEVANCE_LEVELS[rl]}")
+        if sm in SORT_MODES: cfg_parts.append(f"Ordenação: {SORT_MODES[sm]}")
+        cfg_parts.append(f"Máx.: {mr}")
+        cfg_parts.append(f"Categorias: {tc}")
+    except Exception:
+        pass
+    cfg_txt = " | ".join(cfg_parts)
+    # Frequência (opcional)
+    sched_line = ""
+    try:
+        stype = (schedule_type or '').upper()
+        sdet = schedule_detail if isinstance(schedule_detail, dict) else {}
+        days = sdet.get('days') if isinstance(sdet, dict) else None
+        if stype:
+            if isinstance(days, list) and days:
+                sched_line = f"Frequência: {stype.title()} ({', '.join(days)})"
+            else:
+                sched_line = f"Frequência: {stype.title()}"
+    except Exception:
+        sched_line = ""
+
+    header_html += (
+        f"<div style='{title_style}'>Consulta</div>"
+        f"<div style='font-size:12px;color:#003A70;'><span style='font-weight:bold;'>Texto: </span>{(query_text or '').strip()}</div>"
+        f"<div style='font-size:11px;color:#003A70;margin-top:2px;'>{cfg_txt}</div>"
+        + (f"<div style='font-size:11px;color:#003A70;margin-top:2px;'>{sched_line}</div>" if sched_line else "")
+    )
+
+    # --- Cards ---
+    parts: List[str] = [header_html]
     if not items:
         parts.append(f"<div style='{card_style}'>Sem resultados nesta execução.</div>")
-    for i, it in enumerate(items, start=1):
+        return "\n".join(parts)
+
+    # Ordenação: Data de Encerramento ascendente; N/A por último; empate por similaridade desc
+    def _sort_key(it: Dict[str, Any]):
         payload = it.get('payload') or {}
-        orgao = payload.get('orgao') or ''
-        municipio = payload.get('municipio') or ''
-        uf = payload.get('uf') or ''
-        objeto = payload.get('objeto') or ''
-        data_enc = payload.get('data_encerramento_proposta') or ''
-        link = (payload.get('links') or {}).get('origem') or ''
-        parts.append(
+        raw_enc = it.get('data_encerramento_proposta') or payload.get('data_encerramento_proposta')
+        dt = _parse_date_generic(raw_enc)
+        sim = it.get('similarity')
+        try:
+            simf = float(sim) if sim is not None else -1.0
+        except Exception:
+            simf = -1.0
+        if dt is None:
+            return (1, _dt.max.date(), -simf)
+        return (0, dt, -simf)
+
+    sorted_items = sorted(items, key=_sort_key)
+
+    # --- Tabela de resultados (resumo) estilo GSB ---
+    try:
+        table_rows = []
+        for idx, it in enumerate(sorted_items, start=1):
+            payload = it.get('payload') or {}
+            unidade = payload.get('orgao') or 'N/A'
+            municipio = payload.get('municipio') or 'N/A'
+            uf = payload.get('uf') or ''
+            sim = it.get('similarity')
+            try:
+                sim_val = (round(float(sim), 4) if sim is not None else '')
+            except Exception:
+                sim_val = sim or ''
+            valor = _format_money(payload.get('valor'))
+            raw_enc = it.get('data_encerramento_proposta') or payload.get('data_encerramento_proposta')
+            enc_txt = _format_br_date(raw_enc)
+            status_key, enc_color = _enc_status_and_color(raw_enc)
+            table_rows.append(
+                f"<tr style='font-size:12px;'>"
+                f"<td style='padding:6px;border:1px solid #ddd;'>{idx}</td>"
+                f"<td style='padding:6px;border:1px solid #ddd;'>{unidade}</td>"
+                f"<td style='padding:6px;border:1px solid #ddd;'>{municipio}</td>"
+                f"<td style='padding:6px;border:1px solid #ddd;'>{uf}</td>"
+                f"<td style='padding:6px;border:1px solid #ddd;'>{sim_val}</td>"
+                f"<td style='padding:6px;border:1px solid #ddd;'>R$ {valor}</td>"
+                f"<td style='padding:6px;border:1px solid #ddd;color:{enc_color};font-weight:bold;'>{enc_txt}</td>"
+                f"</tr>"
+            )
+        table_html = (
             f"<div style='{card_style}'>"
-            f"<div style='{muted_style}'>{i:02d}</div>"
-            f"<div><strong>{objeto}</strong></div>"
-            f"<div style='{muted_style}'>{orgao} — {municipio}/{uf}</div>"
-            f"<div style='{muted_style}'>Encerramento: {data_enc}</div>"
-            f"<div><a href='{link}' target='_blank'>Abrir no sistema de origem</a></div>"
+            f"<div style='{title_style}'>Resultados</div>"
+            f"<table style='border-collapse:collapse;width:100%;'>"
+            f"<thead style='background-color:#f8f9fa;'>"
+            f"<tr style='font-size:13px;font-weight:bold;'>"
+            f"<th style='padding:6px;border:1px solid #ddd;text-align:left;'>#</th>"
+            f"<th style='padding:6px;border:1px solid #ddd;text-align:left;'>Órgão</th>"
+            f"<th style='padding:6px;border:1px solid #ddd;text-align:left;'>Município</th>"
+            f"<th style='padding:6px;border:1px solid #ddd;text-align:left;'>UF</th>"
+            f"<th style='padding:6px;border:1px solid #ddd;text-align:left;'>Similaridade</th>"
+            f"<th style='padding:6px;border:1px solid #ddd;text-align:left;'>Valor (R$)</th>"
+            f"<th style='padding:6px;border:1px solid #ddd;text-align:left;'>Data de Encerramento</th>"
+            f"</tr>"
+            f"</thead>"
+            f"<tbody>" + "".join(table_rows) + f"</tbody>"
+            f"</table>"
             f"</div>"
         )
+        parts.append(table_html)
+    except Exception:
+        pass
+
+    for i, it in enumerate(sorted_items, start=1):
+        payload = it.get('payload') or {}
+        orgao = payload.get('orgao') or ''
+        unidade = payload.get('unidade') or ''
+        municipio = payload.get('municipio') or ''
+        uf = payload.get('uf') or ''
+        local = f"{municipio}/{uf}" if uf else municipio
+        objeto = payload.get('objeto') or ''
+        valor = _format_money(payload.get('valor'))
+        data_abertura = _format_br_date(it.get('data_abertura_proposta') or payload.get('data_abertura_proposta'))
+        raw_enc = it.get('data_encerramento_proposta') or payload.get('data_encerramento_proposta')
+        data_enc = _format_br_date(raw_enc)
+        status_key, enc_color = _enc_status_and_color(raw_enc)
+        status_text = _enc_status_text(status_key, raw_enc)
+        link = (payload.get('links') or {}).get('origem') or ''
+        pncp_id = it.get('numero_controle_pncp') or ''
+
+        # Truncar rótulo do link
+        link_text = link or 'N/A'
+        if link and len(link_text) > 100:
+            link_text = link_text[:97] + '...'
+
+        # Tag de status de data (aplica backgroundColor dinâmico)
+        link_html = f"<a href='{link}' target='_blank'>{link_text}</a>" if link else 'N/A'
+
+        body_html = (
+            f"<div style='{details_body_style}'>"
+            f"<div style='font-weight:bold;color:#003A70;margin-bottom:6px;'>{i}</div>"
+            f"<div><span style='font-weight:bold;'>Órgão: </span><span>{orgao}</span></div>"
+            f"<div><span style='font-weight:bold;'>Unidade: </span><span>{unidade or 'N/A'}</span></div>"
+            f"<div><span style='font-weight:bold;'>Local: </span><span>{local}</span></div>"
+            f"<div><span style='font-weight:bold;'>ID PNCP: </span><span>{pncp_id or 'N/A'}</span></div>"
+            f"<div><span style='font-weight:bold;'>Valor: </span><span>{valor}</span></div>"
+            #f"<div style='display:flex;align-items:center;gap:4px;'><span style='font-weight:bold;'>Data de Abertura: </span><span> {data_abertura}</span></div>"
+            f"<div style='display:flex;align-items:center;gap:6px;margin-top:2px;'>"
+            f"<span style='font-weight:bold;'>Data de Encerramento: </span>"
+            f"<span style='color:{enc_color};font-weight:bold;'> {data_enc} - {status_text}</span></div>"
+            f"<div style='margin-bottom:8px;'><span style='font-weight:bold;'>Link: </span>{link_html}</div>"
+            f"<div><span style='font-weight:bold;'>Descrição: </span><span>{objeto}</span></div>"
+            f"</div>"
+        )
+
+        parts.append(
+            f"<div style='{card_style}'>"
+            f"{body_html}"
+            f"</div>"
+        )
+
     return "\n".join(parts)
 
 
@@ -193,6 +488,8 @@ def run_once(now: Optional[datetime] = None) -> None:
         query = b.get('query_text') or ''
         stype = (b.get('schedule_type') or '').upper()
         sdetail = b.get('schedule_detail') or {}
+        channels = b.get('channels') or []
+        cfg_snapshot = b.get('config_snapshot') or {}
         if isinstance(sdetail, str):
             try:
                 sdetail = json.loads(sdetail)
@@ -285,8 +582,9 @@ def run_once(now: Optional[datetime] = None) -> None:
                 log_line(f"Envio: {pct}% [{bar}] ({done}/{total})")
                 last_pct = pct
             continue
+
         rows, last_run = _fetch_latest_run_rows(sid)
-        html = _render_html_boletim(query, rows)
+        html = _render_html_boletim(query, rows, cfg_snapshot, stype, sdetail)
         subject = f"Boletim GovGo — {query}"
         ok = send_html_email(email, subject, html)
         if ok:
