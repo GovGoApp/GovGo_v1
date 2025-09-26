@@ -215,6 +215,7 @@ def insert_embeddings(conn, registros: List[Dict[str, Any]], embeddings: List[Li
 # ---------------------------------------------------------------------
 
 def process_date(conn, date_str: str, batch_size: int) -> int:
+    log_line("")
     log_line(f"[2/3] Embeddings: processando {date_str} (LED/LPD)")
     regs = get_contratacoes_for_date(conn, date_str)
     if not regs:

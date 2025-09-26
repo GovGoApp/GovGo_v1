@@ -538,8 +538,30 @@ BASE_CSS = """
 .gvg-controls .VirtualizedSelectOption,
 .gvg-controls .Select-placeholder { font-size: 12px; }
 .gvg-controls .Select-menu-outer { font-size: 12px; border-radius: 12px; }
-.gvg-controls input[type="number"] { height: 32px; border-radius: 16px; font-size: 12px; padding: 6px 10px; border: 1px solid #D0D7E2; outline: none; }
+.gvg-controls input[type="number"] { height: 32px; border-radius: 16px; font-size: 12px; padding: 6px 10px; border: 1px solid #D0D7E2; outline: none; box-shadow: none; box-sizing: border-box; background-color: white; }
 .gvg-controls input[type="number"]:focus { border-color: #52ACFF; box-shadow: 0 0 0 2px rgba(82,172,255,0.12); outline: none; }
+/* Text-like inputs should match number inputs exactly */
+.gvg-controls input[type="text"],
+.gvg-controls input[type="email"],
+.gvg-controls input[type="password"],
+.gvg-controls input[type="search"],
+.gvg-controls textarea,
+.gvg-controls .dash-input { height: 32px; border-radius: 16px; font-size: 12px; padding: 6px 10px; border: 1px solid #D0D7E2; outline: none; box-shadow: none; box-sizing: border-box; background-color: white; }
+.gvg-controls input[type="text"]:focus,
+.gvg-controls input[type="email"]:focus,
+.gvg-controls input[type="password"]:focus,
+.gvg-controls input[type="search"]:focus,
+.gvg-controls textarea:focus,
+.gvg-controls .dash-input:focus { border-color: #52ACFF; box-shadow: 0 0 0 2px rgba(82,172,255,0.12); outline: none; }
+/* DatePickerRange (react-dates) look aligned with inputs */
+.gvg-controls .DateRangePicker, .gvg-controls .DateRangePickerInput { width: 100%; }
+.gvg-controls .DateRangePickerInput { height: 32px; border-radius: 16px; border: 1px solid #D0D7E2; padding: 0 6px; display: flex; align-items: center; box-sizing: border-box; background-color: white; }
+.gvg-controls .DateRangePickerInput__withBorder { border: 1px solid #D0D7E2; }
+.gvg-controls .DateRangePickerInput:focus-within { border-color: #52ACFF; box-shadow: 0 0 0 2px rgba(82,172,255,0.12); }
+.gvg-controls .DateInput { flex: 1 1 50%; }
+.gvg-controls .DateInput_input { font-size: 12px; padding: 6px 8px; border: 0; height: 30px; line-height: 18px; border-radius: 12px; background-color: transparent; box-shadow: none; }
+.gvg-controls .DateInput_input::placeholder { color: #888; opacity: 1; }
+.gvg-controls .DateRangePickerInput_arrow { margin: 0 6px; color: #003A70; }
 /* Reduce label spacing slightly */
 .gvg-controls label { font-size: 12px; margin-bottom: 4px; }
 /* Remove default input spinners for consistent look (optional) */

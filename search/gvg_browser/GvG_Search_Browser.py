@@ -562,6 +562,69 @@ controls_panel = html.Div([
     ),
 
     html.Div([
+        html.Div("Filtros Avançados", style=styles['card_title']),
+        html.Button(
+            html.I(className="fas fa-chevron-down"),
+            id='filters-toggle-btn',
+            title='Mostrar/ocultar filtros',
+            style={**styles['arrow_button_small'], 'marginRight': '12px'}
+        ),
+    ], style=styles['row_header']),
+    dbc.Collapse(
+        html.Div([
+            html.Div([
+                html.Label('Nº PNCP', className='gvg-form-label'),
+                dcc.Input(id='flt-pncp', type='text', placeholder='ex.: 2024.12345.1.1.1', style=styles['input_fullflex'])
+            ], className='gvg-form-row'),
+            html.Div([
+                html.Label('Órgão (contém)', className='gvg-form-label'),
+                dcc.Input(id='flt-orgao', type='text', placeholder='Nome do órgão', style=styles['input_fullflex'])
+            ], className='gvg-form-row'),
+            html.Div([
+                html.Label('CNPJ do Órgão', className='gvg-form-label'),
+                dcc.Input(id='flt-cnpj', type='text', placeholder='Somente números', style=styles['input_fullflex'])
+            ], className='gvg-form-row'),
+            html.Div([
+                html.Label('UF', className='gvg-form-label'),
+                dcc.Dropdown(
+                    id='flt-uf',
+                    options=[{'label': uf, 'value': uf} for uf in [
+                        'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'
+                    ]],
+                    value=None,
+                    clearable=True,
+                    style=styles['input_fullflex']
+                )
+            ], className='gvg-form-row'),
+            html.Div([
+                html.Label('Município (contém)', className='gvg-form-label'),
+                dcc.Input(id='flt-municipio', type='text', placeholder='Município', style=styles['input_fullflex'])
+            ], className='gvg-form-row'),
+            html.Div([
+                html.Label('Modalidade (ID)', className='gvg-form-label'),
+                dcc.Input(id='flt-modalidade-id', type='text', placeholder='ex.: 5', style=styles['input_fullflex'])
+            ], className='gvg-form-row'),
+            html.Div([
+                html.Label('Período por campo', className='gvg-form-label'),
+                dcc.Dropdown(
+                    id='flt-date-field',
+                    options=[
+                        {'label': 'Encerramento', 'value': 'encerramento'},
+                        {'label': 'Abertura', 'value': 'abertura'},
+                        {'label': 'Publicação', 'value': 'publicacao'},
+                    ],
+                    value='encerramento', clearable=False, style=styles['input_fullflex']
+                )
+            ], className='gvg-form-row'),
+            html.Div([
+                html.Label('Período (YYYY-MM-DD)', className='gvg-form-label'),
+                dcc.DatePickerRange(id='flt-date-range', display_format='YYYY-MM-DD', style={'width': '100%'})
+            ], className='gvg-form-row'),
+        ], style=styles['controls_group'], className='gvg-controls'),
+        id='filters-collapse', is_open=False
+    ),
+
+    html.Div([
         html.Div('Consultas', style=styles['card_title']),
         html.Button(
             html.I(className="fas fa-chevron-down"),
@@ -688,6 +751,8 @@ app.layout = html.Div([
     dcc.Store(id='store-cache-docs', data={}),
     dcc.Store(id='store-cache-resumo', data={}),
     dcc.Store(id='progress-store', data={'percent': 0, 'label': ''}),
+    # Filtros avançados da busca (payload canônico)
+    dcc.Store(id='store-search-filters', data={}),
     # Token da consulta corrente (para vincular aba pendente ao resultado final)
     dcc.Store(id='store-current-query-token', data=None),
     dcc.Interval(id='progress-interval', interval=400, n_intervals=0, disabled=True),
@@ -2093,6 +2158,14 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
                 progress_set(70, 'Executando busca direta')
             except Exception:
                 pass
+            # Coletar filtros avançados da Store
+            try:
+                ui_filters = dash.callback_context.states.get('store-search-filters.data')  # type: ignore
+                if isinstance(ui_filters, str):
+                    import json as _json
+                    ui_filters = _json.loads(ui_filters)
+            except Exception:
+                ui_filters = None
             if s_type == 1:
                 results, confidence = semantic_search(query, limit=safe_limit, filter_expired=filter_expired, use_negation=negation_emb)
             elif s_type == 2:
@@ -2831,6 +2904,63 @@ def reflect_collapse(is_open):
 def update_config_icon(is_open):
     icon = 'fa-chevron-up' if is_open else 'fa-chevron-down'
     return html.I(className=f"fas {icon}")
+
+
+# Toggle collapse de Filtros Avançados
+@app.callback(
+    Output('filters-collapse', 'is_open'),
+    Input('filters-toggle-btn', 'n_clicks'),
+    State('filters-collapse', 'is_open'),
+    prevent_initial_call=True,
+)
+def toggle_filters(n, is_open):
+    if not n:
+        raise PreventUpdate
+    return not bool(is_open)
+
+
+@app.callback(
+    Output('filters-toggle-btn', 'children'),
+    Input('filters-collapse', 'is_open')
+)
+def update_filters_icon(is_open):
+    icon = 'fa-chevron-up' if is_open else 'fa-chevron-down'
+    return html.I(className=f"fas {icon}")
+
+
+# Sincroniza Store de Filtros com inputs da UI
+@app.callback(
+    Output('store-search-filters', 'data'),
+    Input('flt-pncp', 'value'),
+    Input('flt-orgao', 'value'),
+    Input('flt-cnpj', 'value'),
+    Input('flt-uf', 'value'),
+    Input('flt-municipio', 'value'),
+    Input('flt-modalidade-id', 'value'),
+    Input('flt-date-field', 'value'),
+    Input('flt-date-range', 'start_date'),
+    Input('flt-date-range', 'end_date'),
+    prevent_initial_call=False,
+)
+def sync_filters_store(pncp, orgao, cnpj, uf, municipio, modalidade_id, date_field, start_date, end_date):
+    def val(x):
+        try:
+            s = (x or '').strip()
+            return s if s else None
+        except Exception:
+            return None
+    payload = {
+        'pncp': val(pncp),
+        'orgao': val(orgao),
+        'cnpj': val(cnpj),
+        'uf': val(uf),
+        'municipio': val(municipio),
+        'modalidade_id': val(modalidade_id),
+        'date_field': (date_field or 'encerramento'),
+        'date_start': val(start_date),
+        'date_end': val(end_date),
+    }
+    return payload
 
 
 # Toggle collapse do Histórico

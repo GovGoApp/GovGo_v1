@@ -311,6 +311,7 @@ def update_contract_category(conn, id_contratacao_emb: int, cats: List[str], sim
 
 
 def process_date(conn, date_yyyymmdd: str, top_k: int, batch_size: int) -> Dict[str, int]:
+    log_line("")
     log_line(f"Processando categorização {date_yyyymmdd}...")
     # Novo fluxo: busca apenas IDs; cálculo e update 100% no SQL por lote
     pending_ids = get_pending_ids_for_date(conn, date_yyyymmdd)

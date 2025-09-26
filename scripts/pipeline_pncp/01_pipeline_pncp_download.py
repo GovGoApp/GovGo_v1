@@ -16,6 +16,7 @@ import time
 import datetime as dt
 import argparse
 from typing import List, Dict, Any, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -227,6 +228,22 @@ def get_conn(max_attempts: int = 3, retry_delay: int = 5):
                 raise
 
 
+def ensure_conn_open(conn):
+    """Garante que a conexão esteja aberta; tenta um ping simples e reconecta se necessário."""
+    try:
+        if conn.closed:
+            return get_conn()
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+        return conn
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return get_conn()
+
+
 def get_last_processed_date(conn) -> str | None:
     try:
         with conn.cursor() as cur:
@@ -286,6 +303,29 @@ BASE_CONTRATACOES = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao
 BASE_ITENS = "https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{seq}/itens"
 
 
+def fetch_api_modalidade_totals(date_str: str, codigo: int) -> Tuple[int, int]:
+    """Busca apenas a 1ª página para obter totalRegistros/totalPaginas de uma modalidade/dia.
+    Retorna (totalRegistros, totalPaginas). Em caso de 204, retorna (0, 0).
+    """
+    params = {
+        "dataInicial": date_str,
+        "dataFinal": date_str,
+        "codigoModalidadeContratacao": codigo,
+        "pagina": 1,
+        "tamanhoPagina": 10,  # mínimo aceito pela API
+    }
+    res = SESSION.get(BASE_CONTRATACOES, params=params, timeout=60)
+    if res.status_code == 204:
+        return 0, 0
+    if res.status_code != 200:
+        log_line(f"Modalidade {codigo}: HTTP {res.status_code} (totais)")
+        return 0, 0
+    jd = res.json() or {}
+    total_reg = int(jd.get("totalRegistros", 0) or 0)
+    total_pag = int(jd.get("totalPaginas", 0) or 0)
+    return total_reg, total_pag
+
+
 def fetch_contratacoes_by_modalidade(date_str: str, codigo: int) -> List[Dict[str, Any]]:
     params = {
         "dataInicial": date_str,
@@ -311,6 +351,36 @@ def fetch_contratacoes_by_modalidade(date_str: str, codigo: int) -> List[Dict[st
         jd = r.json() or {}
         out.extend(jd.get("data", []))
     return out
+
+
+def fetch_contratacoes_pages(date_str: str, codigo: int, tamanho_pagina: int = 50):
+    """Gera páginas de contratações para a modalidade/código informados.
+    Retorna via gerador listas de registros por página.
+    """
+    params = {
+        "dataInicial": date_str,
+        "dataFinal": date_str,
+        "codigoModalidadeContratacao": codigo,
+        "pagina": 1,
+        "tamanhoPagina": tamanho_pagina,
+    }
+    res = SESSION.get(BASE_CONTRATACOES, params=params, timeout=60)
+    if res.status_code == 204:
+        return
+    if res.status_code != 200:
+        log_line(f"Modalidade {codigo}: HTTP {res.status_code}")
+        return
+    jd = res.json() or {}
+    data = list(jd.get("data", []) or [])
+    total_pag = int(jd.get("totalPaginas", 0) or 0)
+    yield data
+    for page in range(2, total_pag + 1):
+        params["pagina"] = page
+        r = SESSION.get(BASE_CONTRATACOES, params=params, timeout=60)
+        if r.status_code != 200:
+            break
+        jd = r.json() or {}
+        yield list(jd.get("data", []) or [])
 
 
 def partition_list(lst: List[Any], max_workers: int) -> List[List[Any]]:
@@ -374,15 +444,15 @@ def insert_contratacoes(conn, contratos: List[Dict[str, Any]]) -> int:
         INSERT INTO contratacao ({', '.join(cols)})
         VALUES %s
         ON CONFLICT (numero_controle_pncp) DO NOTHING
+        RETURNING 1
     """
+    inserted = 0
     with conn.cursor() as cur:
-        cur.execute("SELECT COUNT(*) FROM contratacao")
-        before = cur.fetchone()[0]
         execute_values(cur, sql, values, page_size=1000)
-        cur.execute("SELECT COUNT(*) FROM contratacao")
-        after = cur.fetchone()[0]
+        rows = cur.fetchall() or []
+        inserted += len(rows)
     conn.commit()
-    return after - before
+    return inserted
 
 
 def insert_itens(conn, itens_norm: List[Dict[str, Any]]) -> int:
@@ -402,124 +472,256 @@ def insert_itens(conn, itens_norm: List[Dict[str, Any]]) -> int:
         INSERT INTO item_contratacao ({', '.join(cols)})
         VALUES %s
         ON CONFLICT (numero_controle_pncp, numero_item) DO NOTHING
+        RETURNING 1
     """
     total_inserted = 0
+    batch = 3000
     with conn.cursor() as cur:
-        cur.execute("SELECT COUNT(*) FROM item_contratacao")
-        before = cur.fetchone()[0]
-        # lotes grandes para performance
-        batch = 3000
         if len(values) > batch:
             for i in range(0, len(values), batch):
                 execute_values(cur, sql, values[i:i+batch], page_size=1000)
+                rows = cur.fetchall() or []
+                total_inserted += len(rows)
         else:
             execute_values(cur, sql, values, page_size=1000)
-        cur.execute("SELECT COUNT(*) FROM item_contratacao")
-        after = cur.fetchone()[0]
-        total_inserted = after - before
+            rows = cur.fetchall() or []
+            total_inserted += len(rows)
     conn.commit()
     return total_inserted
+
+
+def insert_pipeline_run_stats(conn, stage: str, date_ref: str, inserted_contr: int, inserted_itens: int) -> None:
+    """Registra estatísticas de execução por data/etapa."""
+    try:
+        # Usar conexão curta própria para evitar efeitos de transação anterior
+        short_conn = get_conn()
+        with short_conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO pipeline_run_stats (stage, date_ref, inserted_contratacoes, inserted_itens)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (stage, date_ref, int(inserted_contr or 0), int(inserted_itens or 0)),
+            )
+        short_conn.commit()
+    except Exception as e:
+        log_line(f"Aviso: falha ao registrar pipeline_run_stats ({stage} {date_ref}): {e}")
+    finally:
+        try:
+            short_conn.close()
+        except Exception:
+            pass
 
 # ---------------------------------------------------------------------
 # Processamento por data
 # ---------------------------------------------------------------------
 
-def process_date(conn, date_str: str, max_workers: int) -> Tuple[int, int]:
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
+def process_date(conn, date_str: str, max_workers: int, refresh_items: bool = False) -> Tuple[int, int]:
     log_line(f"Processando {date_str}...")
 
-    # Baixar contratações por 14 modalidades
-    contratos_raw: List[Dict[str, Any]] = []
-    with ThreadPoolExecutor(max_workers=min(10, max_workers // 2 or 1)) as ex:
-        futures = {ex.submit(fetch_contratacoes_by_modalidade, date_str, cod): cod for cod in range(1, 15)}
+    # 1) Contagem no BD por modalidade
+    db_counts: Dict[int, int] = {}
+    with conn.cursor() as cur:
+        for cod in range(1, 15):
+            cur.execute(
+                """
+                SELECT COUNT(*)
+                  FROM contratacao
+                 WHERE DATE(data_publicacao_pncp) = %s::date
+                   AND modalidade_id = %s
+                """,
+                (date_str, str(cod)),
+            )
+            db_counts[cod] = cur.fetchone()[0]
+
+    # 2) Ler totais da API por modalidade com ThreadPool fixo de 14
+    mod_info: Dict[int, Tuple[int, int]] = {}  # cod -> (api_total, total_paginas)
+    with ThreadPoolExecutor(max_workers=14) as ex:
+        futures = {ex.submit(fetch_api_modalidade_totals, date_str, cod): cod for cod in range(1, 15)}
         mod_total = len(futures)
         mod_done = 0
-        last_pct_mod = -1
         for fut in as_completed(futures):
+            cod = futures[fut]
+            api_total, total_pag = 0, 0
             try:
-                data = fut.result() or []
-                contratos_raw.extend(data)
+                api_total, total_pag = fut.result()
             except Exception as e:
-                log_line(f"Erro ao buscar modalidade {futures[fut]}: {e}")
-            finally:
-                mod_done += 1
-                pct = int((mod_done * 100) / max(1, mod_total))
-                if pct == 100 or pct - last_pct_mod >= 5:
-                    fill = int(round(pct * 20 / 100))
-                    bar = "█" * fill + "░" * (20 - fill)
-                    log_line(f"Contratações: {pct}% [{bar}] ({mod_done}/{mod_total})")
-                    last_pct_mod = pct
+                log_line(f"Erro ao ler totais da modalidade {cod}: {e}")
+            mod_info[cod] = (api_total, total_pag)
+            db_total = db_counts.get(cod, 0)
+            missing = max(0, api_total - db_total)
+            mod_done += 1
+            pct = int((mod_done * 100) / max(1, mod_total))
+            fill = int(round(pct * 20 / 100))
+            bar = "█" * fill + "░" * (20 - fill)
+            log_line(f"1) Contagem de Contratações: {pct}% [{bar}] ({mod_done}/{mod_total}) (mod {cod}: API={api_total}, DB={db_total}, +{missing})")
 
-    if not contratos_raw:
-        log_line("Sem contratações para a data.")
-        return 0, 0
+    # Espaço entre fase 1 (totais) e fase 2 (páginas)
     log_line("")
-    # Dedup por numeroControlePNCP
-    uniq_map: Dict[str, Dict[str, Any]] = {}
-    for c in contratos_raw:
-        nc = c.get("numeroControlePNCP")
-        if nc and nc not in uniq_map:
-            uniq_map[nc] = c
-    contratos_raw = list(uniq_map.values())
 
-    # Separar novos vs já existentes
-    numeros = [c.get("numeroControlePNCP") for c in contratos_raw if c.get("numeroControlePNCP")]
-    existentes: set[str] = set()
-    if numeros:
-        q_marks = ",".join(["%s"] * len(numeros))
-        with conn.cursor() as cur:
-            cur.execute(f"SELECT numero_controle_pncp FROM contratacao WHERE numero_controle_pncp IN ({q_marks})", numeros)
-            existentes = {row[0] for row in cur.fetchall()}
+    # Se não houver faltantes e não for para forçar itens, encerra cedo
+    total_missing = 0
+    for cod in range(1, 15):
+        api_total, _ = mod_info.get(cod, (0, 0))
+        db_total = db_counts.get(cod, 0)
+        total_missing += max(0, api_total - db_total)
 
-    novos = [c for c in contratos_raw if c.get("numeroControlePNCP") not in existentes]
+    if total_missing == 0 and not refresh_items:
+        log_line("Sem faltantes; pulando processamento desta data.")
+        insert_pipeline_run_stats(conn, stage="01", date_ref=date_str, inserted_contr=0, inserted_itens=0)
+        return 0, 0
 
-    # Normalizar e inserir contratações novas
-    contratos_norm = [normalize_contratacao(c) for c in novos]
-    inserted_contr = insert_contratacoes(conn, contratos_norm) if contratos_norm else 0
+    # 3) Processar cada modalidade em paralelo (14 workers fixos) – apenas CONTRATAÇÕES
+    def worker_modalidade(cod: int) -> Tuple[int, int]:
+        api_total, total_pag = mod_info.get(cod, (0, 0))
+        db_total = db_counts.get(cod, 0)
+        missing = max(0, api_total - db_total)
+        inserted_c = 0
+        local_conn = get_conn()
+        try:
+            numeros_baixados: List[str] = []
+            # Quando há faltantes, baixar página a página e inserir imediatamente
+            if missing > 0 and total_pag > 0:
+                page_idx = 0
+                last_pct = -1  # baseado em inserted_c/missing
+                for page_data in fetch_contratacoes_pages(date_str, cod, tamanho_pagina=50):
+                    page_idx += 1
+                    if not page_data:
+                        continue
+                    # Dedup da página
+                    uniq: Dict[str, Dict[str, Any]] = {}
+                    for c_raw in page_data:
+                        nc = c_raw.get("numeroControlePNCP")
+                        if nc and nc not in uniq:
+                            uniq[nc] = c_raw
+                    page_unique = list(uniq.values())
+                    numeros = [c.get("numeroControlePNCP") for c in page_unique if c.get("numeroControlePNCP")]
+                    numeros_baixados.extend(numeros)
+                    # Inserir contratações da página
+                    contratos_norm = [normalize_contratacao(c) for c in page_unique]
+                    try:
+                        inserted_c += insert_contratacoes(local_conn, contratos_norm)
+                    except Exception as e:
+                        log_line(f"Modalidade {cod} pág {page_idx}: erro ao inserir contratações: {e}")
+                        # tentar reconectar e seguir
+                        try:
+                            local_conn.close()
+                        except Exception:
+                            pass
+                        local_conn = get_conn()
+                    # Progresso por CONTRATOS faltantes (não por páginas)
+                    if missing > 0:
+                        pct = min(100, int((inserted_c * 100) / max(1, missing)))
+                        if pct == 100 or pct - last_pct >= 10:
+                            fill = int(round(pct * 20 / 100))
+                            bar = "█" * fill + "░" * (20 - fill)
+                            log_line(f"2) Download Contratações: {pct}% [{bar}] (mod {cod}: {inserted_c}/{missing})")
+                            last_pct = pct
 
-    # Buscar itens para TODOS os contratos do dia (novos+existentes)
-    numeros_all = [c.get("numeroControlePNCP") for c in contratos_raw if c.get("numeroControlePNCP")]
-    itens_raw: List[Dict[str, Any]] = []
-
-    batches = partition_list(numeros_all, max_workers)
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futures = [ex.submit(fetch_itens_batch, b) for b in batches]
-        batch_total = len(futures)
-        batch_done = 0
-        last_pct_items = -1
-        for fut in as_completed(futures):
+            # Fase 3 (itens) será executada depois para todas as modalidades
+        finally:
             try:
-                itens_raw.extend(fut.result() or [])
+                local_conn.close()
+            except Exception:
+                pass
+        return inserted_c, 0
+
+    total_inserted_c = 0
+    total_inserted_i = 0
+    with ThreadPoolExecutor(max_workers=14) as ex:
+        futures = {ex.submit(worker_modalidade, cod): cod for cod in range(1, 15)}
+        for fut in as_completed(futures):
+            cod = futures[fut]
+            try:
+                c_add, i_add = fut.result()
+                total_inserted_c += c_add
             except Exception as e:
-                log_line(f"Erro ao buscar itens (lote): {e}")
-            finally:
-                batch_done += 1
-                pct = int((batch_done * 100) / max(1, batch_total))
-                if pct == 100 or pct - last_pct_items >= 5:
-                    fill = int(round(pct * 20 / 100))
+                log_line(f"Erro na modalidade {cod}: {e}")
+
+    # Espaço entre fase 2 (contratações) e fase 3 (itens)
+    log_line("")
+
+    # 4) Fase 3 – ITENS pendentes por modalidade (ordem estrita após fase 2)
+    def worker_itens(cod: int) -> int:
+        inserted_i_local = 0
+        local_conn = get_conn()
+        try:
+            with local_conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT c.numero_controle_pncp
+                      FROM contratacao c
+                     WHERE DATE(c.data_publicacao_pncp) = %s::date
+                       AND c.modalidade_id = %s
+                       AND NOT EXISTS (
+                           SELECT 1 FROM item_contratacao i
+                            WHERE i.numero_controle_pncp = c.numero_controle_pncp
+                       )
+                    """,
+                    (date_str, str(cod)),
+                )
+                pendentes = [r[0] for r in cur.fetchall()]
+            total_p = len(pendentes)
+            if total_p == 0:
+                return 0
+            processed = 0
+            last_pct_loc = -1
+            chunks = [pendentes[i:i+200] for i in range(0, total_p, 200)]
+            for ch in chunks:
+                try:
+                    itens_raw = fetch_itens_batch(ch)
+                    itens_norm: List[Dict[str, Any]] = []
+                    seen: set[Tuple[str, int]] = set()
+                    for it in itens_raw:
+                        nc = it.get("numero_controle_pncp")
+                        ni = to_int(it.get("numeroItem"))
+                        if not nc or ni is None:
+                            continue
+                        key = (nc, ni)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        itens_norm.append(normalize_item(it, nc))
+                    inserted_i_local += insert_itens(local_conn, itens_norm)
+                except Exception as e:
+                    log_line(f"Modalidade {cod}: erro ao inserir itens (pendentes): {e}")
+                    try:
+                        local_conn.close()
+                    except Exception:
+                        pass
+                    local_conn = get_conn()
+                processed += len(ch)
+                # Progresso por CONTRATOS pendentes (não por páginas/chunks)
+                pct_loc = min(100, int((processed * 100) / max(1, total_p)))
+                if pct_loc == 100 or pct_loc - last_pct_loc >= 10:
+                    fill = int(round(pct_loc * 20 / 100))
                     bar = "█" * fill + "░" * (20 - fill)
-                    log_line(f"Itens: {pct}% [{bar}] ({batch_done}/{batch_total})")
-                    last_pct_items = pct
+                    log_line(f"3) Download Itens: {pct_loc}% [{bar}] (mod {cod}: {processed}/{total_p})")
+                    last_pct_loc = pct_loc
+        finally:
+            try:
+                local_conn.close()
+            except Exception:
+                pass
+        return inserted_i_local
 
-    # Normalizar, dedup (numero_controle_pncp + numero_item) e inserir
-    itens_norm: List[Dict[str, Any]] = []
-    seen: set[Tuple[str, int]] = set()
-    for it in itens_raw:
-        nc = it.get("numero_controle_pncp")
-        ni = it.get("numeroItem")
-        if not nc or ni is None:
-            continue
-        key = (nc, to_int(ni) or 0)
-        if key in seen:
-            continue
-        seen.add(key)
-        itens_norm.append(normalize_item(it, nc))
+    if refresh_items or total_inserted_c > 0:
+        with ThreadPoolExecutor(max_workers=14) as ex:
+            futures = {ex.submit(worker_itens, cod): cod for cod in range(1, 15)}
+            for fut in as_completed(futures):
+                cod = futures[fut]
+                try:
+                    i_add = fut.result()
+                    total_inserted_i += i_add
+                except Exception as e:
+                    log_line(f"Erro na modalidade (itens) {cod}: {e}")
 
-    inserted_itens = insert_itens(conn, itens_norm) if itens_norm else 0
+    log_line(f"Inseridos: {total_inserted_c} contratações, {total_inserted_i} itens")
 
-    log_line(f"Inseridos: {inserted_contr} contratações, {inserted_itens} itens")
-    return inserted_contr, inserted_itens
+    # 4) Registrar estatísticas da execução para a data/etapa 01
+    insert_pipeline_run_stats(conn, stage="01", date_ref=date_str, inserted_contr=total_inserted_c, inserted_itens=total_inserted_i)
+
+    return total_inserted_c, total_inserted_i
 
 # ---------------------------------------------------------------------
 # Datas
@@ -549,6 +751,7 @@ def main():
     parser.add_argument("--end", help="Data final YYYYMMDD")
     parser.add_argument("--test", help="Rodar apenas uma data YYYYMMDD")
     parser.add_argument("--workers", type=int, default=MAX_WORKERS_DEFAULT, help="Máximo de workers")
+    parser.add_argument("--refresh-items", action="store_true", help="Força verificação e (re)download de itens mesmo sem novos contratos")
     args = parser.parse_args()
 
     log_line("[1/3] DOWNLOAD PNCP INICIADO (LPD)")
@@ -590,14 +793,20 @@ def main():
         failed: List[str] = []
         for d in dates:
             try:
-                c, i = process_date(conn, d, max_workers=max(1, args.workers))
+                conn = ensure_conn_open(conn)
+                c, i = process_date(conn, d, max_workers=max(1, args.workers), refresh_items=bool(args.refresh_items))
                 total_c += c
                 total_i += i
                 if not args.test:
+                    conn = ensure_conn_open(conn)
                     save_last_processed_date(conn, d)
                     log_line(f"LPD atualizado: {d}")
             except Exception as e:
                 log_line(f"Erro ao processar data {d}: {e}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
                 failed.append(d)
 
         log_line("DOWNLOAD PNCP FINALIZADO")

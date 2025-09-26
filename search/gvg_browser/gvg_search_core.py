@@ -417,6 +417,9 @@ def _augment_aliases(d: dict):
 		pass
 	return d
 
+    
+
+
 def semantic_search(query_text,
 					limit: int = MAX_RESULTS,
 					min_results: int = MIN_RESULTS,
@@ -444,6 +447,7 @@ def semantic_search(query_text,
 		search_terms = processed.get('search_terms') or query_text
 		embedding_input = f"{search_terms} -- {negative_terms}".strip() if negative_terms else search_terms
 		sql_conditions = processed.get('sql_conditions', [])
+		sql_conditions_sanitized = _sanitize_sql_conditions(sql_conditions, context='semantic')
 
 		emb = get_negation_embedding(embedding_input) if use_negation else get_embedding(embedding_input)
 		if emb is None:
@@ -458,7 +462,7 @@ def semantic_search(query_text,
 		vector_opt_enabled = os.getenv("GVG_VECTOR_OPT", "1") != "0"
 		executed_optimized = False
 		sql_debug = SQL_DEBUG
-		sql_conditions_sanitized = _sanitize_sql_conditions(sql_conditions, context='semantic')
+ 
 
 		if vector_opt_enabled:
 			try:
