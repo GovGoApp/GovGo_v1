@@ -86,6 +86,8 @@ from gvg_search_core import (
     correspondence_search,
     category_filtered_search,
     get_negation_embedding,
+    _augment_aliases,
+    _sanitize_sql_conditions,
     
 )
 from gvg_database import fetch_documentos
@@ -138,6 +140,15 @@ except Exception:
         return None
     DOCUMENTS_AVAILABLE = False
 
+
+# Feature flags globais, disponíveis antes da construção da UI
+try:
+    ENABLE_SEARCH_V2 = (os.getenv('GVG_ENABLE_SEARCH_V2', 'false').strip().lower() in ('1','true','yes','on'))
+except Exception:
+    ENABLE_SEARCH_V2 = False
+
+# Pré-filtro V2: usa a mesma flag do V2. Se UI está ativa, o core também aplica filtros.
+ENABLE_PREFILTER_V2 = ENABLE_SEARCH_V2
 
 # =====================================================================================
 # Constantes / dicionários (idênticos à semântica do Terminal/Function)
@@ -569,7 +580,7 @@ controls_panel = html.Div([
             title='Mostrar/ocultar filtros',
             style={**styles['arrow_button_small'], 'marginRight': '12px'}
         ),
-    ], style=styles['row_header']),
+    ], style=(styles['row_header'] if ENABLE_SEARCH_V2 else {**styles['row_header'], 'display': 'none'})),
     dbc.Collapse(
         html.Div([
             html.Div([
@@ -585,27 +596,49 @@ controls_panel = html.Div([
                 dcc.Input(id='flt-cnpj', type='text', placeholder='Somente números', style=styles['input_fullflex'])
             ], className='gvg-form-row'),
             html.Div([
-                html.Label('UF', className='gvg-form-label'),
+                html.Label('Estado (UF)', className='gvg-form-label'),
                 dcc.Dropdown(
                     id='flt-uf',
                     options=[{'label': uf, 'value': uf} for uf in [
                         'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'
                     ]],
-                    value=None,
+                    placeholder='Selecione 1 ou vários estados',
+                    value=[],
+                    multi=True,
                     clearable=True,
                     style=styles['input_fullflex']
                 )
             ], className='gvg-form-row'),
             html.Div([
-                html.Label('Município (contém)', className='gvg-form-label'),
-                dcc.Input(id='flt-municipio', type='text', placeholder='Município', style=styles['input_fullflex'])
+                html.Label('Municípios', className='gvg-form-label'),
+                dcc.Input(id='flt-municipio', type='text', placeholder='Municípios separados por vírgula', style=styles['input_fullflex'])
             ], className='gvg-form-row'),
             html.Div([
-                html.Label('Modalidade (ID)', className='gvg-form-label'),
-                dcc.Input(id='flt-modalidade-id', type='text', placeholder='ex.: 5', style=styles['input_fullflex'])
+                html.Label('Modalidade', className='gvg-form-label'),
+                dcc.Dropdown(
+                    id='flt-modalidade-id',
+                    options=[],  # carregado via callback
+                    placeholder='Selecione 1 ou várias modalidades',
+                    multi=True,
+                    clearable=True,
+                    searchable=True,
+                    style=styles['input_fullflex']
+                )
             ], className='gvg-form-row'),
             html.Div([
-                html.Label('Período por campo', className='gvg-form-label'),
+                html.Label('Modo de Disputa', className='gvg-form-label'),
+                dcc.Dropdown(
+                    id='flt-modo-id',
+                    options=[],  # carregado via callback
+                    placeholder='Selecione 1 ou vários modos',
+                    multi=True,
+                    clearable=True,
+                    searchable=True,
+                    style=styles['input_fullflex']
+                )
+            ], className='gvg-form-row'),
+            html.Div([
+                html.Label('Tipo de Período', className='gvg-form-label'),
                 dcc.Dropdown(
                     id='flt-date-field',
                     options=[
@@ -617,11 +650,16 @@ controls_panel = html.Div([
                 )
             ], className='gvg-form-row'),
             html.Div([
-                html.Label('Período (YYYY-MM-DD)', className='gvg-form-label'),
-                dcc.DatePickerRange(id='flt-date-range', display_format='YYYY-MM-DD', style={'width': '100%'})
+                html.Label('Período (dd/mm/aaaa)', className='gvg-form-label'),
+                html.Div([
+                    dcc.Input(id='flt-date-start', type='text', placeholder='dd/mm/aaaa', maxLength=10, style=styles['input_fullflex']),
+                    #html.Span(' — ', style={'padding': '0 4px'}),
+                    html.Span('', style={'padding': '0 2px'}),
+                    dcc.Input(id='flt-date-end', type='text', placeholder='dd/mm/aaaa', maxLength=10, style=styles['input_fullflex'])
+                ], style={'display': 'flex', 'gap': '4px', 'alignItems': 'center'})
             ], className='gvg-form-row'),
         ], style=styles['controls_group'], className='gvg-controls'),
-        id='filters-collapse', is_open=False
+    id='filters-collapse', is_open=False, style=({} if ENABLE_SEARCH_V2 else {'display': 'none'})
     ),
 
     html.Div([
@@ -720,6 +758,7 @@ results_panel = html.Div([
 
 
 # Layout principal
+
 app.layout = html.Div([
     dcc.Store(id='store-auth', data=AUTH_INIT),
     dcc.Store(id='store-auth-view', data='login'),
@@ -757,6 +796,8 @@ app.layout = html.Div([
     dcc.Store(id='store-current-query-token', data=None),
     dcc.Interval(id='progress-interval', interval=400, n_intervals=0, disabled=True),
     dcc.Download(id='download-out'),
+    # Options dinâmicas de Modalidade
+    dcc.Store(id='store-modalidade-options', data=[]),
 
     header,
     auth_overlay,
@@ -798,6 +839,237 @@ def reflect_header_badge(auth_data):
         initials = 'US'
     title = f"{name} ({email})" if email else name
     return initials, title
+
+
+# =========================
+# Feature flag: ativar/desativar Filtros Avançados e V2
+# =========================
+import os as _os
+
+
+def _build_sql_conditions_from_ui_filters(f: dict | None) -> list[str]:
+    """Converte a store de filtros avançados em lista de strings SQL (V2 filter[]).
+    Campos suportados: pncp (exact), orgao (ILIKE), cnpj (exact), uf (exact), municipio (ILIKE),
+    modalidade_id (exact), período por campo (encerramento/abertura/publicacao) com DatePickerRange.
+    """
+    if not f or not isinstance(f, dict):
+        return []
+    out: list[str] = []
+    pncp = (f.get('pncp') or '').strip() if f.get('pncp') else ''
+    orgao = (f.get('orgao') or '').strip() if f.get('orgao') else ''
+    cnpj = (f.get('cnpj') or '').strip() if f.get('cnpj') else ''
+    uf_val = f.get('uf') if isinstance(f, dict) else None
+    municipio = (f.get('municipio') or '').strip() if f.get('municipio') else ''
+    modalidade_id = f.get('modalidade_id') if f.get('modalidade_id') is not None else None
+    modo_id = f.get('modo_id') if f.get('modo_id') is not None else None
+    date_field = (f.get('date_field') or 'encerramento').strip()
+    ds = (f.get('date_start') or '').strip() if f.get('date_start') else ''
+    de = (f.get('date_end') or '').strip() if f.get('date_end') else ''
+
+    if pncp:
+        out.append(f"c.numero_controle_pncp = '{pncp}'")
+    if orgao:
+        # Procurar tanto na razão social do órgão quanto no nome da unidade do órgão
+        _org = orgao.replace("'", "''").replace('%', '%%')
+        out.append(
+            f"( c.orgao_entidade_razao_social ILIKE '%{_org}%' OR c.unidade_orgao_nome_unidade ILIKE '%{_org}%' )"
+        )
+    if cnpj:
+        out.append(f"c.orgao_entidade_cnpj = '{cnpj}'")
+    # UF pode ser string única ou lista
+    if isinstance(uf_val, list):
+        ufs = [str(u).strip() for u in uf_val if str(u).strip()]
+        if ufs:
+            in_list = ", ".join([f"'{u.replace("'","''")}'" for u in ufs])
+            out.append(f"c.unidade_orgao_uf_sigla IN ({in_list})")
+    else:
+        uf = (str(uf_val).strip() if uf_val is not None else '')
+        if uf:
+            out.append(f"c.unidade_orgao_uf_sigla = '{uf.replace("'","''")}'")
+    if municipio:
+        # Suporta múltiplos municípios separados por vírgula (OR)
+        parts = [p.strip() for p in municipio.split(',') if p and p.strip()]
+        if parts:
+            ors = [f"c.unidade_orgao_municipio_nome ILIKE '%{p.replace("'","''").replace('%','%%')}%'" for p in parts]
+            out.append("( " + " OR ".join(ors) + " )")
+    # Modalidade pode ser string única ou lista
+    if isinstance(modalidade_id, list):
+        mods = [str(x).strip() for x in modalidade_id if str(x).strip()]
+        if mods:
+            in_list = ", ".join([f"'{m.replace("'", "''")}'" for m in mods])
+            out.append(f"c.modalidade_id IN ({in_list})")
+    else:
+        mod = (str(modalidade_id).strip() if modalidade_id is not None else '')
+        if mod:
+            out.append(f"c.modalidade_id = '{mod.replace("'","''")}'")
+    # Modo de disputa: string ou lista
+    if isinstance(modo_id, list):
+        modos = [str(x).strip() for x in modo_id if str(x).strip()]
+        if modos:
+            in_list2 = ", ".join([f"'{m.replace("'", "''")}'" for m in modos])
+            out.append(f"c.modo_disputa_id IN ({in_list2})")
+    else:
+        md = (str(modo_id).strip() if modo_id is not None else '')
+        if md:
+            out.append(f"c.modo_disputa_id = '{md.replace("'","''")}'")
+    # Date range
+    col = 'data_encerramento_proposta'
+    if date_field == 'abertura':
+        col = 'data_abertura_proposta'
+    elif date_field == 'publicacao':
+        col = 'data_inclusao'
+    if ds and de:
+        out.append(
+            f"to_date(NULLIF(c.{col},''),'YYYY-MM-DD') BETWEEN to_date('{ds}','YYYY-MM-DD') AND to_date('{de}','YYYY-MM-DD')"
+        )
+    elif ds:
+        out.append(
+            f"to_date(NULLIF(c.{col},''),'YYYY-MM-DD') >= to_date('{ds}','YYYY-MM-DD')"
+        )
+    elif de:
+        out.append(
+            f"to_date(NULLIF(c.{col},''),'YYYY-MM-DD') <= to_date('{de}','YYYY-MM-DD')"
+        )
+    return out
+
+def _has_any_filter(f: dict | None) -> bool:
+    """Retorna True se algum filtro foi preenchido (ignorando apenas date_field)."""
+    if not f or not isinstance(f, dict):
+        return False
+    for k, v in f.items():
+        if k == 'date_field':
+            continue
+        if isinstance(v, str) and v.strip():
+            return True
+        if v not in (None, '', []):
+            return True
+    return False
+
+def _sql_only_search(sql_conditions: list[str], limit: int, filter_expired: bool) -> list[dict]:
+    """Executa busca direta na tabela contratacao aplicando apenas condições SQL.
+
+    Retorna lista de resultados no formato esperado pela UI (details em snake_case + aliases).
+    """
+    from gvg_database import create_connection
+    from gvg_schema import get_contratacao_core_columns, normalize_contratacao_row, project_result_for_output
+    results: list[dict] = []
+    conn = None
+    cur = None
+    try:
+        conn = create_connection()
+        if not conn:
+            return []
+        cur = conn.cursor()
+        cols = get_contratacao_core_columns('c')
+        # Sanitizar condições para escapar '%' e padronizar parênteses
+        sanitized = _sanitize_sql_conditions(sql_conditions or [], context='generic')
+        where_parts = []
+        for cond in sanitized:
+            if isinstance(cond, str) and cond.strip():
+                where_parts.append(f"( {cond.strip()} )")
+        if filter_expired:
+            where_parts.append("(to_date(NULLIF(c.data_encerramento_proposta,''),'YYYY-MM-DD') >= current_date OR c.data_encerramento_proposta IS NULL OR c.data_encerramento_proposta='')")
+        where_sql = ("\nWHERE " + "\n  AND ".join(where_parts)) if where_parts else ""
+        sql = (
+            "SELECT\n  " + ",\n  ".join(cols) + "\n" +
+            "FROM contratacao c" + where_sql + "\n" +
+            "LIMIT %s"
+        )
+        try:
+            from gvg_search_core import SQL_DEBUG
+            if SQL_DEBUG:
+                dbg('SQL', 'SQL-only query montada (sem embeddings).')
+                dbg('SQL', sql)
+        except Exception:
+            pass
+        cur.execute(sql, (int(limit or 30),))
+        rows = cur.fetchall() or []
+        colnames = [d[0] for d in cur.description]
+        for row in rows:
+            rec = dict(zip(colnames, row))
+            norm = normalize_contratacao_row(rec)
+            details = project_result_for_output(norm)
+            try:
+                _augment_aliases(details)
+            except Exception:
+                pass
+            pid = details.get('numero_controle_pncp')
+            results.append({
+                'id': pid,
+                'numero_controle': pid,
+                'similarity': 0.0,
+                'rank': 0,
+                'details': details,
+            })
+    except Exception as e:
+        try:
+            dbg('SQL', f"Erro na busca SQL-only: {e}")
+        except Exception:
+            pass
+        results = []
+    finally:
+        try:
+            if cur:
+                cur.close()
+        finally:
+            if conn:
+                conn.close()
+    return results
+
+
+def _restrict_results_by_sql(sql_conditions: list[str], current_results: list[dict], limit: int, filter_expired: bool) -> list[dict]:
+    """Intersecta resultados atuais com um WHERE SQL, preservando ordem/rank.
+
+    - Executa uma query apenas para obter o conjunto de PNCP válidos segundo as condições.
+    - Intersecta mantendo a ordem dos resultados atuais.
+    """
+    if not current_results:
+        return []
+    from gvg_database import create_connection
+    from gvg_schema import PRIMARY_KEY
+    conn = None
+    cur = None
+    valid: set[str] = set()
+    try:
+        conn = create_connection()
+        if not conn:
+            return current_results[:limit]
+        cur = conn.cursor()
+        where_parts = []
+        for cond in (sql_conditions or []):
+            if isinstance(cond, str) and cond.strip():
+                where_parts.append(f"( {cond.strip()} )")
+        if filter_expired:
+            where_parts.append("(to_date(NULLIF(c.data_encerramento_proposta,'') ,'YYYY-MM-DD') >= current_date OR c.data_encerramento_proposta IS NULL OR c.data_encerramento_proposta='')")
+        where_sql = ("\nWHERE " + "\n  AND ".join(where_parts)) if where_parts else ""
+        sql = f"SELECT c.{PRIMARY_KEY} FROM contratacao c{where_sql} LIMIT %s"
+        cur.execute(sql, (int(limit or 30),))
+        rows = cur.fetchall() or []
+        for row in rows:
+            if row and row[0]:
+                valid.add(str(row[0]))
+    except Exception as e:
+        try:
+            dbg('SQL', f"Pós-filtro falhou: {e}")
+        except Exception:
+            pass
+        return current_results[:limit]
+    finally:
+        try:
+            if cur:
+                cur.close()
+        finally:
+            if conn:
+                conn.close()
+    # Interseção preservando ordem
+    out = []
+    for r in current_results:
+        rid = str(r.get('id') or r.get('numero_controle'))
+        if rid in valid:
+            out.append(r)
+        if len(out) >= limit:
+            break
+    return out
 
 
 # =====================================================================================
@@ -927,10 +1199,11 @@ def refresh_boletim_save_visuals(freq, dias, query_text, boletins):
     State('max-results', 'value'),
     State('top-categories', 'value'),
     State('toggles', 'value'),
+    State('store-search-filters', 'data'),
     State('store-boletins', 'data'),
     prevent_initial_call=True
 )
-def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, sort_mode, max_res, top_cat, toggles, current):
+def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, sort_mode, max_res, top_cat, toggles, ui_filters, current):
     if not n:
         raise PreventUpdate
     if not query or len(query.strip()) < 3:
@@ -960,13 +1233,15 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
         'max_results': max_res,
         'top_categories_count': top_cat,
         'filter_expired': 'filter_expired' in (toggles or []),
+        'filters': ui_filters or {}
     }
     boletim_id = create_user_boletim(
         query_text=query.strip(),
         schedule_type=freq,
         schedule_detail=schedule_detail,
-    channels=channels or ['email'],
+        channels=channels or ['email'],
         config_snapshot=config_snapshot,
+        filters=ui_filters or {},
     )
     if not boletim_id:
         # Mantém ícone '+'
@@ -1017,6 +1292,10 @@ def load_boletins_on_auth(auth_data):
             'schedule_type': b.get('schedule_type'),
             'schedule_detail': b.get('schedule_detail'),
             'channels': b.get('channels'),
+            'config_snapshot': b.get('config_snapshot'),
+            'created_at': b.get('created_at'),
+            'last_run_at': b.get('last_run_at'),
+            'filters': b.get('filters'),
         })
     return _dedupe_boletins(ui_items)
 
@@ -1061,22 +1340,162 @@ def render_boletins_list(data):
         return [html.Div('Sem boletins.', style={'color': '#555', 'fontSize': '12px'})]
     items = []
     for b in data:
+        # 1) Configurações (mesmo padrão do histórico)
+        cfg_spans = []
+        try:
+            snap = b.get('config_snapshot') or {}
+            st = snap.get('search_type'); sa = snap.get('search_approach'); rl = snap.get('relevance_level'); sm = snap.get('sort_mode')
+            mr = snap.get('max_results'); tc = snap.get('top_categories_count'); fe = snap.get('filter_expired')
+            if st in SEARCH_TYPES:
+                cfg_spans.append(html.Span([html.Span('Tipo: ', style={'fontWeight': 'bold'}), html.Span(SEARCH_TYPES[st]['name'], style={'fontStyle': 'italic'})]))
+            if sa in SEARCH_APPROACHES:
+                cfg_spans.append(html.Span([html.Span('Abordagem: ', style={'fontWeight': 'bold'}), html.Span(SEARCH_APPROACHES[sa]['name'], style={'fontStyle': 'italic'})]))
+            if rl in RELEVANCE_LEVELS:
+                cfg_spans.append(html.Span([html.Span('Relevância: ', style={'fontWeight': 'bold'}), html.Span(RELEVANCE_LEVELS[rl]['name'], style={'fontStyle': 'italic'})]))
+            if sm in SORT_MODES:
+                cfg_spans.append(html.Span([html.Span('Ordenação: ', style={'fontWeight': 'bold'}), html.Span(SORT_MODES[sm]['name'], style={'fontStyle': 'italic'})]))
+            if mr is not None:
+                cfg_spans.append(html.Span([html.Span('Máx: ', style={'fontWeight': 'bold'}), html.Span(str(mr), style={'fontStyle': 'italic'})]))
+            if tc is not None:
+                cfg_spans.append(html.Span([html.Span('Categorias: ', style={'fontWeight': 'bold'}), html.Span(str(tc), style={'fontStyle': 'italic'})]))
+            if fe is not None:
+                cfg_spans.append(html.Span([html.Span('Encerradas: ', style={'fontWeight': 'bold'}), html.Span('ON' if fe else 'OFF', style={'fontStyle': 'italic'})]))
+        except Exception:
+            pass
+        inter_cfg = []
+        for j, p in enumerate(cfg_spans):
+            if j > 0:
+                inter_cfg.append(html.Span(' | '))
+            inter_cfg.append(p)
+        line_config = html.Div(inter_cfg, style=styles['history_config']) if inter_cfg else html.Div('', style=styles['history_config'])
+
+        # 2) Filtros (mesmo padrão do status/histórico)
+        f = b.get('filters') or b.get('config_snapshot', {}).get('filters') or {}
+        def _has(v):
+            if v is None:
+                return False
+            if isinstance(v, str):
+                return bool(v.strip())
+            if isinstance(v, list):
+                return len([x for x in v if str(x).strip()]) > 0
+            return True
+        filt_spans = []
+        if _has(f.get('pncp')):
+            filt_spans.append(html.Span([
+                html.Span('PNCP nº: ', style={'fontWeight': 'bold'}),
+                html.Span(str(f.get('pncp') or ''), style={'fontStyle': 'italic'})
+            ]))
+        if _has(f.get('orgao')):
+            filt_spans.append(html.Span([
+                html.Span('Órgão: ', style={'fontWeight': 'bold'}),
+                html.Span(str(f.get('orgao') or ''), style={'fontStyle': 'italic'})
+            ]))
+        if _has(f.get('cnpj')):
+            filt_spans.append(html.Span([
+                html.Span('CNPJ: ', style={'fontWeight': 'bold'}),
+                html.Span(str(f.get('cnpj') or ''), style={'fontStyle': 'italic'})
+            ]))
+        if _has(f.get('uf')):
+            uf_val = f.get('uf')
+            if isinstance(uf_val, list):
+                uf_txt = ', '.join([str(x).strip() for x in uf_val if str(x).strip()])
+            else:
+                uf_txt = str(uf_val or '').strip()
+            if uf_txt:
+                filt_spans.append(html.Span([
+                    html.Span('UF: ', style={'fontWeight': 'bold'}),
+                    html.Span(uf_txt, style={'fontStyle': 'italic'})
+                ]))
+        if _has(f.get('municipio')):
+            filt_spans.append(html.Span([
+                html.Span('Municípios: ', style={'fontWeight': 'bold'}),
+                html.Span(str(f.get('municipio') or ''), style={'fontStyle': 'italic'})
+            ]))
+        if _has(f.get('modalidade_id')):
+            mid = f.get('modalidade_id')
+            if isinstance(mid, list):
+                mid_txt = ', '.join([str(x).strip() for x in mid if str(x).strip()])
+            else:
+                mid_txt = str(mid or '').strip()
+            filt_spans.append(html.Span([
+                html.Span('Modalidade: ', style={'fontWeight': 'bold'}),
+                html.Span(mid_txt, style={'fontStyle': 'italic'})
+            ]))
+        if _has(f.get('modo_id')):
+            mo = f.get('modo_id')
+            if isinstance(mo, list):
+                mo_txt = ', '.join([str(x).strip() for x in mo if str(x).strip()])
+            else:
+                mo_txt = str(mo or '').strip()
+            filt_spans.append(html.Span([
+                html.Span('Modo: ', style={'fontWeight': 'bold'}),
+                html.Span(mo_txt, style={'fontStyle': 'italic'})
+            ]))
+        df_label = {'encerramento': 'Encerramento', 'abertura': 'Abertura', 'publicacao': 'Publicação'}.get(str(f.get('date_field') or 'encerramento'), 'Encerramento')
+        ds = f.get('date_start'); de = f.get('date_end')
+        def _fmt(dv):
+            return _format_br_date(dv) if dv else ''
+        if ds or de:
+            date_text = None
+            if ds and de:
+                date_text = f"desde {_fmt(ds)} até {_fmt(de)}"
+            elif ds:
+                date_text = f"desde {_fmt(ds)}"
+            elif de:
+                date_text = f"até {_fmt(de)}"
+            if date_text:
+                filt_spans.append(html.Span([
+                    html.Span(f"Período ({df_label}): ", style={'fontWeight': 'bold'}),
+                    html.Span(date_text, style={'fontStyle': 'italic'})
+                ]))
+        inter_filters = []
+        for j, p in enumerate(filt_spans):
+            if j > 0:
+                inter_filters.append(html.Span(' | '))
+            inter_filters.append(p)
+        line_filters = html.Div([html.Span('Filtros: ', style={'fontWeight': 'bold'}), html.Span(inter_filters)], style=styles['history_config']) if inter_filters else html.Div('', style=styles['history_config'])
+
+        # 3) Frequência (periodicidade), separar da linha de configs
         freq = b.get('schedule_type')
         detail = b.get('schedule_detail') or {}
-    # channels removidos do texto exibido (mantidos apenas no dado)
-        # Monta o parágrafo de configurações (itálico)
+        freq_spans = []
+        freq_spans.append(html.Span([html.Span('Frequência: ', style={'fontWeight': 'bold'}), html.Span(str(freq or ''), style={'fontStyle': 'italic'})]))
         if freq == 'MULTIDIARIO':
-            d_txt = 'Horários: ' + (' / '.join(detail.get('slots') or []) or '-')
+            slots = ' / '.join(detail.get('slots') or []) or '-'
+            freq_spans.append(html.Span([html.Span('Horários: ', style={'fontWeight': 'bold'}), html.Span(slots, style={'fontStyle': 'italic'})]))
         elif freq == 'SEMANAL':
-            d_txt = 'Dias: ' + (', '.join(detail.get('days') or []) or '-')
+            dias = ', '.join(detail.get('days') or []) or '-'
+            freq_spans.append(html.Span([html.Span('Dias: ', style={'fontWeight': 'bold'}), html.Span(dias, style={'fontStyle': 'italic'})]))
         else:
-            d_txt = 'Dias: Seg–Sex'
-        cfg_txt = f"{freq} | {d_txt}"
+            freq_spans.append(html.Span([html.Span('Dias: ', style={'fontWeight': 'bold'}), html.Span('Seg–Sex', style={'fontStyle': 'italic'})]))
+        # Última execução (opcional)
+        from datetime import datetime
+        def _fmt_dt(dt):
+            try:
+                if isinstance(dt, str):
+                    return dt
+                if isinstance(dt, datetime):
+                    return dt.strftime('%d/%m/%Y %H:%M')
+            except Exception:
+                return ''
+            return ''
+        last_run_at = _fmt_dt(b.get('last_run_at'))
+        if last_run_at:
+            freq_spans.append(html.Span([html.Span('Última execução: ', style={'fontWeight': 'bold'}), html.Span(last_run_at, style={'fontStyle': 'italic'})]))
+        inter_freq = []
+        for j, p in enumerate(freq_spans):
+            if j > 0:
+                inter_freq.append(html.Span(' | '))
+            inter_freq.append(p)
+        line_freq = html.Div(inter_freq, style=styles['history_config'])
+
         items.append(
             html.Div([
                 html.Button([
                     html.Div(b.get('query_text','')[:160] + ('...' if len(b.get('query_text',''))>160 else ''), style=styles['boletim_query']),
-                    html.Div(cfg_txt, style=styles['boletim_config'])
+                    line_config,
+                    line_filters,
+                    line_freq
                 ],
                     id={'type': 'boletim-item', 'id': b.get('id')},
                     style=styles['boletim_item_button']
@@ -2074,12 +2493,20 @@ def save_history(history: list, max_items: int = 50):
     State('top-categories', 'value'),
     State('toggles', 'value'),
     State('store-current-query-token', 'data'),
+    State('store-search-filters', 'data'),
     prevent_initial_call=True,
 )
-def run_search(is_processing, query, s_type, approach, relevance, order, max_results, top_cat, toggles, current_token):
+def run_search(is_processing, query, s_type, approach, relevance, order, max_results, top_cat, toggles, current_token, ui_filters):
     if not is_processing:
         raise PreventUpdate
-    if not query or len(query.strip()) < 3:
+    # Permitir também buscas somente por filtros (quando V2 ativo)
+    try:
+        if isinstance(ui_filters, str):
+            import json as _json
+            ui_filters = _json.loads(ui_filters)
+    except Exception:
+        pass
+    if (not query or len((query or '').strip()) < 3) and not (ENABLE_SEARCH_V2 and _has_any_filter(ui_filters)):
         raise PreventUpdate
     # Resetar e iniciar progresso
     try:
@@ -2105,26 +2532,25 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
     filter_expired = 'filter_expired' in (toggles or [])
     negation_emb = True
 
-    # Pré-processar termos para categorias
+    # Pré-processar consulta (V1 ou V2 conforme flag) e capturar filtros UI
     base_terms = query
+    filter_list = _build_sql_conditions_from_ui_filters(ui_filters) if ENABLE_SEARCH_V2 else []
     try:
         processor = SearchQueryProcessor()
-        info = processor.process_query(query)
+        if ENABLE_SEARCH_V2:
+            # Debug entrada do pré-processamento [FILTER]
+            info = processor.process_query_v2(query or '', filter_list)
+        else:
+            info = processor.process_query(query or '')
         try:
             progress_set(10, 'Pré-processando consulta')
         except Exception:
             pass
-        # Debug opcional: exibir saída do Assistant quando SQL debug estiver ativo
-        try:
-            from gvg_search_core import SQL_DEBUG
-            if SQL_DEBUG:
-                dbg('SEARCH', f"process_query => {info}")
-        except Exception:
-            pass
+        # Debug saída do pré-processamento [FILTER]
         if (info.get('search_terms') or '').strip():
             base_terms = info['search_terms']
     except Exception:
-        pass
+        info = {'search_terms': query or '', 'negative_terms': '', 'sql_conditions': [], 'embeddings': bool((query or '').strip())}
 
     import time
     t0 = time.time()
@@ -2134,7 +2560,7 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
     safe_top = _sanitize_limit(top_cat, default=DEFAULT_TOP_CATEGORIES, min_v=1, max_v=100)
 
     categories: List[dict] = []
-    if approach in (2, 3):
+    if approach in (2, 3) and (not ENABLE_SEARCH_V2 or info.get('embeddings', True)):
         try:
             try:
                 progress_set(20, 'Buscando categorias')
@@ -2152,46 +2578,90 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
 
     results: List[dict] = []
     confidence: float = 0.0
+    filter_route = 'none'
     try:
         if approach == 1:
             try:
                 progress_set(70, 'Executando busca direta')
             except Exception:
                 pass
-            # Coletar filtros avançados da Store
-            try:
-                ui_filters = dash.callback_context.states.get('store-search-filters.data')  # type: ignore
-                if isinstance(ui_filters, str):
-                    import json as _json
-                    ui_filters = _json.loads(ui_filters)
-            except Exception:
-                ui_filters = None
-            if s_type == 1:
-                results, confidence = semantic_search(query, limit=safe_limit, filter_expired=filter_expired, use_negation=negation_emb)
+            # Roteamento por embeddings (V2): se embeddings=false, executar caminho SQL-only
+            if ENABLE_SEARCH_V2 and not info.get('embeddings', True):
+                results = _sql_only_search(info.get('sql_conditions') or filter_list, safe_limit, filter_expired)
+                confidence = 1.0 if results else 0.0
+                filter_route = 'sql-only'
+            elif s_type == 1:
+                if ENABLE_SEARCH_V2 and (info.get('sql_conditions') or filter_list):
+                    where_sql = info.get('sql_conditions') or filter_list
+                    results, confidence = semantic_search(query, limit=safe_limit, filter_expired=filter_expired, use_negation=negation_emb, where_sql=where_sql)
+                    filter_route = 'prefilter'
+                else:
+                    results, confidence = semantic_search(query, limit=safe_limit, filter_expired=filter_expired, use_negation=negation_emb)
             elif s_type == 2:
-                results, confidence = keyword_search(query, limit=safe_limit, filter_expired=filter_expired)
+                if ENABLE_SEARCH_V2 and (info.get('sql_conditions') or filter_list):
+                    where_sql = info.get('sql_conditions') or filter_list
+                    results, confidence = keyword_search(query, limit=safe_limit, filter_expired=filter_expired, where_sql=where_sql)
+                    filter_route = 'prefilter'
+                else:
+                    results, confidence = keyword_search(query, limit=safe_limit, filter_expired=filter_expired)
             else:
-                results, confidence = hybrid_search(query, limit=safe_limit, filter_expired=filter_expired, use_negation=negation_emb)
+                if ENABLE_SEARCH_V2 and (info.get('sql_conditions') or filter_list):
+                    where_sql = info.get('sql_conditions') or filter_list
+                    results, confidence = hybrid_search(query, limit=safe_limit, filter_expired=filter_expired, use_negation=negation_emb, where_sql=where_sql)
+                    filter_route = 'prefilter'
+                else:
+                    results, confidence = hybrid_search(query, limit=safe_limit, filter_expired=filter_expired, use_negation=negation_emb)
         elif approach == 2:
             if categories:
                 try:
                     progress_set(70, 'Executando busca por correspondência')
                 except Exception:
                     pass
-                results, confidence, _ = correspondence_search(
+                if ENABLE_SEARCH_V2 and (info.get('sql_conditions') or filter_list):
+                    where_sql = info.get('sql_conditions') or filter_list
+                    results, confidence, _ = correspondence_search(
+                        query_text=query,
+                        top_categories=categories,
+                        limit=safe_limit,
+                        filter_expired=filter_expired,
+                        console=None,
+                        where_sql=where_sql,
+                    )
+                    filter_route = 'prefilter'
+                else:
+                    results, confidence, _ = correspondence_search(
                     query_text=query,
                     top_categories=categories,
                     limit=safe_limit,
                     filter_expired=filter_expired,
                     console=None,
                 )
+            elif ENABLE_SEARCH_V2 and not info.get('embeddings', True):
+                # Fallback SQL-only quando embeddings=false e sem categorias
+                results = _sql_only_search(info.get('sql_conditions') or filter_list, safe_limit, filter_expired)
+                confidence = 1.0 if results else 0.0
+                filter_route = 'sql-only'
         elif approach == 3:
             if categories:
                 try:
                     progress_set(70, 'Executando busca filtrada por categoria')
                 except Exception:
                     pass
-                results, confidence, _ = category_filtered_search(
+                if ENABLE_SEARCH_V2 and (info.get('sql_conditions') or filter_list):
+                    where_sql = info.get('sql_conditions') or filter_list
+                    results, confidence, _ = category_filtered_search(
+                        query_text=query,
+                        search_type=s_type,
+                        top_categories=categories,
+                        limit=safe_limit,
+                        filter_expired=filter_expired,
+                        use_negation=negation_emb,
+                        console=None,
+                        where_sql=where_sql,
+                    )
+                    filter_route = 'prefilter'
+                else:
+                    results, confidence, _ = category_filtered_search(
                     query_text=query,
                     search_type=s_type,
                     top_categories=categories,
@@ -2200,6 +2670,11 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
                     use_negation=negation_emb,
                     console=None,
                 )
+            elif ENABLE_SEARCH_V2 and not info.get('embeddings', True):
+                # Fallback SQL-only quando embeddings=false e sem categorias
+                results = _sql_only_search(info.get('sql_conditions') or filter_list, safe_limit, filter_expired)
+                confidence = 1.0 if results else 0.0
+                filter_route = 'sql-only'
     except Exception:
         results = []
         confidence = 0.0
@@ -2208,6 +2683,7 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
         progress_set(78, 'Ordenando resultados')
     except Exception:
         pass
+    # Com V2 ativo, aplicamos pré-filtro no core; pós-filtro não é necessário.
     results = _sort_results(results or [], order or 1)
     for i, r in enumerate(results, 1):
         r['rank'] = i
@@ -2239,6 +2715,7 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
                 top_categories_count=safe_top,
                 filter_expired=filter_expired,
                 embedding=prompt_emb,
+                filters=(ui_filters or {}) if ENABLE_SEARCH_V2 else None,
             )
             if prompt_id:
                 try:
@@ -2258,7 +2735,8 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
         'filter_expired': filter_expired,
         'negation': negation_emb,
     'max_results': safe_limit,
-    'top_categories': safe_top,
+	'top_categories': safe_top,
+        'filter_route': filter_route,
     }
     try:
         progress_set(100, 'Concluído')
@@ -2729,12 +3207,24 @@ def open_pncp_tab_from_favorite(n_clicks_list, favs, sessions, active):
     Output('submit-button', 'children'),
     Output('submit-button', 'disabled'),
     Output('submit-button', 'style'),
-    Input('processing-state', 'data')
+    Input('processing-state', 'data'),
+    Input('query-input', 'value'),
+    Input('store-search-filters', 'data'),
 )
-def update_submit_button(is_processing):
+def update_submit_button(is_processing, query_text, filters):
+    # Enquanto processa: mostra spinner e desabilita
     if is_processing:
         return html.I(className="fas fa-spinner fa-spin", style={'color': 'white'}), True, styles['arrow_button']
-    return html.I(className="fas fa-arrow-right"), False, styles['arrow_button']
+    # Habilita se houver texto na query OU qualquer filtro avançado preenchido
+    has_query = bool((query_text or '').strip())
+    try:
+        has_filters = _has_any_filter(filters)
+    except Exception:
+        has_filters = False
+    enabled = bool(has_query or has_filters)
+    st = dict(styles['arrow_button'])
+    st['opacity'] = 1.0 if enabled else 0.4
+    return html.I(className="fas fa-arrow-right"), (not enabled), st
 
 
 # Mostrar/ocultar spinner central no painel direito
@@ -2849,13 +3339,24 @@ def hide_result_panels_during_processing(is_processing):
     Input('submit-button', 'n_clicks'),
     State('query-input', 'value'),
     State('processing-state', 'data'),
+    State('store-search-filters', 'data'),
     prevent_initial_call=True,
 )
-def set_processing_state(n_clicks, query, is_processing):
+def set_processing_state(n_clicks, query, is_processing, ui_filters):
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
-    if is_processing or not query or not query.strip():
+    # Permitir filtro-only quando V2: ui_filters já vem como State
+    filters = ui_filters
+    try:
+        if isinstance(filters, str):
+            import json as _json
+            filters = _json.loads(filters)
+    except Exception:
+        pass
+    if is_processing:
+        raise PreventUpdate
+    if (not query or not query.strip()) and not (ENABLE_SEARCH_V2 and _has_any_filter(filters)):
         raise PreventUpdate
     # Criar token único para esta rodada
     import time as _t
@@ -2937,30 +3438,100 @@ def update_filters_icon(is_open):
     Input('flt-uf', 'value'),
     Input('flt-municipio', 'value'),
     Input('flt-modalidade-id', 'value'),
+    Input('flt-modo-id', 'value'),
     Input('flt-date-field', 'value'),
-    Input('flt-date-range', 'start_date'),
-    Input('flt-date-range', 'end_date'),
+    Input('flt-date-start', 'value'),
+    Input('flt-date-end', 'value'),
     prevent_initial_call=False,
 )
-def sync_filters_store(pncp, orgao, cnpj, uf, municipio, modalidade_id, date_field, start_date, end_date):
+def sync_filters_store(pncp, orgao, cnpj, uf, municipio, modalidade_id, modo_id, date_field, start_date_txt, end_date_txt):
     def val(x):
         try:
             s = (x or '').strip()
             return s if s else None
         except Exception:
             return None
+    # Parse dd/mm/aaaa -> YYYY-MM-DD (also accept ISO input)
+    def to_iso(dtxt: str | None) -> str | None:
+        if not dtxt:
+            return None
+        s = str(dtxt).strip()
+        if not s:
+            return None
+        try:
+            # Accept already-ISO
+            if re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+                return s
+            m = re.match(r"^(\d{2})/(\d{2})/(\d{4})$", s)
+            if m:
+                dd, mm, yy = m.group(1), m.group(2), m.group(3)
+                # basic sanity check
+                int(dd); int(mm); int(yy)
+                return f"{yy}-{mm}-{dd}"
+        except Exception:
+            return None
+        return None
+    # uf pode ser lista (multi=True)
+    uf_payload = None
+    try:
+        if isinstance(uf, list):
+            uf_payload = [str(x).strip() for x in uf if str(x or '').strip()]
+            if not uf_payload:
+                uf_payload = None
+        else:
+            s = (uf or '').strip()
+            uf_payload = s if s else None
+    except Exception:
+        uf_payload = None
+    # Dates parsing and coercion: ensure end >= start when both provided
+    iso_start = to_iso(start_date_txt or '')
+    iso_end = to_iso(end_date_txt or '')
+    try:
+        if iso_start and iso_end:
+            from datetime import datetime as _d
+            ds = _d.strptime(iso_start, '%Y-%m-%d').date()
+            de = _d.strptime(iso_end, '%Y-%m-%d').date()
+            if de < ds:
+                iso_end = iso_start  # force end >= start
+    except Exception:
+        pass
     payload = {
         'pncp': val(pncp),
         'orgao': val(orgao),
         'cnpj': val(cnpj),
-        'uf': val(uf),
+        'uf': uf_payload,
         'municipio': val(municipio),
-        'modalidade_id': val(modalidade_id),
+    'modalidade_id': modalidade_id if modalidade_id not in ('', None, []) else None,
+    'modo_id': modo_id if modo_id not in ('', None, []) else None,
         'date_field': (date_field or 'encerramento'),
-        'date_start': val(start_date),
-        'date_end': val(end_date),
+        'date_start': iso_start,
+        'date_end': iso_end,
     }
     return payload
+
+# Garantir que a data final nunca seja menor que a inicial (ajuste visual)
+@app.callback(
+    Output('flt-date-end', 'value'),
+    Input('flt-date-start', 'value'),
+    State('flt-date-end', 'value'),
+    prevent_initial_call=True,
+)
+def ensure_end_after_start(start_txt, end_txt):
+    try:
+        if not start_txt or not end_txt:
+            raise PreventUpdate
+        m1 = re.match(r"^(\d{2})/(\d{2})/(\d{4})$", str(start_txt).strip())
+        m2 = re.match(r"^(\d{2})/(\d{2})/(\d{4})$", str(end_txt).strip())
+        if not (m1 and m2):
+            raise PreventUpdate
+        from datetime import datetime as _d
+        ds = _d.strptime(f"{m1.group(3)}-{m1.group(2)}-{m1.group(1)}", '%Y-%m-%d').date()
+        de = _d.strptime(f"{m2.group(3)}-{m2.group(2)}-{m2.group(1)}", '%Y-%m-%d').date()
+        if de < ds:
+            return start_txt
+    except Exception:
+        pass
+    raise PreventUpdate
 
 
 # Toggle collapse do Histórico
@@ -3002,6 +3573,103 @@ def move_query_on_collapse(is_open):
     base = styles['input_container'].copy()
     base['marginTop'] = '10px'
     return base
+@app.callback(
+    Output('flt-modalidade-id', 'options'),
+    Input('store-auth', 'data'),
+    prevent_initial_call=False,
+)
+def load_modalidade_options(_auth):
+    """Carrega opções distintas de modalidade (ID - Nome) do BD.
+
+    Mantém simples: DISTINCT modalidade_id, modalidade_nome, ignora nulos/vazios; ordena por ID.
+    """
+    try:
+        from gvg_database import create_connection
+        conn = create_connection()
+        if not conn:
+            return []
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT DISTINCT NULLIF(TRIM(modalidade_id),'') AS id,
+                            NULLIF(TRIM(modalidade_nome),'') AS nome
+            FROM contratacao
+            WHERE NULLIF(TRIM(modalidade_id),'') IS NOT NULL
+        """)
+        rows = cur.fetchall() or []
+        # Ordena numericamente quando possível
+        def _to_int(s):
+            try:
+                return int(str(s).strip())
+            except Exception:
+                return None
+        sorted_rows = sorted(rows, key=lambda r: (_to_int(r[0]) if _to_int(r[0]) is not None else 9999, str(r[0]).strip()))
+        opts = []
+        for rid, nome in sorted_rows:
+            rid_s = str(rid).strip() if rid is not None else ''
+            nome_s = str(nome).strip() if nome is not None else ''
+            # label mostrado com zero à esquerda somente para exibição
+            try:
+                rid_int = int(rid_s)
+                rid_label = f"{rid_int:02d}"
+            except Exception:
+                rid_label = rid_s
+            label = f"{rid_label} - {nome_s}" if nome_s else rid_label
+            opts.append({'label': label, 'value': rid_s})
+        cur.close(); conn.close()
+        return opts
+    except Exception as e:
+        try:
+            dbg('UI', f"Falha ao carregar modalidades: {e}")
+        except Exception:
+            pass
+        return []
+
+@app.callback(
+    Output('flt-modo-id', 'options'),
+    Input('store-auth', 'data'),
+    prevent_initial_call=False,
+)
+def load_modo_options(_auth):
+    """Carrega opções distintas de modo de disputa (ID - Nome) do BD, rotulando com zero à esquerda (<10)."""
+    try:
+        from gvg_database import create_connection
+        conn = create_connection()
+        if not conn:
+            return []
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT DISTINCT NULLIF(TRIM(modo_disputa_id),'') AS id,
+                            NULLIF(TRIM(modo_disputa_nome),'') AS nome
+            FROM contratacao
+            WHERE NULLIF(TRIM(modo_disputa_id),'') IS NOT NULL
+        """)
+        rows = cur.fetchall() or []
+        def _to_int(s):
+            try:
+                return int(str(s).strip())
+            except Exception:
+                return None
+        sorted_rows = sorted(rows, key=lambda r: (_to_int(r[0]) if _to_int(r[0]) is not None else 9999, str(r[0]).strip()))
+        opts = []
+        for rid, nome in sorted_rows:
+            rid_s = str(rid).strip() if rid is not None else ''
+            nome_s = str(nome).strip() if nome is not None else ''
+            try:
+                rid_int = int(rid_s)
+                rid_label = f"{rid_int:02d}"
+            except Exception:
+                rid_label = rid_s
+            label = f"{rid_label} - {nome_s}" if nome_s else rid_label
+            opts.append({'label': label, 'value': rid_s})
+        cur.close(); conn.close()
+        return opts
+    except Exception as e:
+        try:
+            dbg('UI', f"Falha ao carregar modos de disputa: {e}")
+        except Exception:
+            pass
+        return []
+
 
 
 # Status e categorias
@@ -3039,22 +3707,153 @@ def render_history_list(history):
         # Linha 1: prompt em negrito
         line1 = html.Div(q_txt, style=styles['history_prompt'])
         # Linha 2: configurações (10px)
-        cfg_parts = []
+        cfg_spans = []
         try:
             st = rec.get('search_type'); sa = rec.get('search_approach'); rl = rec.get('relevance_level'); sm = rec.get('sort_mode')
             mr = rec.get('max_results'); tc = rec.get('top_categories_count'); fe = rec.get('filter_expired')
-            if st in SEARCH_TYPES: cfg_parts.append(f"Tipo: {SEARCH_TYPES[st]['name']}")
-            if sa in SEARCH_APPROACHES: cfg_parts.append(f"Abordagem: {SEARCH_APPROACHES[sa]['name']}")
-            if rl in RELEVANCE_LEVELS: cfg_parts.append(f"Relevância: {RELEVANCE_LEVELS[rl]['name']}")
-            if sm in SORT_MODES: cfg_parts.append(f"Ordenação: {SORT_MODES[sm]['name']}")
-            if mr is not None: cfg_parts.append(f"Máx: {mr}")
-            if tc is not None: cfg_parts.append(f"Categorias: {tc}")
-            if fe is not None: cfg_parts.append(f"Encerradas: {'ON' if fe else 'OFF'}")
+            if st in SEARCH_TYPES:
+                cfg_spans.append(html.Span([
+                    html.Span('Tipo: ', style={'fontWeight': 'bold'}),
+                    html.Span(SEARCH_TYPES[st]['name'], style={'fontStyle': 'italic'})
+                ]))
+            if sa in SEARCH_APPROACHES:
+                cfg_spans.append(html.Span([
+                    html.Span('Abordagem: ', style={'fontWeight': 'bold'}),
+                    html.Span(SEARCH_APPROACHES[sa]['name'], style={'fontStyle': 'italic'})
+                ]))
+            if rl in RELEVANCE_LEVELS:
+                cfg_spans.append(html.Span([
+                    html.Span('Relevância: ', style={'fontWeight': 'bold'}),
+                    html.Span(RELEVANCE_LEVELS[rl]['name'], style={'fontStyle': 'italic'})
+                ]))
+            if sm in SORT_MODES:
+                cfg_spans.append(html.Span([
+                    html.Span('Ordenação: ', style={'fontWeight': 'bold'}),
+                    html.Span(SORT_MODES[sm]['name'], style={'fontStyle': 'italic'})
+                ]))
+            if mr is not None:
+                cfg_spans.append(html.Span([
+                    html.Span('Máx: ', style={'fontWeight': 'bold'}),
+                    html.Span(str(mr), style={'fontStyle': 'italic'})
+                ]))
+            if tc is not None:
+                cfg_spans.append(html.Span([
+                    html.Span('Categorias: ', style={'fontWeight': 'bold'}),
+                    html.Span(str(tc), style={'fontStyle': 'italic'})
+                ]))
+            if fe is not None:
+                cfg_spans.append(html.Span([
+                    html.Span('Encerradas: ', style={'fontWeight': 'bold'}),
+                    html.Span('ON' if fe else 'OFF', style={'fontStyle': 'italic'})
+                ]))
         except Exception:
             pass
-        cfg_txt = ' | '.join([str(x) for x in cfg_parts if x])
-        line2 = html.Div(cfg_txt, style=styles['history_config']) if cfg_txt else html.Div('', style=styles['history_config'])
-        body = html.Div([line1, line2])
+        if cfg_spans:
+            inter_cfg = []
+            for j, p in enumerate(cfg_spans):
+                if j > 0:
+                    inter_cfg.append(html.Span(' | '))
+                inter_cfg.append(p)
+            line2 = html.Div(inter_cfg, style=styles['history_config'])
+        else:
+            line2 = html.Div('', style=styles['history_config'])
+        # Linha 3: filtros (se houver)
+        line3 = html.Div('', style=styles['history_config'])
+        try:
+            f = rec.get('filters') or {}
+            if isinstance(f, str):
+                import json as _json
+                try:
+                    f = _json.loads(f)
+                except Exception:
+                    f = {}
+            def _has(v):
+                if v is None:
+                    return False
+                if isinstance(v, str):
+                    return bool(v.strip())
+                if isinstance(v, list):
+                    return len([x for x in v if str(x).strip()]) > 0
+                return True
+            parts = []
+            if _has(f.get('pncp')):
+                parts.append(html.Span([
+                    html.Span('PNCP nº: ', style={'fontWeight': 'bold'}),
+                    html.Span(str(f.get('pncp') or ''), style={'fontStyle': 'italic'})
+                ]))
+            if _has(f.get('orgao')):
+                parts.append(html.Span([
+                    html.Span('Órgão: ', style={'fontWeight': 'bold'}),
+                    html.Span(str(f.get('orgao') or ''), style={'fontStyle': 'italic'})
+                ]))
+            if _has(f.get('cnpj')):
+                parts.append(html.Span([
+                    html.Span('CNPJ: ', style={'fontWeight': 'bold'}),
+                    html.Span(str(f.get('cnpj') or ''), style={'fontStyle': 'italic'})
+                ]))
+            if _has(f.get('uf')):
+                uf_val = f.get('uf')
+                if isinstance(uf_val, list):
+                    uf_txt = ', '.join([str(x).strip() for x in uf_val if str(x).strip()])
+                else:
+                    uf_txt = str(uf_val or '').strip()
+                if uf_txt:
+                    parts.append(html.Span([
+                        html.Span('UF: ', style={'fontWeight': 'bold'}),
+                        html.Span(uf_txt, style={'fontStyle': 'italic'})
+                    ]))
+            if _has(f.get('municipio')):
+                parts.append(html.Span([
+                    html.Span('Municípios: ', style={'fontWeight': 'bold'}),
+                    html.Span(str(f.get('municipio') or ''), style={'fontStyle': 'italic'})
+                ]))
+            if _has(f.get('modalidade_id')):
+                mid = f.get('modalidade_id')
+                if isinstance(mid, list):
+                    mid_txt = ', '.join([str(x).strip() for x in mid if str(x).strip()])
+                else:
+                    mid_txt = str(mid or '').strip()
+                parts.append(html.Span([
+                    html.Span('Modalidade: ', style={'fontWeight': 'bold'}),
+                    html.Span(mid_txt, style={'fontStyle': 'italic'})
+                ]))
+            if _has(f.get('modo_id')):
+                mo = f.get('modo_id')
+                if isinstance(mo, list):
+                    mo_txt = ', '.join([str(x).strip() for x in mo if str(x).strip()])
+                else:
+                    mo_txt = str(mo or '').strip()
+                parts.append(html.Span([
+                    html.Span('Modo: ', style={'fontWeight': 'bold'}),
+                    html.Span(mo_txt, style={'fontStyle': 'italic'})
+                ]))
+            df_label = {'encerramento': 'Encerramento', 'abertura': 'Abertura', 'publicacao': 'Publicação'}.get(str(f.get('date_field') or 'encerramento'), 'Encerramento')
+            ds = f.get('date_start'); de = f.get('date_end')
+            def _fmt(dv):
+                return _format_br_date(dv) if dv else ''
+            if ds or de:
+                date_text = None
+                if ds and de:
+                    date_text = f"desde {_fmt(ds)} até {_fmt(de)}"
+                elif ds:
+                    date_text = f"desde {_fmt(ds)}"
+                elif de:
+                    date_text = f"até {_fmt(de)}"
+                if date_text:
+                    parts.append(html.Span([
+                        html.Span(f"Período ({df_label}): ", style={'fontWeight': 'bold'}),
+                        html.Span(date_text, style={'fontStyle': 'italic'})
+                    ]))
+            if parts:
+                inter = []
+                for j, p in enumerate(parts):
+                    if j > 0:
+                        inter.append(html.Span(' | '))
+                    inter.append(p)
+                line3 = html.Div([html.Span('Filtros: ', style={'fontWeight': 'bold'}), html.Span(inter)], style=styles['history_config'])
+        except Exception:
+            pass
+        body = html.Div([line1, line2, line3])
         buttons.append(
             html.Div([
                 html.Button(
@@ -3088,34 +3887,131 @@ def render_history_list(history):
     Input('store-meta', 'data'),
     Input('store-categories', 'data'),
     State('store-last-query', 'data'),
+    State('store-search-filters', 'data'),
     prevent_initial_call=True,
 )
-def render_status_and_categories(meta, categories, last_query):
+def render_status_and_categories(meta, categories, last_query, filters):
     if not meta:
         # hide both when no meta
         return dash.no_update, dash.no_update
     status = [
         html.Div([
             html.Span('Busca: ', style={'fontWeight': 'bold'}),
-            html.Span(last_query or '')
+            html.Span(last_query or '', style={'fontStyle': 'italic'})
         ], style={'marginTop': '6px'}),
         html.Div([
-            html.Span(f"Tipo: {SEARCH_TYPES.get(meta.get('search'),{}).get('name','')}") ,
+            html.Span('Tipo: ', style={'fontWeight': 'bold'}), html.Span(SEARCH_TYPES.get(meta.get('search'),{}).get('name',''), style={'fontStyle': 'italic'}),
             html.Span(" | "),
-            html.Span(f"Abordagem: {SEARCH_APPROACHES.get(meta.get('approach'),{}).get('name','')}") ,
+            html.Span('Abordagem: ', style={'fontWeight': 'bold'}), html.Span(SEARCH_APPROACHES.get(meta.get('approach'),{}).get('name',''), style={'fontStyle': 'italic'}),
             html.Span(" | "),
-            html.Span(f"Relevância: {RELEVANCE_LEVELS.get(meta.get('relevance'),{}).get('name','')}") ,
+            html.Span('Relevância: ', style={'fontWeight': 'bold'}), html.Span(RELEVANCE_LEVELS.get(meta.get('relevance'),{}).get('name',''), style={'fontStyle': 'italic'}),
             html.Span(" | "),
-            html.Span(f"Ordenação: {SORT_MODES.get(meta.get('order'),{}).get('name','')}")
+            html.Span('Ordenação: ', style={'fontWeight': 'bold'}), html.Span(SORT_MODES.get(meta.get('order'),{}).get('name',''), style={'fontStyle': 'italic'})
         ], style={'color': '#555', 'marginTop': '6px'}),
         html.Div([
-            html.Span(f"Máx Resultados: {meta.get('max_results', '')}"),
+            html.Span('Máx Resultados: ', style={'fontWeight': 'bold'}), html.Span(str(meta.get('max_results', '')), style={'fontStyle': 'italic'}),
             html.Span(" | "),
-            html.Span(f"Categorias: {meta.get('top_categories', '')}"),
+            html.Span('Categorias: ', style={'fontWeight': 'bold'}), html.Span(str(meta.get('top_categories', '')), style={'fontStyle': 'italic'}),
             html.Span(" | "),
-            html.Span(f"Filtrar Data Encerradas: {'ON' if meta.get('filter_expired') else 'OFF'}"),
+            html.Span('Filtrar Data Encerradas: ', style={'fontWeight': 'bold'}), html.Span('ON' if meta.get('filter_expired') else 'OFF', style={'fontStyle': 'italic'}),
         ], style={'color': '#555', 'marginTop': '6px'})
     ]
+
+    # Filtros avançados (resumo) — mostrar quando houver algum ativo
+    try:
+        f = filters or {}
+        def _has(v):
+            if v is None:
+                return False
+            if isinstance(v, str):
+                return bool(v.strip())
+            if isinstance(v, list):
+                return len([x for x in v if str(x).strip()]) > 0
+            return True
+        parts = []
+        if _has(f.get('pncp')):
+            parts.append(html.Span([
+                html.Span('PNCP nº: ', style={'fontWeight': 'bold'}),
+                html.Span(str(f.get('pncp') or ''), style={'fontStyle': 'italic'})
+            ]))
+        if _has(f.get('orgao')):
+            parts.append(html.Span([
+                html.Span('Órgão: ', style={'fontWeight': 'bold'}),
+                html.Span(str(f.get('orgao') or ''), style={'fontStyle': 'italic'})
+            ]))
+        if _has(f.get('cnpj')):
+            parts.append(html.Span([
+                html.Span('CNPJ: ', style={'fontWeight': 'bold'}),
+                html.Span(str(f.get('cnpj') or ''), style={'fontStyle': 'italic'})
+            ]))
+        if _has(f.get('uf')):
+            uf_val = f.get('uf')
+            if isinstance(uf_val, list):
+                uf_txt = ', '.join([str(x).strip() for x in uf_val if str(x).strip()])
+            else:
+                uf_txt = str(uf_val or '').strip()
+            if uf_txt:
+                parts.append(html.Span([
+                    html.Span('UF: ', style={'fontWeight': 'bold'}),
+                    html.Span(uf_txt, style={'fontStyle': 'italic'})
+                ]))
+        if _has(f.get('municipio')):
+            parts.append(html.Span([
+                html.Span('Municípios: ', style={'fontWeight': 'bold'}),
+                html.Span(str(f.get('municipio') or ''), style={'fontStyle': 'italic'})
+            ]))
+        if _has(f.get('modalidade_id')):
+            mid = f.get('modalidade_id')
+            if isinstance(mid, list):
+                mid_txt = ', '.join([str(x).strip() for x in mid if str(x).strip()])
+            else:
+                mid_txt = str(mid or '').strip()
+            parts.append(html.Span([
+                html.Span('Modalidade: ', style={'fontWeight': 'bold'}),
+                html.Span(mid_txt, style={'fontStyle': 'italic'})
+            ]))
+        if _has(f.get('modo_id')):
+            mo = f.get('modo_id')
+            if isinstance(mo, list):
+                mo_txt = ', '.join([str(x).strip() for x in mo if str(x).strip()])
+            else:
+                mo_txt = str(mo or '').strip()
+            parts.append(html.Span([
+                html.Span('Modo: ', style={'fontWeight': 'bold'}),
+                html.Span(mo_txt, style={'fontStyle': 'italic'})
+            ]))
+        # Date range with label
+        df_label = {'encerramento': 'Encerramento', 'abertura': 'Abertura', 'publicacao': 'Publicação'}.get(str(f.get('date_field') or 'encerramento'), 'Encerramento')
+        ds = f.get('date_start')
+        de = f.get('date_end')
+        def _fmt(dv):
+            return _format_br_date(dv) if dv else ''
+        if ds or de:
+            date_text = None
+            if ds and de:
+                date_text = f"desde {_fmt(ds)} até {_fmt(de)}"
+            elif ds:
+                date_text = f"desde {_fmt(ds)}"
+            elif de:
+                date_text = f"até {_fmt(de)}"
+            if date_text:
+                parts.append(html.Span([
+                    html.Span(f"Período ({df_label}): ", style={'fontWeight': 'bold'}),
+                    html.Span(date_text, style={'fontStyle': 'italic'})
+                ]))
+        if parts:
+            # separadores ' | '
+            interleaved = []
+            for i, p in enumerate(parts):
+                if i > 0:
+                    interleaved.append(html.Span(' | '))
+                interleaved.append(p)
+            status.insert(1, html.Div([
+                html.Span('Filtros: ', style={'fontWeight': 'bold'}),
+                html.Span(interleaved)
+            ], style={'marginTop': '6px'}))
+    except Exception:
+        pass
 
     cats_elem = []
     if categories:
@@ -3248,7 +4144,7 @@ def render_details(results, last_query):
     for r in results:
         d = r.get('details', {}) or {}
         descricao_full = d.get('descricaocompleta') or d.get('descricaoCompleta') or d.get('objeto') or ''
-         # Desativado o highlight por performance; usar texto puro
+        # Desativado o highlight por performance; usar texto puro
         destaque = descricao_full
 
         valor = format_currency(d.get('valortotalestimado') or d.get('valorTotalEstimado') or d.get('valorfinal') or d.get('valorFinal') or 0)
@@ -3273,6 +4169,20 @@ def render_details(results, last_query):
 
         status_text = _enc_status_text(_enc_status, raw_en)
         tag = html.Span(status_text, style={**styles['date_status_tag'], 'backgroundColor': enc_color}) if status_text else None
+        # Modalidade e Modo de Disputa
+        modalidade_id = (
+            d.get('modalidade_id') or d.get('modalidadeid') or d.get('modalidadeId')
+        )
+        modalidade_nome = (
+            d.get('modalidade_nome') or d.get('modalidadenome') or d.get('modalidadeNome')
+        )
+        modo_id = (
+            d.get('modo_disputa_id') or d.get('mododisputaid') or d.get('modaDisputaId') or d.get('modadisputaid')
+        )
+        modo_nome = (
+            d.get('modo_disputa_nome') or d.get('mododisputanome') or d.get('modaDisputaNome')
+        )
+
         body = html.Div([
             html.Div([
                 html.Span('Órgão: ', style={'fontWeight': 'bold'}), html.Span(orgao)
@@ -3288,6 +4198,14 @@ def render_details(results, last_query):
             ]),
             html.Div([
                 html.Span('Valor: ', style={'fontWeight': 'bold'}), html.Span(valor)
+            ]),
+            html.Div([
+                html.Span('Modalidade: ', style={'fontWeight': 'bold'}),
+                html.Span(f"{str(modalidade_id) if modalidade_id else 'N/A'}" + (f" - {modalidade_nome}" if modalidade_nome else '' ))
+            ]),
+            html.Div([
+                html.Span('Modo de Disputa: ', style={'fontWeight': 'bold'}),
+                html.Span(f"{str(modo_id) if modo_id else 'N/A'}" + (f" - {modo_nome}" if modo_nome else '' ))
             ]),
             # Datas em linhas separadas
             html.Div([
@@ -4746,6 +5664,7 @@ app.index_string = '''
                             }
                         })();
                         </script>
+                        
         </footer>
     </body>
 </html>

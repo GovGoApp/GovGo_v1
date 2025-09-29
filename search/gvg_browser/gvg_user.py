@@ -7,6 +7,7 @@ Agora usa usuário dinâmico quando há token/sessão; fallback anônimo apenas 
 from __future__ import annotations
 
 import os
+import json
 from typing import List, Optional, Dict, Any, Union
 import datetime as _dt
 try:
@@ -163,6 +164,7 @@ def add_prompt(
     top_categories_count: Optional[int] = None,
     filter_expired: Optional[bool] = None,
     embedding: Optional[List[float]] = None,
+    filters: Optional[Dict[str, Any]] = None,
 ) -> Optional[int]:
     """Adiciona um prompt ao histórico do usuário, com configuração (e embedding, se disponível).
 
@@ -227,16 +229,23 @@ def add_prompt(
             ('top_categories_count', top_categories_count),
             ('filter_expired', filter_expired),
             ('embedding', embedding),
+            ('filters', filters),
         ]
         for col, val in optional_map:
             if col in cols_existing:
                 insert_cols.append(col)
-                insert_vals.append(val)
-                # Vetor precisa de cast explícito
+                # Ajustes por tipo
                 if col == 'embedding' and col_types.get('embedding') == 'vector':
+                    # Vetor precisa de cast explícito
                     placeholders.append('%s::vector')
+                    insert_vals.append(val)
+                elif col == 'filters' and col_types.get('filters') in ('jsonb', 'json'):
+                    # JSONB com cast explícito
+                    placeholders.append('%s::jsonb')
+                    insert_vals.append(json.dumps(val) if val is not None else None)
                 else:
                     placeholders.append('%s')
+                    insert_vals.append(val)
 
         # Debug opcional (auto-gated pelo dbg)
         try:
@@ -288,7 +297,7 @@ def fetch_prompts_with_config(limit: int = 50) -> List[Dict[str, Any]]:
         base_cols = ['text', 'title', 'created_at']
         opt_cols = [
             'search_type', 'search_approach', 'relevance_level', 'sort_mode',
-            'max_results', 'top_categories_count', 'filter_expired'
+            'max_results', 'top_categories_count', 'filter_expired', 'filters'
         ]
         select_cols = base_cols + [c for c in opt_cols if c in cols_existing]
         # Checa se coluna active existe para filtrar somente ativos

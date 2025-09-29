@@ -16,8 +16,10 @@ from dotenv import load_dotenv
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Assistant ID (V1) carregado via variável cujo nome = arquivo
+# Assistant IDs
 ASSISTANT_ID = os.getenv("GVG_PREPROCESSING_QUERY_v1")
+ASSISTANT_ID_V2 = os.getenv("GVG_PREPROCESSING_QUERY_v2")
+ENABLE_SEARCH_V2 = (os.getenv("GVG_ENABLE_SEARCH_V2", "false").strip().lower() in ("1","true","yes","on"))
 MAX_RETRIES = 3
 
 # Thread global para reutilização
@@ -62,7 +64,7 @@ class SearchQueryProcessor:
 				'sql_conditions': [],
 				'explanation': 'Query vazia'
 			}
-        
+		
 		for attempt in range(max_retries):
 			try:
 				# Preparar prompt para o Assistant
@@ -111,6 +113,72 @@ class SearchQueryProcessor:
 			'sql_conditions': [],
 			'explanation': 'Processamento não disponível'
 		}
+
+	def process_query_v2(self, user_input: str, filters: list[str] | None = None, max_retries: int = MAX_RETRIES) -> Dict[str, Any]:
+		"""
+		Processa consulta no formato V2: entrada JSON {input, filter[]} e saída com embeddings.
+		Cai no V1 caso o ID do v2 não esteja configurado.
+		"""
+		# Se não há v2 configurado, usar v1 como fallback
+		if not ASSISTANT_ID_V2:
+			return self.process_query(user_input or '')
+
+		payload = {
+			'input': (user_input or '').strip(),
+			'filter': list(filters or []),
+		}
+		# Se input e filter ambos vazios, retornar resultado trivial
+		if not payload['input'] and not payload['filter']:
+			return {
+				'search_terms': '',
+				'negative_terms': '',
+				'sql_conditions': [],
+				'explanation': 'Entrada e filtros vazios',
+				'embeddings': False
+			}
+		content = json.dumps(payload, ensure_ascii=False)
+		# DEBUG de entrada do pré-processamento [FILTER]
+		try:
+			from gvg_debug import debug_log as dbg
+			dbg('PREPROC', f"[FILTER] assistant.input={payload}")
+		except Exception:
+			pass
+
+		for attempt in range(max_retries):
+			try:
+				client.beta.threads.messages.create(
+					thread_id=self.thread.id,
+					role="user",
+					content=content
+				)
+				run = client.beta.threads.runs.create(
+					thread_id=self.thread.id,
+					assistant_id=ASSISTANT_ID_V2
+				)
+				response_content = self._wait_for_response(run.id)
+				data = self._parse_response(response_content, user_input)
+				# DEBUG de saída do pré-processamento [FILTER]
+				try:
+					from gvg_debug import debug_log as dbg
+					dbg('PREPROC', f"[FILTER] assistant.output={data}")
+				except Exception:
+					pass
+				# Se v2 não retornou embeddings, inferir conforme regra (termos presentes)
+				if 'embeddings' not in data:
+					st = (data.get('search_terms') or '').strip()
+					nt = (data.get('negative_terms') or '').strip()
+					data['embeddings'] = bool(st or nt)
+				return data
+			except Exception as e:
+				try:
+					from gvg_debug import debug_log as dbg
+					dbg('PREPROC', f"V2 tentativa {attempt + 1} falhou: {e}")
+				except Exception:
+					pass
+				if attempt == max_retries - 1:
+					# fallback definitivo: usar v1
+					return self.process_query(user_input or '')
+				time.sleep(1)
     
 	def _wait_for_response(self, run_id: str, max_wait: int = 30) -> str:
 		"""
@@ -173,13 +241,18 @@ class SearchQueryProcessor:
 					if not isinstance(data['sql_conditions'], list):
 						data['sql_conditions'] = []
 					negative_terms = data.get('negative_terms', '') or ''
-					requires_join_embeddings = bool(data.get('requires_join_embeddings'))
+					embeddings = data.get('embeddings', None)
+					if embeddings is None:
+						# Inferir embeddings conforme regra: termos positivos ou negativos presentes
+						st = (data.get('search_terms') or '').strip()
+						nt = (data.get('negative_terms') or '').strip()
+						embeddings = bool(st or nt)
 					return {
 						'search_terms': (data.get('search_terms') or original_query).strip(),
 						'negative_terms': negative_terms.strip(),
 						'sql_conditions': data.get('sql_conditions', []),
 						'explanation': data.get('explanation', 'Processamento concluído'),
-						'requires_join_embeddings': requires_join_embeddings
+						'embeddings': embeddings
 					}
             
 			# Se não conseguiu extrair JSON válido
@@ -188,7 +261,7 @@ class SearchQueryProcessor:
 				'negative_terms': '',
 				'sql_conditions': [],
 				'explanation': 'Não foi possível processar a resposta do Assistant',
-				'requires_join_embeddings': False
+				'embeddings': bool((original_query or '').strip())
 			}
             
 		except json.JSONDecodeError:
@@ -197,7 +270,7 @@ class SearchQueryProcessor:
 				'negative_terms': '',
 				'sql_conditions': [],
 				'explanation': 'Resposta inválida do Assistant',
-				'requires_join_embeddings': False
+				'embeddings': bool((original_query or '').strip())
 			}
 
 def process_search_query(user_query: str) -> Dict[str, Any]:

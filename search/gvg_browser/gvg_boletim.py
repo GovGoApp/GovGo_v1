@@ -58,17 +58,52 @@ def fetch_user_boletins() -> List[Dict[str, Any]]:
             return []
         cur = conn.cursor()
         try:
-            cur.execute(
-                """
-                    SELECT id, query_text, schedule_type, schedule_detail, channels
-                      FROM public.user_schedule
-                     WHERE user_id = %s
-                       AND active = true
-                  ORDER BY created_at DESC
-                """,
-                (uid,)
-            )
-            rows = cur.fetchall() or []
+            # Tentar trazer também config_snapshot, created_at, last_run_at e filters (se existir)
+            has_filters = False
+            try:
+                cur.execute(
+                    """
+                        SELECT id, query_text, schedule_type, schedule_detail, channels,
+                               config_snapshot, created_at, last_run_at, filters
+                          FROM public.user_schedule
+                         WHERE user_id = %s
+                           AND active = true
+                      ORDER BY created_at DESC
+                    """,
+                    (uid,)
+                )
+                rows = cur.fetchall() or []
+                has_filters = True
+            except Exception:
+                # Sem coluna filters
+                cur.execute(
+                    """
+                        SELECT id, query_text, schedule_type, schedule_detail, channels,
+                               config_snapshot, created_at, last_run_at
+                          FROM public.user_schedule
+                         WHERE user_id = %s
+                           AND active = true
+                      ORDER BY created_at DESC
+                    """,
+                    (uid,)
+                )
+                rows = cur.fetchall() or []
+                has_filters = False
+            # Montar itens a partir de user_schedule
+            for r in rows:
+                item = {
+                    'id': r[0],
+                    'query_text': r[1],
+                    'schedule_type': r[2],
+                    'schedule_detail': r[3] or {},
+                    'channels': r[4] or [],
+                    'config_snapshot': r[5] or {},
+                    'created_at': r[6],
+                    'last_run_at': r[7] if len(r) > 7 else None,
+                }
+                if has_filters and len(r) > 8:
+                    item['filters'] = r[8]
+                items.append(item)
         except Exception as e1:
             # Fallback: tabela legada public.user_boletins
             try:
@@ -77,7 +112,7 @@ def fetch_user_boletins() -> List[Dict[str, Any]]:
                 pass
             cur.execute(
                 """
-                    SELECT id, query_text, schedule_type, schedule_detail, channels
+                    SELECT id, query_text, schedule_type, schedule_detail, channels, created_at
                       FROM public.user_boletins
                      WHERE user_id = %s
                        AND active = true
@@ -86,14 +121,15 @@ def fetch_user_boletins() -> List[Dict[str, Any]]:
                 (uid,)
             )
             rows = cur.fetchall() or []
-        for r in rows:
-            items.append({
-                'id': r[0],
-                'query_text': r[1],
-                'schedule_type': r[2],
-                'schedule_detail': r[3] or {},
-                'channels': r[4] or [],
-            })
+            for r in rows:
+                items.append({
+                    'id': r[0],
+                    'query_text': r[1],
+                    'schedule_type': r[2],
+                    'schedule_detail': r[3] or {},
+                    'channels': r[4] or [],
+                    'created_at': r[5] if len(r) > 5 else None,
+                })
         return items
     except Exception:
         return []
@@ -112,6 +148,7 @@ def create_user_boletim(
     schedule_detail: Dict[str, Any],
     channels: List[str],
     config_snapshot: Dict[str, Any],
+    filters: Optional[Dict[str, Any]] = None,
 ) -> Optional[int]:
     if not query_text or not schedule_type:
         return None
@@ -125,15 +162,27 @@ def create_user_boletim(
             return None
         cur = conn.cursor()
         try:
-            cur.execute(
-                """
-                INSERT INTO public.user_schedule
-                    (user_id, query_text, schedule_type, schedule_detail, channels, config_snapshot)
-                VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb)
-                RETURNING id
-                """,
-                (uid, query_text, schedule_type, json.dumps(schedule_detail), json.dumps(channels), json.dumps(config_snapshot))
-            )
+            # Tentar inserir incluindo coluna filters quando existir
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO public.user_schedule
+                        (user_id, query_text, schedule_type, schedule_detail, channels, config_snapshot, filters)
+                    VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb)
+                    RETURNING id
+                    """,
+                    (uid, query_text, schedule_type, json.dumps(schedule_detail), json.dumps(channels), json.dumps(config_snapshot), json.dumps(filters or {}))
+                )
+            except Exception:
+                cur.execute(
+                    """
+                    INSERT INTO public.user_schedule
+                        (user_id, query_text, schedule_type, schedule_detail, channels, config_snapshot)
+                    VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb)
+                    RETURNING id
+                    """,
+                    (uid, query_text, schedule_type, json.dumps(schedule_detail), json.dumps(channels), json.dumps(config_snapshot))
+                )
             row = cur.fetchone()
         except Exception as e1:
             # Fallback: tabela legada public.user_boletins

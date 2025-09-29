@@ -60,10 +60,10 @@ Principais campos:
 • top_categories
 • top_similarities
 • modelo_embedding
-• created_at (se existente)
+• created_at 
 
 2.3. Tabela categoria (alias cat)
-• cod_cat, nom_cat, cod_nv0..cod_nv3, nom_nv0..nom_nv3, cat_embeddings (uso semântico, não filtrar direto salvo pedido claro por código)
+• cod_cat, nom_cat, cod_nv0...cod_nv3, nom_nv0...nom_nv3, cat_embeddings (uso semântico, não filtrar direto salvo pedido claro por código)
 
 2.4. Tipos de Data (IMPORTANTE)
 Existem três dimensões temporais:

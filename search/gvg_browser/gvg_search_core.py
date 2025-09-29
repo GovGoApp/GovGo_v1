@@ -428,7 +428,8 @@ def semantic_search(query_text,
 					intelligent_mode: bool = True,
 					category_codes: Optional[List[str]] = None,
 					pre_limit_ids: Optional[int] = None,
-					pre_knn_limit: Optional[int] = None):
+					pre_knn_limit: Optional[int] = None,
+					where_sql: Optional[List[str]] = None):
 	"""Busca semântica usando builder centralizado de SELECT.
 
 	Agora utiliza `build_semantic_select` para evitar repetição de lista de colunas.
@@ -476,6 +477,10 @@ def semantic_search(query_text,
 					where_cand.append("to_date(NULLIF(c.data_encerramento_proposta,''),'YYYY-MM-DD') >= CURRENT_DATE")
 				for cond in sql_conditions_sanitized:
 					where_cand.append(cond)
+				# Pré-filtro adicional vindo do Browser (V2)
+				if where_sql:
+					for cond in _sanitize_sql_conditions(where_sql, context='semantic'):
+						where_cand.append(cond)
 				include_categories = bool(category_codes)
 				if include_categories:
 					where_cand.append("ce.top_categories && %s::text[]")
@@ -542,6 +547,10 @@ def semantic_search(query_text,
 				base_query.append("AND to_date(NULLIF(c.data_encerramento_proposta,''),'YYYY-MM-DD') >= CURRENT_DATE")
 			for cond in sql_conditions_sanitized:
 				base_query.append(f"AND {cond}")
+			# Pré-filtro adicional vindo do Browser (V2)
+			if where_sql:
+				for cond in _sanitize_sql_conditions(where_sql, context='semantic'):
+					base_query.append(f"AND {cond}")
 			base_query.append("ORDER BY similarity DESC")
 			base_query.append("LIMIT %s")
 			params.append(limit)
@@ -607,7 +616,8 @@ def semantic_search(query_text,
 
 def keyword_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 				   filter_expired=DEFAULT_FILTER_EXPIRED,
-				   intelligent_mode=True):
+				   intelligent_mode=True,
+				   where_sql: Optional[List[str]] = None):
 	"""Busca por palavras‑chave usando full‑text search.
 
 	Usa builders para colunas core e normaliza uma métrica de similaridade
@@ -675,6 +685,10 @@ def keyword_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 			base.append("AND to_date(NULLIF(c.data_encerramento_proposta,''),'YYYY-MM-DD') >= CURRENT_DATE")
 		for cond in sql_conditions_sanitized:
 			base.append(f"AND {cond}")
+		# Pré-filtro adicional vindo do Browser (V2) — evitar refs a ce.* no modo keyword
+		if where_sql:
+			for cond in _sanitize_sql_conditions(where_sql, context='keyword'):
+				base.append(f"AND {cond}")
 		# Ordenação simplificada: combinação linear já calculada em Python; aqui priorizamos exato depois prefixo
 		base.append("ORDER BY rank_exact DESC, rank_prefix DESC")
 		base.append("LIMIT %s")
@@ -752,7 +766,8 @@ def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 				  semantic_weight=SEMANTIC_WEIGHT,
 				  filter_expired=DEFAULT_FILTER_EXPIRED,
 				  use_negation=DEFAULT_USE_NEGATION,
-				  intelligent_mode=True):
+				  intelligent_mode=True,
+				  where_sql: Optional[List[str]] = None):
 	"""Busca híbrida com eliminação de hardcodes de colunas.
 
 	Usa builders para colunas core e cursor.description para mapear resultados.
@@ -815,6 +830,10 @@ def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 			base.append("AND to_date(NULLIF(c.data_encerramento_proposta,''),'YYYY-MM-DD') >= CURRENT_DATE")
 		for cond in sql_conditions_sanitized:
 			base.append(f"AND {cond}")
+		# Pré-filtro adicional vindo do Browser (V2)
+		if where_sql:
+			for cond in _sanitize_sql_conditions(where_sql, context='hybrid'):
+				base.append(f"AND {cond}")
 		base.append("ORDER BY combined_score DESC")
 		base.append("LIMIT %s")
 		sql = "\n".join(base)
@@ -1035,7 +1054,7 @@ def _find_top_category_for_result(query_categories, result_categories, result_si
 	except Exception:
 		return None
 
-def correspondence_search(query_text, top_categories, limit=30, filter_expired=True, console=None):
+def correspondence_search(query_text, top_categories, limit=30, filter_expired=True, console=None, where_sql: Optional[List[str]] = None):
 	"""Busca por correspondência de categorias.
 
 	Atualizada para usar somente tabelas/colunas V1 (contratacao / contratacao_emb).
@@ -1063,6 +1082,10 @@ def correspondence_search(query_text, top_categories, limit=30, filter_expired=T
 		params = (category_codes,)
 		if filter_expired:
 			sql += " AND to_date(NULLIF(c.data_encerramento_proposta,''),'YYYY-MM-DD') >= CURRENT_DATE"
+		# Pré-filtro adicional vindo do Browser (V2)
+		if where_sql:
+			for cond in _sanitize_sql_conditions(where_sql, context='semantic'):
+				sql += f" AND {cond}"
 		sql += " LIMIT %s"
 		params = (category_codes, limit * 5)
 		cur.execute(sql, params)
@@ -1095,7 +1118,7 @@ def correspondence_search(query_text, top_categories, limit=30, filter_expired=T
 		dbg('SEARCH', f"Erro correspondência: {e}")
 		return [], 0.0, {'error': str(e)}
 
-def category_filtered_search(query_text, search_type, top_categories, limit=30, filter_expired=True, use_negation=True, expanded_factor=3, console=None):
+def category_filtered_search(query_text, search_type, top_categories, limit=30, filter_expired=True, use_negation=True, expanded_factor=3, console=None, where_sql: Optional[List[str]] = None):
 	"""Filtra resultados por interseção com categorias top do usuário.
 
 	Atualizado para apenas schema V1. Mantém forma de saída.
@@ -1113,7 +1136,8 @@ def category_filtered_search(query_text, search_type, top_categories, limit=30, 
 				filter_expired=filter_expired,
 				use_negation=use_negation,
 				intelligent_mode=True,
-				category_codes=category_codes
+				category_codes=category_codes,
+				where_sql=where_sql
 			)
 			# Resultados já vêm filtrados por categoria no SQL – retornar direto
 			if base_results:
@@ -1127,9 +1151,9 @@ def category_filtered_search(query_text, search_type, top_categories, limit=30, 
 				}
 				return base_results, confidence, meta
 		elif search_type == 2:
-			base_results, confidence = keyword_search(query_text, limit=expanded_limit, filter_expired=filter_expired)
+			base_results, confidence = keyword_search(query_text, limit=expanded_limit, filter_expired=filter_expired, where_sql=where_sql)
 		else:
-			base_results, confidence = hybrid_search(query_text, limit=expanded_limit, filter_expired=filter_expired, use_negation=use_negation)
+			base_results, confidence = hybrid_search(query_text, limit=expanded_limit, filter_expired=filter_expired, use_negation=use_negation, where_sql=where_sql)
 		if not base_results:
 			return [], 0.0, {'reason': 'no_base_results'}
 		ids = [r['id'] for r in base_results]

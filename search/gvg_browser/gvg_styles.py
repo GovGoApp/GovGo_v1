@@ -553,15 +553,9 @@ BASE_CSS = """
 .gvg-controls input[type="search"]:focus,
 .gvg-controls textarea:focus,
 .gvg-controls .dash-input:focus { border-color: #52ACFF; box-shadow: 0 0 0 2px rgba(82,172,255,0.12); outline: none; }
-/* DatePickerRange (react-dates) look aligned with inputs */
-.gvg-controls .DateRangePicker, .gvg-controls .DateRangePickerInput { width: 100%; }
-.gvg-controls .DateRangePickerInput { height: 32px; border-radius: 16px; border: 1px solid #D0D7E2; padding: 0 6px; display: flex; align-items: center; box-sizing: border-box; background-color: white; }
-.gvg-controls .DateRangePickerInput__withBorder { border: 1px solid #D0D7E2; }
-.gvg-controls .DateRangePickerInput:focus-within { border-color: #52ACFF; box-shadow: 0 0 0 2px rgba(82,172,255,0.12); }
-.gvg-controls .DateInput { flex: 1 1 50%; }
-.gvg-controls .DateInput_input { font-size: 12px; padding: 6px 8px; border: 0; height: 30px; line-height: 18px; border-radius: 12px; background-color: transparent; box-shadow: none; }
-.gvg-controls .DateInput_input::placeholder { color: #888; opacity: 1; }
-.gvg-controls .DateRangePickerInput_arrow { margin: 0 6px; color: #003A70; }
+/* Date range now uses two text inputs side-by-side; nothing special to style beyond default inputs */
+
+
 /* Reduce label spacing slightly */
 .gvg-controls label { font-size: 12px; margin-bottom: 4px; }
 /* Remove default input spinners for consistent look (optional) */
