@@ -325,7 +325,7 @@ LOGO_PATH = "https://hemztmtbejcbhgfmsvfq.supabase.co/storage/v1/object/public/g
 header = html.Div([
     html.Div([
     html.Img(src=LOGO_PATH, style=styles['header_logo']),
-    html.H4("GvG Search", className='gvg-header-title', style=styles['header_title'])
+    html.Div("GvG Search", className='gvg-header-title', style=styles['header_title'])
     ], style=styles['header_left']),
     html.Div([
         html.Div(
@@ -404,7 +404,12 @@ auth_overlay = html.Div([
 
 # Painel de controles (esquerda)
 controls_panel = html.Div([
-    html.Div('Consulta', style={**styles['card_title'], }),
+    html.Div([
+        html.Div([
+            html.I(className='fas fa-search', style=styles['section_icon']),
+            html.Div('Consulta', style=styles['card_title'])
+        ], style=styles['section_header_left'])
+    ], style=styles['row_header']),
     # Entrada de consulta com painel de Boletim embutido logo abaixo (layout em tabela)
     html.Div([
         html.Table([
@@ -529,13 +534,13 @@ controls_panel = html.Div([
 
     
     html.Div([
-        html.Div("Configurações de Busca", style=styles['card_title']),
-        html.Button(
-            html.I(className="fas fa-chevron-down"),
-            id='config-toggle-btn',
-            title='Mostrar/ocultar configurações',
-            style={**styles['arrow_button_small'], 'marginRight': '12px'}
-        ),
+        html.Button([
+            html.Div([
+                html.I(className='fas fa-sliders-h', style=styles['section_icon']),
+                html.Div("Configurações de Busca", style=styles['card_title'])
+            ], style=styles['section_header_left']),
+            html.I(className="fas fa-chevron-down")
+        ], id='config-toggle-btn', title='Mostrar/ocultar configurações', style=styles['section_header_button'])
     ], style=styles['row_header']),
     dbc.Collapse(
         html.Div([
@@ -573,13 +578,13 @@ controls_panel = html.Div([
     ),
 
     html.Div([
-        html.Div("Filtros Avançados", style=styles['card_title']),
-        html.Button(
-            html.I(className="fas fa-chevron-down"),
-            id='filters-toggle-btn',
-            title='Mostrar/ocultar filtros',
-            style={**styles['arrow_button_small'], 'marginRight': '12px'}
-        ),
+        html.Button([
+            html.Div([
+                html.I(className='fas fa-filter', style=styles['section_icon']),
+                html.Div("Filtros Avançados", style=styles['card_title'])
+            ], style=styles['section_header_left']),
+            html.I(className="fas fa-chevron-down")
+        ], id='filters-toggle-btn', title='Mostrar/ocultar filtros', style=styles['section_header_button'])
     ], style=(styles['row_header'] if ENABLE_SEARCH_V2 else {**styles['row_header'], 'display': 'none'})),
     dbc.Collapse(
         html.Div([
@@ -650,12 +655,12 @@ controls_panel = html.Div([
                 )
             ], className='gvg-form-row'),
             html.Div([
-                html.Label('Período (dd/mm/aaaa)', className='gvg-form-label'),
+                html.Label('Período', className='gvg-form-label'),
                 html.Div([
-                    dcc.Input(id='flt-date-start', type='text', placeholder='dd/mm/aaaa', maxLength=10, style=styles['input_fullflex']),
+                    dcc.Input(id='flt-date-start', type='text', placeholder='De: (dd/mm/aaaa)', maxLength=10, style=styles['input_fullflex']),
                     #html.Span(' — ', style={'padding': '0 4px'}),
                     html.Span('', style={'padding': '0 2px'}),
-                    dcc.Input(id='flt-date-end', type='text', placeholder='dd/mm/aaaa', maxLength=10, style=styles['input_fullflex'])
+                    dcc.Input(id='flt-date-end', type='text', placeholder='Até: (dd/mm/aaaa)', maxLength=10, style=styles['input_fullflex'])
                 ], style={'display': 'flex', 'gap': '4px', 'alignItems': 'center'})
             ], className='gvg-form-row'),
         ], style=styles['controls_group'], className='gvg-controls'),
@@ -663,13 +668,13 @@ controls_panel = html.Div([
     ),
 
     html.Div([
-        html.Div('Consultas', style=styles['card_title']),
-        html.Button(
-            html.I(className="fas fa-chevron-down"),
-            id='history-toggle-btn',
-            title='Mostrar/ocultar histórico',
-            style={**styles['arrow_button_small'], 'marginRight': '12px'}
-        ),
+        html.Button([
+            html.Div([
+                html.I(className='fas fa-history', style=styles['section_icon']),
+                html.Div('Histórico', style=styles['card_title'])
+            ], style=styles['section_header_left']),
+            html.I(className="fas fa-chevron-down")
+        ], id='history-toggle-btn', title='Mostrar/ocultar histórico', style=styles['section_header_button'])
     ], style=styles['row_header']),
     dbc.Collapse(
         html.Div([
@@ -678,13 +683,13 @@ controls_panel = html.Div([
         id='history-collapse', is_open=True
     ),
     html.Div([
-        html.Div('Favoritos', style=styles['card_title']),
-        html.Button(
-            html.I(className="fas fa-chevron-down"),
-            id='favorites-toggle-btn',
-            title='Mostrar/ocultar favoritos',
-            style={**styles['arrow_button_small'], 'marginRight': '12px'}
-        ),
+        html.Button([
+            html.Div([
+                html.I(className='fas fa-bookmark', style=styles['section_icon']),
+                html.Div('Favoritos', style=styles['card_title'])
+            ], style=styles['section_header_left']),
+            html.I(className="fas fa-chevron-down")
+        ], id='favorites-toggle-btn', title='Mostrar/ocultar favoritos', style=styles['section_header_button'])
     ], style=styles['row_header']),
     dbc.Collapse(
         html.Div([
@@ -693,13 +698,13 @@ controls_panel = html.Div([
         id='favorites-collapse', is_open=True
     ),
     html.Div([
-        html.Div('Boletins', style=styles['card_title']),
-        html.Button(
-            html.I(className="fas fa-chevron-down"),
-            id='boletins-toggle-btn',
-            title='Mostrar/ocultar boletins',
-            style={**styles['arrow_button_small'], 'marginRight': '12px'}
-        ),
+        html.Button([
+            html.Div([
+                html.I(className='fas fa-calendar', style=styles['section_icon']),
+                html.Div('Boletins', style=styles['card_title'])
+            ], style=styles['section_header_left']),
+            html.I(className="fas fa-chevron-down")
+        ], id='boletins-toggle-btn', title='Mostrar/ocultar boletins', style=styles['section_header_button'])
     ], style=styles['row_header']),
     dbc.Collapse(
         html.Div([
@@ -1083,9 +1088,17 @@ def _restrict_results_by_sql(sql_conditions: list[str], current_results: list[di
     prevent_initial_call=False
 )
 def enable_boletim_button(q, is_open):
+    try:
+        dbg('BOLETIM', f"[enable_boletim_button] q_set={bool((q or '').strip())} is_open={is_open}")
+    except Exception:
+        pass
     enabled = bool(q and isinstance(q, str) and q.strip())
     base_style = styles['arrow_button_inverted'] if is_open else styles['arrow_button']
     style = {**base_style, 'marginTop': '6px', 'opacity': 1.0 if enabled else 0.4}
+    try:
+        dbg('BOLETIM', f"[enable_boletim_button] returning enabled={enabled}")
+    except Exception:
+        pass
     return (not enabled), style
 
 @app.callback(
@@ -1099,9 +1112,21 @@ def enable_boletim_button(q, is_open):
 def sync_boletim_controls(freq):
     # UI simplificada: horários e canais escondidos; aqui apenas garantimos defaults coerentes.
     all_days = ['seg','ter','qua','qui','sex']
+    try:
+        dbg('BOLETIM', f"[sync_boletim_controls] freq={freq}")
+    except Exception:
+        pass
     if freq == 'DIARIO':
+        try:
+            dbg('BOLETIM', "[sync_boletim_controls] diario -> slots=['manha'] dias=Seg–Sex (disabled)")
+        except Exception:
+            pass
         return ['manha'], True, all_days, True
     # SEMANAL
+    try:
+        dbg('BOLETIM', "[sync_boletim_controls] semanal -> slots=['manha'] dias=['seg']")
+    except Exception:
+        pass
     return ['manha'], True, ['seg'], False
 
 @app.callback(
@@ -1115,6 +1140,10 @@ def toggle_boletim_panel(n, is_open):
     if not n:
         raise PreventUpdate
     new_state = not bool(is_open)
+    try:
+        dbg('BOLETIM', f"[toggle_boletim_panel] clicked n={n} is_open={is_open} -> new_state={new_state}")
+    except Exception:
+        pass
     return new_state, new_state
 
 @app.callback(
@@ -1128,9 +1157,21 @@ def toggle_boletim_panel(n, is_open):
 def validate_boletim(freq, dias, query_text, boletins):
     # Regras de desabilitação (True = desabilita)
     q = (query_text or '').strip()
+    try:
+        dbg('BOLETIM', f"[validate_boletim] freq={freq} dias={dias} q_len={len(q)} boletins={len(boletins or [])}")
+    except Exception:
+        pass
     if len(q) < 3:
+        try:
+            dbg('BOLETIM', "[validate_boletim] desabilitado: query curta")
+        except Exception:
+            pass
         return True
     if freq == 'SEMANAL' and not (dias and len(dias) > 0):
+        try:
+            dbg('BOLETIM', "[validate_boletim] desabilitado: sem dias semanais")
+        except Exception:
+            pass
         return True
     # Demais campos estão fixos por default nesta fase simplificada
     # Duplicidade por texto (case-insensitive, trim)
@@ -1139,10 +1180,18 @@ def validate_boletim(freq, dias, query_text, boletins):
         for b in (boletins or []):
             bt = ((b.get('query_text') or '').strip()).lower()
             if bt == qn:
+                try:
+                    dbg('BOLETIM', "[validate_boletim] desabilitado: duplicado")
+                except Exception:
+                    pass
                 return True
     except Exception:
         pass
     # Caso válido => habilita (False)
+    try:
+        dbg('BOLETIM', "[validate_boletim] habilitado")
+    except Exception:
+        pass
     return False
 
 @app.callback(
@@ -1164,10 +1213,20 @@ def refresh_boletim_save_visuals(freq, dias, query_text, boletins):
     # Mensagens de orientação
     if len(q) < 3:
         base.update({'opacity': 0.4})
-        return 'Digite uma consulta (mín. 3 caracteres)', base
+        title = 'Digite uma consulta (mín. 3 caracteres)'
+        try:
+            dbg('BOLETIM', f"[refresh_boletim_save_visuals] title='{title}' opacity=0.4")
+        except Exception:
+            pass
+        return title, base
     if freq == 'SEMANAL' and not (dias and len(dias) > 0):
         base.update({'opacity': 0.4})
-        return 'Selecione ao menos um dia', base
+        title = 'Selecione ao menos um dia'
+        try:
+            dbg('BOLETIM', f"[refresh_boletim_save_visuals] title='{title}' opacity=0.4")
+        except Exception:
+            pass
+        return title, base
     # Campos avançados estão com defaults
     # Duplicado?
     try:
@@ -1176,11 +1235,20 @@ def refresh_boletim_save_visuals(freq, dias, query_text, boletins):
             bt = ((b.get('query_text') or '').strip()).lower()
             if bt == qn:
                 base.update({'opacity': 0.4})
-                return 'Já salvo para esta consulta', base
+                title = 'Já salvo para esta consulta'
+                try:
+                    dbg('BOLETIM', f"[refresh_boletim_save_visuals] title='{title}' opacity=0.4 (duplicado)")
+                except Exception:
+                    pass
+                return title, base
     except Exception:
         pass
     # Válido e não duplicado
     base.update({'opacity': 1.0})
+    try:
+        dbg('BOLETIM', "[refresh_boletim_save_visuals] title='Salvar boletim' opacity=1.0")
+    except Exception:
+        pass
     return 'Salvar boletim', base
 
 @app.callback(
@@ -1216,6 +1284,10 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
         for b in (current or []):
             bt = ((b.get('query_text') or '').strip()).lower()
             if bt == qn:
+                try:
+                    dbg('BOLETIM', f"[save_boletim] ignorado: duplicado q='{query.strip()}'")
+                except Exception:
+                    pass
                 return dash.no_update, html.I(className='fas fa-plus')
     except Exception:
         pass
@@ -1225,6 +1297,10 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
     else:
         # DIARIO
         schedule_detail = {'days': ['seg','ter','qua','qui','sex']}
+    try:
+        dbg('BOLETIM', f"[save_boletim] saving freq={freq} days={schedule_detail.get('days')} query='{(query or '').strip()[:80]}'")
+    except Exception:
+        pass
     config_snapshot = {
         'search_type': s_type,
         'search_approach': approach,
@@ -1232,8 +1308,7 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
         'sort_mode': sort_mode,
         'max_results': max_res,
         'top_categories_count': top_cat,
-        'filter_expired': 'filter_expired' in (toggles or []),
-        'filters': ui_filters or {}
+    'filter_expired': 'filter_expired' in (toggles or []),
     }
     boletim_id = create_user_boletim(
         query_text=query.strip(),
@@ -1244,6 +1319,10 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
         filters=ui_filters or {},
     )
     if not boletim_id:
+        try:
+            dbg('BOLETIM', "[save_boletim] falha ao criar boletim (id vazio)")
+        except Exception:
+            pass
         # Mantém ícone '+'
         return dash.no_update, html.I(className='fas fa-plus')
     item = {
@@ -1258,6 +1337,10 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
     # Deduplicação defensiva
     data = _dedupe_boletins(data) if '_dedupe_boletins' in globals() else data
     # Mantém o ícone '+'; desabilitará via validate_boletim (lista agora contém a query)
+    try:
+        dbg('BOLETIM', f"[save_boletim] criado id={boletim_id} total={len(data)}")
+    except Exception:
+        pass
     return data[:200], html.I(className='fas fa-plus')
 
 def _dedupe_boletins(items):
@@ -1282,8 +1365,16 @@ def _dedupe_boletins(items):
 )
 def load_boletins_on_auth(auth_data):
     if not auth_data or auth_data.get('status') != 'auth':
+        try:
+            dbg('BOLETIM', "[load_boletins_on_auth] não autenticado -> []")
+        except Exception:
+            pass
         return []
     fetched = fetch_user_boletins() or []
+    try:
+        dbg('BOLETIM', f"[load_boletins_on_auth] fetched={len(fetched)}")
+    except Exception:
+        pass
     ui_items = []
     for b in fetched:
         ui_items.append({
@@ -1324,10 +1415,18 @@ def delete_boletim(n_list, boletins):
     if not clicked_value or clicked_value <= 0:
         #print(f"Ignorando trigger sem clique efetivo id={bid} valor={clicked_value}")
         raise PreventUpdate
+    try:
+        dbg('BOLETIM', f"[delete_boletim] id={bid} before={len(boletins or [])}")
+    except Exception:
+        pass
     deactivate_user_boletim(int(bid))
     #print(f"Boletim deletado id={bid} n_clicks={clicked_value}")
     new_list = [b for b in (boletins or []) if b.get('id') != bid]
     new_list = _dedupe_boletins(new_list) if '_dedupe_boletins' in globals() else new_list
+    try:
+        dbg('BOLETIM', f"[delete_boletim] removed id={bid} after={len(new_list)}")
+    except Exception:
+        pass
     return new_list
 
 @app.callback(
@@ -1337,7 +1436,15 @@ def delete_boletim(n_list, boletins):
 )
 def render_boletins_list(data):
     if not data:
+        try:
+            dbg('BOLETIM', "[render_boletins_list] vazio")
+        except Exception:
+            pass
         return [html.Div('Sem boletins.', style={'color': '#555', 'fontSize': '12px'})]
+    try:
+        dbg('BOLETIM', f"[render_boletins_list] itens={len(data or [])}")
+    except Exception:
+        pass
     items = []
     for b in data:
         # 1) Configurações (mesmo padrão do histórico)
@@ -1369,8 +1476,8 @@ def render_boletins_list(data):
             inter_cfg.append(p)
         line_config = html.Div(inter_cfg, style=styles['history_config']) if inter_cfg else html.Div('', style=styles['history_config'])
 
-        # 2) Filtros (mesmo padrão do status/histórico)
-        f = b.get('filters') or b.get('config_snapshot', {}).get('filters') or {}
+        # 2) Filtros (somente em 'filters'; não usar mais config_snapshot.filters)
+        f = b.get('filters') or {}
         def _has(v):
             if v is None:
                 return False
@@ -1468,20 +1575,7 @@ def render_boletins_list(data):
             freq_spans.append(html.Span([html.Span('Dias: ', style={'fontWeight': 'bold'}), html.Span(dias, style={'fontStyle': 'italic'})]))
         else:
             freq_spans.append(html.Span([html.Span('Dias: ', style={'fontWeight': 'bold'}), html.Span('Seg–Sex', style={'fontStyle': 'italic'})]))
-        # Última execução (opcional)
-        from datetime import datetime
-        def _fmt_dt(dt):
-            try:
-                if isinstance(dt, str):
-                    return dt
-                if isinstance(dt, datetime):
-                    return dt.strftime('%d/%m/%Y %H:%M')
-            except Exception:
-                return ''
-            return ''
-        last_run_at = _fmt_dt(b.get('last_run_at'))
-        if last_run_at:
-            freq_spans.append(html.Span([html.Span('Última execução: ', style={'fontWeight': 'bold'}), html.Span(last_run_at, style={'fontStyle': 'italic'})]))
+        # Removido: exibição de "Última execução" no card de boletins
         inter_freq = []
         for j, p in enumerate(freq_spans):
             if j > 0:
@@ -1506,6 +1600,20 @@ def render_boletins_list(data):
                         id={'type': 'boletim-delete', 'id': b.get('id')},
                         className='delete-btn action-btn',
                         style=styles['boletim_delete_btn']
+                    ),
+                    html.Button(
+                        html.I(className='fas fa-undo'),
+                        id={'type': 'boletim-replay', 'id': b.get('id')},
+                        title='Reabrir resultados deste boletim',
+                        style=styles['history_replay_btn'],
+                        className='delete-btn action-btn'
+                    ),
+                    html.Button(
+                        html.I(className='fas fa-envelope'),
+                        id={'type': 'boletim-email', 'id': b.get('id')},
+                        title='Enviar por e-mail (em breve)',
+                        style=styles['history_replay_btn'],
+                        className='delete-btn action-btn'
                     ),
                     # [FUTURO] Botão "Editar" do item de boletim
                     # Mantido comentado até implementação do fluxo de edição.
@@ -1544,7 +1652,13 @@ def toggle_boletins_collapse(n, is_open):
 )
 def update_boletins_icon(is_open):
     icon = 'fa-chevron-up' if is_open else 'fa-chevron-down'
-    return html.I(className=f"fas {icon}")
+    return [
+        html.Div([
+            html.I(className='fas fa-calendar', style=styles['section_icon']),
+            html.Div('Boletins', style=styles['card_title'])
+        ], style=styles['section_header_left']),
+        html.I(className=f"fas {icon}")
+    ]
 
 
 # Inicialização pós-login e limpeza no logout
@@ -2921,6 +3035,10 @@ def render_tabs_bar(sessions, active):
             base_style.update(styles['tab_button_query'])
             if is_active:
                 base_style.update(styles['tab_button_active'])
+        elif sess.get('type') == 'boletim':
+            base_style.update(styles['tab_button_query'])
+            if is_active:
+                base_style.update(styles['tab_button_active'])
         else:
             # Abas de consulta (query) permanecem como estão
             base_style.update(styles['tab_button_query'])
@@ -2962,6 +3080,13 @@ def render_tabs_bar(sessions, active):
                 q = sess.get('title') or ''
                 q_short = (q[:40] + '...') if isinstance(q, str) else '...'
                 label_full = f"HISTÓRICO: {q_short}"
+        elif sess.get('type') == 'boletim':
+            if sess.get('pending_token') is not None:
+                label_full = "BOLETIM: Processando"
+            else:
+                q = sess.get('title') or ''
+                q_short = (q[:40] + '...') if isinstance(q, str) else '...'
+                label_full = f"BOLETIM: {q_short}"
         else:
             # Query tab: se pendente mostrar Processando + spinner
             if sess.get('pending_token') is not None:
@@ -2978,6 +3103,8 @@ def render_tabs_bar(sessions, active):
             icon = html.I(className="fas fa-bookmark")
         elif sess.get('type') == 'history':
             icon = html.I(className="fas fa-history")
+        elif sess.get('type') == 'boletim':
+            icon = html.I(className="fas fa-calendar")
         else:
             if sess.get('pending_token') is not None:
                 icon = html.I(className="fas fa-spinner fa-spin")
@@ -3073,8 +3200,8 @@ def sync_active_session(active, sessions):
     results = sess.get('results') or []
     meta = sess.get('meta') or {}
     categories = sess.get('categories') or []
-    # last_query deve refletir a aba ativa (para o card de resumo) em 'query' e 'history'
-    last_query = (sess.get('title') or '') if (sess.get('type') in ('query','history')) else ''
+    # last_query deve refletir a aba ativa (para o card de resumo) em 'query', 'history' e 'boletim'
+    last_query = (sess.get('title') or '') if (sess.get('type') in ('query','history','boletim')) else ''
     # results-sorted será recalculado pelo callback existente compute_sorted_results
     return results, [], categories, meta, last_query
 
@@ -3404,7 +3531,13 @@ def reflect_collapse(is_open):
 )
 def update_config_icon(is_open):
     icon = 'fa-chevron-up' if is_open else 'fa-chevron-down'
-    return html.I(className=f"fas {icon}")
+    return [
+        html.Div([
+            html.I(className='fas fa-sliders-h', style=styles['section_icon']),
+            html.Div("Configurações de Busca", style=styles['card_title'])
+        ], style=styles['section_header_left']),
+        html.I(className=f"fas {icon}")
+    ]
 
 
 # Toggle collapse de Filtros Avançados
@@ -3426,7 +3559,13 @@ def toggle_filters(n, is_open):
 )
 def update_filters_icon(is_open):
     icon = 'fa-chevron-up' if is_open else 'fa-chevron-down'
-    return html.I(className=f"fas {icon}")
+    return [
+        html.Div([
+            html.I(className='fas fa-filter', style=styles['section_icon']),
+            html.Div("Filtros Avançados", style=styles['card_title'])
+        ], style=styles['section_header_left']),
+        html.I(className=f"fas {icon}")
+    ]
 
 
 # Sincroniza Store de Filtros com inputs da UI
@@ -3561,7 +3700,13 @@ def reflect_history_collapse(is_open):
 )
 def update_history_icon(is_open):
     icon = 'fa-chevron-up' if is_open else 'fa-chevron-down'
-    return html.I(className=f"fas {icon}")
+    return [
+        html.Div([
+            html.I(className='fas fa-history', style=styles['section_icon']),
+            html.Div('Histórico', style=styles['card_title'])
+        ], style=styles['section_header_left']),
+        html.I(className=f"fas {icon}")
+    ]
 
 
 @app.callback(
@@ -5116,6 +5261,364 @@ def replay_from_history(n_clicks_list, history):
     return session_event
 
 
+# Rever item de boletim: abre aba BOLETIM com resultados do último run
+@app.callback(
+    Output('store-session-event', 'data', allow_duplicate=True),
+    Input({'type': 'boletim-replay', 'id': ALL}, 'n_clicks'),
+    State('store-boletins', 'data'),
+    prevent_initial_call=True,
+)
+def replay_from_boletim(n_clicks_list, boletins):
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    # Verifica qual botão foi clicado e obtém o boletim_id
+    try:
+        trig_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        comp = json.loads(trig_id)
+        if comp.get('type') != 'boletim-replay':
+            raise PreventUpdate
+        boletim_id = comp.get('id')
+    except Exception:
+        raise PreventUpdate
+    # Guarda: ignorar disparos de montagem/atualização de layout (n_clicks == 0)
+    try:
+        trig_val = ctx.triggered[0].get('value', None)
+        # Alguns ambientes retornam None na criação; tratar como 0
+        clicks = int(trig_val) if trig_val is not None else 0
+        if clicks <= 0:
+            try:
+                dbg('BOLETIM', f"[replay_from_boletim] ignorado: n_clicks=0 para id={boletim_id}")
+            except Exception:
+                pass
+            raise PreventUpdate
+    except Exception:
+        # Se não conseguirmos ler o n_clicks com segurança, não executar
+        raise PreventUpdate
+    if not boletim_id:
+        raise PreventUpdate
+    try:
+        dbg('BOLETIM', f"[replay_from_boletim] trigger id={boletim_id}")
+    except Exception:
+        pass
+
+    # Buscar query_text/config do boletim e último run_token
+    title = ''
+    run_token = None
+    cfg = {}
+    try:
+        from gvg_database import create_connection
+        from gvg_schema import get_contratacao_core_columns, normalize_contratacao_row, project_result_for_output
+        from gvg_search_core import _augment_aliases
+        conn = create_connection()
+        cur = conn.cursor() if conn else None
+        if not cur:
+            raise Exception('Sem conexão de BD')
+        # Título/config da aba: query_text e config_snapshot do user_schedule
+        try:
+            cur.execute("SELECT query_text, config_snapshot, filters FROM user_schedule WHERE id = %s", (int(boletim_id),))
+        except Exception:
+            cur.execute("SELECT query_text, config_snapshot FROM user_schedule WHERE id = %s", (int(boletim_id),))
+        row = cur.fetchone()
+        if row:
+            title = (row[0] or '').strip()
+            try:
+                cfg = row[1] or {}
+                if isinstance(cfg, str):
+                    cfg = json.loads(cfg)
+            except Exception:
+                cfg = {}
+        # Último run_token
+        cur.execute("""
+            SELECT run_token
+            FROM user_boletim
+            WHERE boletim_id = %s
+            GROUP BY run_token
+            ORDER BY MAX(run_at) DESC
+            LIMIT 1
+        """, (int(boletim_id),))
+        rt = cur.fetchone()
+        if rt:
+            run_token = rt[0]
+        if not run_token:
+            # Sem execuções ainda
+            try:
+                cur.close(); conn.close()
+            except Exception:
+                pass
+            try:
+                dbg('BOLETIM', f"[replay_from_boletim] boletim_id={boletim_id} sem run_token")
+            except Exception:
+                pass
+            raise PreventUpdate
+        # Carregar resultados deste run com join na contratacao
+        cols = get_contratacao_core_columns('c')
+        sql = (
+            "SELECT ub.numero_controle_pncp, ub.similarity, ub.payload, "
+            + ", ".join(cols) +
+            " FROM user_boletim ub LEFT JOIN contratacao c ON c.numero_controle_pncp = ub.numero_controle_pncp"
+            " WHERE ub.boletim_id = %s AND ub.run_token = %s"
+            " ORDER BY COALESCE(ub.similarity,0) DESC, ub.numero_controle_pncp"
+        )
+        cur.execute(sql, (int(boletim_id), run_token))
+        rows = cur.fetchall() or []
+        desc = cur.description
+        # Mapeamento das colunas de contratacao
+        c_start = 3  # após numero_controle_pncp, similarity, payload
+        results = []
+        for idx, row in enumerate(rows):
+            pncp = row[0]
+            sim = float(row[1] or 0.0)
+            payload_json = row[2]
+            details = {}
+            # Se há colunas da contratacao, projetar
+            try:
+                if len(row) > c_start:
+                    colnames = [d[0] for d in desc][c_start:]
+                    rec = dict(zip(colnames, row[c_start:]))
+                    norm = normalize_contratacao_row(rec)
+                    details = project_result_for_output(norm)
+                else:
+                    details = {}
+            except Exception:
+                details = {}
+            # Fallback via payload quando dados do join faltarem
+            try:
+                if isinstance(payload_json, (str, bytes)):
+                    import json as _json
+                    try:
+                        payload_json = _json.loads(payload_json)
+                    except Exception:
+                        payload_json = {}
+                if isinstance(payload_json, dict):
+                    # Preencher only-if-missing para não sobrescrever BD
+                    details.setdefault('unidade_orgao_uf_sigla', payload_json.get('uf'))
+                    details.setdefault('orgaoentidade_razaosocial', payload_json.get('orgao'))
+                    details.setdefault('unidadeorgao_nomeunidade', payload_json.get('unidade'))
+                    details.setdefault('unidadeorgao_municipionome', payload_json.get('municipio'))
+                    details.setdefault('descricaocompleta', payload_json.get('objeto'))
+                    details.setdefault('modalidade_nome', payload_json.get('modalidade'))
+                    details.setdefault('modo_disputa_nome', payload_json.get('modo_disputa'))
+                    # Datas
+                    enc = payload_json.get('data_encerramento_proposta')
+                    if enc and not details.get('dataencerramentoproposta') and not details.get('dataEncerramentoProposta'):
+                        try:
+                            # padronizar para YYYY-MM-DD
+                            from datetime import datetime as _d
+                            if 'T' in enc:
+                                dt = _d.fromisoformat(enc)
+                                details['dataencerramentoproposta'] = dt.strftime('%Y-%m-%d')
+                            else:
+                                details['dataencerramentoproposta'] = str(enc)[:10]
+                        except Exception:
+                            details['dataencerramentoproposta'] = str(enc)[:10]
+                    # Valor estimado
+                    val = payload_json.get('valor')
+                    if val is not None and not details.get('valortotalestimado'):
+                        try:
+                            details['valortotalestimado'] = float(val)
+                        except Exception:
+                            details['valortotalestimado'] = val
+            except Exception:
+                pass
+            # Garantir aliases mínimos e id
+            try:
+                _augment_aliases(details)
+            except Exception:
+                pass
+            pid = details.get('numero_controle_pncp') or details.get('numerocontrolepncp') or pncp
+            results.append({
+                'id': pid,
+                'numero_controle': pid,
+                'similarity': sim,
+                'rank': idx + 1,
+                'details': details,
+            })
+        try:
+            cur.close(); conn.close()
+        except Exception:
+            pass
+    except Exception as e:
+        # Falha geral ao carregar; não cria evento
+        try:
+            dbg('BOLETIM', f"[replay_from_boletim] erro: {e}")
+        except Exception:
+            pass
+        raise PreventUpdate
+
+    # Meta enriquecida a partir do config_snapshot para unificar com card de busca
+    meta = {
+        'order': (cfg.get('sort_mode') if isinstance(cfg, dict) else 1) or 1,
+        'count': len(results),
+        'source': 'boletim',
+        'run_token': run_token,
+        'search': (cfg.get('search_type') if isinstance(cfg, dict) else None),
+        'approach': (cfg.get('search_approach') if isinstance(cfg, dict) else None),
+        'relevance': (cfg.get('relevance_level') if isinstance(cfg, dict) else None),
+        'max_results': (cfg.get('max_results') if isinstance(cfg, dict) else None),
+        'top_categories': (cfg.get('top_categories_count') if isinstance(cfg, dict) else None),
+        'filter_expired': bool((cfg.get('filter_expired') if isinstance(cfg, dict) else False)),
+    }
+    session_event = {
+        'type': 'boletim',
+        'status': 'completed',
+        'title': title or 'Boletim',
+        'signature': f"boletim:{boletim_id}:{str(run_token)[:32]}",
+        'payload': {
+            'results': results,
+            'categories': [],
+            'meta': meta,
+        }
+    }
+    try:
+        dbg('BOLETIM', f"[replay_from_boletim] emitindo sessão com {len(results)} resultados run_token={run_token}")
+    except Exception:
+        pass
+    return session_event
+
+
+# Aplicar item do histórico na UI (configs + filtros), sem executar busca
+@app.callback(
+    Output('search-type', 'value'),
+    Output('search-approach', 'value'),
+    Output('relevance-level', 'value'),
+    Output('sort-mode', 'value'),
+    Output('max-results', 'value'),
+    Output('top-categories', 'value'),
+    Output('toggles', 'value'),
+    Output('flt-pncp', 'value'),
+    Output('flt-orgao', 'value'),
+    Output('flt-cnpj', 'value'),
+    Output('flt-uf', 'value'),
+    Output('flt-municipio', 'value'),
+    Output('flt-modalidade-id', 'value'),
+    Output('flt-modo-id', 'value'),
+    Output('flt-date-field', 'value'),
+    Output('flt-date-start', 'value'),
+    Output('flt-date-end', 'value', allow_duplicate=True),
+    Input({'type': 'history-item', 'index': ALL}, 'n_clicks'),
+    State('store-history', 'data'),
+    prevent_initial_call=True,
+)
+def apply_history_to_ui(n_clicks_list, history):
+    # Sem clique efetivo? Não atualiza nada.
+    if not n_clicks_list or not any(n_clicks_list):
+        raise PreventUpdate
+    # Índice clicado
+    idx = None
+    for i, n in enumerate(n_clicks_list):
+        if n:
+            idx = i
+            break
+    if idx is None:
+        raise PreventUpdate
+    items = list(history or [])
+    if idx < 0 or idx >= len(items):
+        raise PreventUpdate
+    q_text = (items[idx] or '').strip()
+    if not q_text:
+        raise PreventUpdate
+
+    # Buscar registro rico deste prompt
+    rec = {}
+    try:
+        from gvg_user import fetch_prompts_with_config as _fetch_prompts_with_config
+        rich = _fetch_prompts_with_config(limit=max(50, len(items))) or []
+        by_text = { (r.get('text') or '').strip(): r for r in rich }
+        rec = by_text.get(q_text) or {}
+    except Exception:
+        rec = {}
+
+    # Extrair configurações
+    st = rec.get('search_type')
+    sa = rec.get('search_approach')
+    rl = rec.get('relevance_level')
+    sm = rec.get('sort_mode')
+    mr = rec.get('max_results')
+    tc = rec.get('top_categories_count')
+    fe = rec.get('filter_expired')  # bool ou None
+
+    # Extrair filtros (jsonb pode vir como str)
+    f = rec.get('filters') or {}
+    if isinstance(f, str):
+        try:
+            f = json.loads(f)
+        except Exception:
+            f = {}
+
+    def _fmt_ddmmyyyy(val):
+        if not val:
+            return ''
+        s = str(val).strip()
+        # já em dd/mm/aaaa
+        import re as _re
+        if _re.match(r'^\d{2}/\d{2}/\d{4}$', s):
+            return s
+        # ISO yyyy-mm-dd
+        if _re.match(r'^\d{4}-\d{2}-\d{2}$', s):
+            try:
+                from datetime import datetime as _d
+                dt = _d.strptime(s, '%Y-%m-%d')
+                return dt.strftime('%d/%m/%Y')
+            except Exception:
+                return ''
+        return ''
+
+    # Campos de filtros com limpeza quando ausentes
+    pncp = (f.get('pncp') or '').strip() if isinstance(f.get('pncp'), str) else (f.get('pncp') or '')
+    orgao = (f.get('orgao') or '').strip() if isinstance(f.get('orgao'), str) else (f.get('orgao') or '')
+    cnpj = (f.get('cnpj') or '').strip() if isinstance(f.get('cnpj'), str) else (f.get('cnpj') or '')
+    uf_val = f.get('uf')
+    if isinstance(uf_val, list):
+        uf_out = [str(x).strip() for x in uf_val if str(x or '').strip()]
+    elif uf_val is None or uf_val == '':
+        uf_out = []
+    else:
+        # valor único -> lista com 1
+        uf_out = [str(uf_val).strip()] if str(uf_val).strip() else []
+    municipio = (f.get('municipio') or '').strip() if isinstance(f.get('municipio'), str) else (f.get('municipio') or '')
+    mod_id = f.get('modalidade_id')
+    if isinstance(mod_id, list):
+        mod_out = [str(x).strip() for x in mod_id if str(x or '').strip()]
+    elif mod_id is None or mod_id == '':
+        mod_out = []
+    else:
+        mod_out = [str(mod_id).strip()] if str(mod_id).strip() else []
+    modo_id = f.get('modo_id')
+    if isinstance(modo_id, list):
+        modo_out = [str(x).strip() for x in modo_id if str(x or '').strip()]
+    elif modo_id is None or modo_id == '':
+        modo_out = []
+    else:
+        modo_out = [str(modo_id).strip()] if str(modo_id).strip() else []
+    date_field = (f.get('date_field') or 'encerramento')
+    date_start = _fmt_ddmmyyyy(f.get('date_start'))
+    date_end = _fmt_ddmmyyyy(f.get('date_end'))
+
+    # Preparar saídas; quando config ausente, mantém valor atual (dash.no_update)
+    toggles_val = (['filter_expired'] if (fe is True) else ([] if fe is False else dash.no_update))
+
+    return (
+        (st if st is not None else dash.no_update),
+        (sa if sa is not None else dash.no_update),
+        (rl if rl is not None else dash.no_update),
+        (sm if sm is not None else dash.no_update),
+        (mr if mr is not None else dash.no_update),
+        (tc if tc is not None else dash.no_update),
+        toggles_val,
+        pncp,
+        orgao,
+        cnpj,
+        uf_out,
+        municipio,
+        mod_out,
+        modo_out,
+        date_field,
+        date_start,
+        date_end,
+    )
+
+
 # ==========================
 # Favoritos (UI e callbacks)
 # ==========================
@@ -5190,7 +5693,13 @@ def reflect_favorites_collapse(is_open):
 )
 def update_favorites_icon(is_open):
     icon = 'fa-chevron-up' if is_open else 'fa-chevron-down'
-    return html.I(className=f"fas {icon}")
+    return [
+        html.Div([
+            html.I(className='fas fa-bookmark', style=styles['section_icon']),
+            html.Div('Favoritos', style=styles['card_title'])
+        ], style=styles['section_header_left']),
+        html.I(className=f"fas {icon}")
+    ]
 
 
 @app.callback(

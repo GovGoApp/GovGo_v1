@@ -112,8 +112,8 @@ styles = {
         'borderRadius': '25px',
         'display': 'flex',
         'alignItems': 'center',
-        'marginTop': '10px',
-         'border': '2px solid #FF5722',
+        'marginTop': '0px',
+        'border': '2px solid #FF5722',
     },
     'input_field': {
         'flex': '1',
@@ -163,7 +163,7 @@ styles = {
         'height': '40px'
     },
     'header_title': {
-        'fontSize': '16px', 'marginLeft': '15px', 'color': '#003A70', 'fontWeight': 'bold', 'marginTop': '4px'
+    'fontSize': '24px', 'marginLeft': '15px', 'color': '#003A70', 'fontWeight': 'bold', 'marginTop': '2px', 'marginBottom': '2px'
     },
     # --- Header (top bar) ---
     'header': {
@@ -320,6 +320,18 @@ styles = {
     # --- Generic rows/wrappers ---
     'row_header': {
         'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginTop': '8px'
+    },
+    # Clickable full-width header button for collapsible sections
+    'section_header_button': {
+        'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between',
+        'width': '100%', 'backgroundColor': 'transparent', 'border': 'none', 'padding': '0',
+        'cursor': 'pointer', 'textAlign': 'left', 'color': '#003A70'
+    },
+    'section_header_left': {
+        'display': 'flex', 'alignItems': 'center', 'gap': '8px'
+    },
+    'section_icon': {
+        'color': '#003A70'
     },
     'row_wrap_gap': {
         'display': 'flex', 'gap': '10px', 'flexWrap': 'wrap'
@@ -529,6 +541,9 @@ BASE_CSS = """
 #gvg-main-panels > .gvg-slide:last-child { width: var(--gvg-right-slide-width); }
 #gvg-main-panels > .gvg-slide > div { width: 100%; }
 
+/* Header title font-size enforcement (desktop and general) */
+.gvg-header-title { font-size: 24px !important; }
+
 /* Compact controls inside left panel config card */
 .gvg-controls .Select-control { min-height: 32px; height: 32px; border-radius: 16px; font-size: 12px; border: 1px solid #D0D7E2; box-shadow: none; }
 .gvg-controls .is-focused .Select-control, .gvg-controls .Select.is-focused > .Select-control { border-color: #52ACFF; box-shadow: 0 0 0 2px rgba(82,172,255,0.12); }
@@ -608,7 +623,7 @@ BASE_CSS = """
     :root { --gvg-left-slide-width: 100vw; --gvg-right-slide-width: 100vw; }
     #gvg-main-panels { overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
     #gvg-main-panels > .gvg-slide { flex: 0 0 100vw; scroll-snap-align: start; }
-    .gvg-header-title { display: none; }
+    /*.gvg-header-title { display: none;}*/
     /* Detalhes acima, janelas (Itens/Docs/Resumo) abaixo */
     .gvg-details-row { flex-direction: column !important; gap: 8px !important; }
     .gvg-details-row > div { width: 100% !important; }

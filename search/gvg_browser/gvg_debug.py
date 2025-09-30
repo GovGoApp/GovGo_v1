@@ -37,16 +37,16 @@ except Exception:
 # Estilos por área (cores Rich)
 _AREA_STYLE_MAP: Dict[str, str] = {
     'SQL': 'yellow',
-    'AUTH': 'cyan',
-    'SEARCH': 'green',
-    'DOCS': 'bright_magenta',
+    'AUTH': 'green',
+    'SEARCH': 'cyan',
+    'DOCS': 'magenta',
     'ASSISTANT': 'bright_magenta',
     'UI': 'white',
-    'BROWSER': 'white',
+    'BROWSER': 'bright_white',
     'BOLETIM': 'bright_cyan',
-    'BMK': 'magenta',
-    'FAV': 'magenta',
-    'PREPROC': 'bright_blue',
+    'BMK': 'bright_magenta',
+    'FAV': 'bright_magenta',
+    'PREPROC': 'blue',
     'RESUMO': 'bright_green',
     'ERROR': 'bold red',
 }
