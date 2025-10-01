@@ -1651,7 +1651,7 @@ def render_boletins_list(data):
                     #     className='edit-btn action-btn',
                     #     style=styles['boletim_delete_btn']
                     # )
-                ], style={'display': 'flex', 'flexDirection': 'column', 'gap': '6px'})
+                ], style=styles['fav_actions_col'])
             ], style=styles['boletim_item_row'], className='boletim-item-row')
         )
     return items

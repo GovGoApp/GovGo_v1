@@ -419,6 +419,31 @@ styles = {
     'auth_error': { 'color': '#D32F2F', 'fontSize': '12px', 'marginTop': '6px' },
 }
 
+# === Bases comuns para botões de listas (Histórico/Favoritos/Boletins) ===
+# Botão de item de lista (padrão compacto)
+styles['btn_list_item'] = {
+    'backgroundColor': 'white', 'color': '#003A70', 'border': '1px solid #D0D7E2',
+    'borderRadius': '16px', 'display': 'block', 'width': '100%', 'textAlign': 'left',
+    'padding': '6px 10px', 'whiteSpace': 'normal', 'wordBreak': 'break-word',
+    'lineHeight': '1.25', 'cursor': 'pointer', 'fontSize': '12px'
+}
+# Botão de ação pequeno (ícones: lixeira, replay, e-mail)
+styles['btn_icon_sm'] = {
+    'width': '24px', 'height': '24px', 'minWidth': '24px', 'borderRadius': '50%',
+    'border': '1px solid #FF5722', 'backgroundColor': 'white', 'color': '#FF5722',
+    'cursor': 'pointer', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+    'fontSize': '12px', 'lineHeight': '1'
+}
+# Linha compacta de itens de lista
+styles['list_row_compact'] = {
+    'display': 'flex', 'gap': '6px', 'alignItems': 'flex-start', 'marginBottom': '4px'
+}
+# Coluna de ações compacta
+styles['list_actions_col'] = {
+    'display': 'flex', 'flexDirection': 'column', 'gap': '4px', 'alignItems': 'center',
+    'justifyContent': 'flex-start', 'minWidth': '24px'
+}
+
 # Tag de status de data de encerramento
 styles['date_status_tag'] = {
     'display': 'inline-block', 'padding': '2px 6px', 'borderRadius': '12px',
@@ -540,6 +565,20 @@ styles['boletim_query'] = {
 styles['boletim_config'] = {
     'fontStyle': 'italic', 'color': '#003A70', 'marginTop': '2px'
 }
+
+# === Overrides focados apenas em botões e espaçamento vertical entre botões ===
+# Histórico: reduzir apenas tamanho dos botões de ação e gap da coluna
+styles['history_actions_col'] = { **styles['list_actions_col'], 'gap': '3px' }
+styles['history_delete_btn'] = { **styles['btn_icon_sm'] }
+styles['history_replay_btn'] = { **styles['btn_icon_sm'] }
+
+# Favoritos: reduzir apenas tamanho dos botões de ação e gap da coluna
+styles['fav_actions_col'] = { **styles['list_actions_col'] }
+styles['fav_delete_btn'] = { **styles['btn_icon_sm'] }
+styles['fav_email_btn'] = { **styles['btn_icon_sm'], 'textDecoration': 'none' }
+
+# Boletins: reduzir apenas tamanho dos botões de ação
+styles['boletim_delete_btn'] = { **styles['btn_icon_sm'] }
 
 
 # CSS base (antes inline no app.index_string do GSB)
