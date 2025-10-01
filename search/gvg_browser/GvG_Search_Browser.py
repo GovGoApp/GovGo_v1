@@ -92,6 +92,7 @@ from gvg_search_core import (
 )
 from gvg_database import fetch_documentos
 from gvg_ai_utils import generate_contratacao_label
+from gvg_email import send_html_email, render_boletim_email_html, render_favorito_email_html
 
 # Autenticação (Supabase)
 try:
@@ -797,6 +798,10 @@ app.layout = html.Div([
     dcc.Store(id='progress-store', data={'percent': 0, 'label': ''}),
     # Filtros avançados da busca (payload canônico)
     dcc.Store(id='store-search-filters', data={}),
+    # Contexto do modal de e-mail (tipo: 'boletim'|'favorito', id ou índice)
+    dcc.Store(id='store-email-modal-context', data=None),
+    # Fila de envio de e-mail (para fechar modal imediatamente e enviar em segundo plano)
+    dcc.Store(id='store-email-send-request', data=None),
     # Token da consulta corrente (para vincular aba pendente ao resultado final)
     dcc.Store(id='store-current-query-token', data=None),
     dcc.Interval(id='progress-interval', interval=400, n_intervals=0, disabled=True),
@@ -806,6 +811,23 @@ app.layout = html.Div([
 
     header,
     auth_overlay,
+    # Modal de envio de e-mail (boletim/favoritos) – compacto, sem título/X
+    dbc.Modal([
+        html.Div(id='email-modal-title', children='Enviar por e-mail', style={'display': 'none'}),
+        dbc.ModalBody([
+            html.Div([
+                dcc.Input(
+                    id='email-modal-input', type='text', placeholder='ex.: a@ex.com, b@ex.com',
+                    debounce=True, autoFocus=True,
+                    style={'flex': '1', 'minWidth': 0, 'padding': '8px'}
+                ),
+                html.Button('Enviar', id='email-modal-send', style={**styles['auth_btn_primary'], 'margin': '0'})
+            ], style={'display': 'flex', 'gap': '8px', 'alignItems': 'center'}),
+            html.Div(style={'height': '8px'}),
+            dcc.Checklist(id='email-modal-self', options=[{'label': ' Enviar para meu e-mail', 'value': 'self'}], value=[], style={'fontSize': '12px'}),
+            html.Div(id='email-modal-error', style={'display': 'none', 'color': '#b00020', 'fontSize': '12px', 'marginTop': '6px'})
+        ]),
+    ], id='email-modal', is_open=False, size='sm', centered=True, backdrop=True, style={'maxWidth': '480px', 'width': '95vw', 'borderRadius': '16px'}),
     html.Div([
         html.Div([
             controls_panel
@@ -1331,6 +1353,9 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
         'schedule_type': freq,
         'schedule_detail': schedule_detail,
     'channels': channels or ['email'],
+    # Preenche imediatamente para a UI renderizar completo sem reload
+    'config_snapshot': config_snapshot,
+    'filters': ui_filters or {},
     }
     data = (current or [])
     data.insert(0, item)
@@ -5794,6 +5819,203 @@ def render_favorites_list(favs, toggles):
         # Todos ocultos pela filtragem
         items.append(html.Div('Todos os favoritos estão expirados (filtro ativo).', style={'color': '#555', 'fontSize': '12px'}))
     return items
+
+
+# =============================
+# Modal de E-mail: abrir/fechar
+# =============================
+@app.callback(
+    Output('store-email-modal-context', 'data', allow_duplicate=True),
+    Input({'type': 'boletim-email', 'id': ALL}, 'n_clicks'),
+    Input({'type': 'favorite-email', 'index': ALL}, 'n_clicks'),
+    State('store-favorites', 'data'),
+    prevent_initial_call=True
+)
+def open_email_modal(n_clicks_boletim, n_clicks_fav, favs):
+    ctx = callback_context
+    if not ctx or not ctx.triggered:
+        raise PreventUpdate
+    which = ctx.triggered[0]['prop_id'].split('.')[0]
+    try:
+        comp = json.loads(which)
+    except Exception:
+        raise PreventUpdate
+    # Ignorar disparos de montagem (n_clicks None/0)
+    trig_val = ctx.triggered[0].get('value', None)
+    clicks = int(trig_val) if trig_val is not None else 0
+    if clicks <= 0:
+        raise PreventUpdate
+    if comp.get('type') == 'boletim-email':
+        return {'kind': 'boletim', 'id': comp.get('id')}
+    if comp.get('type') == 'favorite-email':
+        idx = comp.get('index')
+        try:
+            pncp = str((favs or [])[int(idx)].get('numero_controle_pncp'))
+        except Exception:
+            pncp = None
+        return {'kind': 'favorito', 'pncp': pncp}
+    raise PreventUpdate
+
+
+@app.callback(
+    Output('email-modal', 'is_open'),
+    Output('email-modal-title', 'children'),
+    Input('store-email-modal-context', 'data')
+)
+def reflect_email_modal(ctx_data):
+    if not ctx_data:
+        return False, 'Enviar por e-mail'
+    kind = ctx_data.get('kind')
+    if kind == 'boletim':
+        return True, 'Enviar boletim por e-mail'
+    if kind == 'favorito':
+        return True, 'Enviar favorito por e-mail'
+    return False, 'Enviar por e-mail'
+
+
+def _parse_recipients(raw: str) -> list[str]:
+    if not raw:
+        return []
+    parts = re.split(r"[\s,;]+", str(raw).strip())
+    out = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        if '@' in p and '.' in p:
+            out.append(p)
+    # dedupe
+    seen = set()
+    uniq = []
+    for e in out:
+        if e.lower() not in seen:
+            uniq.append(e)
+            seen.add(e.lower())
+    return uniq
+
+
+def _render_email_boletim_inline(query_text: str, rows: list[dict], cfg_snapshot: dict | None, stype: str | None, sdetail: dict | None) -> str:
+    # Centralizado em gvg_email
+    return render_boletim_email_html(query_text, rows or [], cfg_snapshot or {}, stype, sdetail)
+
+
+@app.callback(
+    Output('store-email-send-request', 'data'),
+    Output('store-email-modal-context', 'data', allow_duplicate=True),
+    Output('email-modal-error', 'children'),
+    Output('email-modal-error', 'style'),
+    Input('email-modal-send', 'n_clicks'),
+    Input('email-modal-input', 'n_submit'),
+    State('store-email-modal-context', 'data'),
+    State('email-modal-input', 'value'),
+    State('email-modal-self', 'value'),
+    State('store-auth', 'data'),
+    prevent_initial_call=True
+)
+def queue_email_send(n, n_submit, ctx_data, raw_recipients, self_opts, auth_state):
+    if (n or 0) <= 0 and (n_submit or 0) <= 0:
+        raise PreventUpdate
+    user_email = ((auth_state or {}).get('user') or {}).get('email')
+    recips = _parse_recipients(raw_recipients)
+    if 'self' in (self_opts or []) and user_email:
+        recips.append(user_email)
+    # dedupe
+    recips = list({e.lower(): e for e in recips}.values()) if recips else []
+    if not recips:
+        return dash.no_update, dash.no_update, 'Informe ao menos um e-mail válido ou selecione "Enviar para meu e-mail".', {'display': 'block', 'color': '#b00020', 'fontSize': '12px'}
+    # Cria um pedido de envio e fecha o modal imediatamente (limpando o contexto)
+    req = {'context': ctx_data, 'recipients': recips}
+    return req, None, '', {'display': 'none'}
+
+
+# Processamento em segundo plano: quando há um pedido na Store, envia e limpa
+@app.callback(
+    Output('store-email-send-request', 'data', allow_duplicate=True),
+    Input('store-email-send-request', 'data'),
+    prevent_initial_call=True
+)
+def process_email_send(req):
+    if not req:
+        raise PreventUpdate
+    ctxd = (req or {}).get('context') or {}
+    recips = (req or {}).get('recipients') or []
+    kind = ctxd.get('kind')
+    try:
+        if kind == 'boletim':
+            bid = ctxd.get('id')
+            from gvg_database import create_connection
+            conn = create_connection(); cur = conn.cursor() if conn else None
+            if not cur:
+                raise Exception('Sem conexão de BD')
+            cur.execute("SELECT query_text, config_snapshot, schedule_type, schedule_detail FROM user_schedule WHERE id=%s", (int(bid),))
+            row = cur.fetchone() or ['','','',{}]
+            qtxt = (row[0] or '').strip()
+            cfg = row[1] or {}
+            if isinstance(cfg, str):
+                try:
+                    cfg = json.loads(cfg)
+                except Exception:
+                    cfg = {}
+            stype = row[2] or None
+            sdetail = row[3] or {}
+            cur.execute("SELECT MAX(run_at) FROM public.user_boletim WHERE boletim_id=%s", (int(bid),))
+            last_run = (cur.fetchone() or [None])[0]
+            if not last_run:
+                try:
+                    cur.close(); conn.close()
+                except Exception:
+                    pass
+                return None
+            cur.execute("""
+                SELECT id, numero_controle_pncp, similarity, data_publicacao_pncp, data_encerramento_proposta, payload
+                FROM public.user_boletim WHERE boletim_id=%s AND run_at=%s
+            """, (int(bid), last_run))
+            cols = [d[0] for d in cur.description]
+            rows = [dict(zip(cols, r)) for r in (cur.fetchall() or [])]
+            try:
+                cur.close(); conn.close()
+            except Exception:
+                pass
+            html = _render_email_boletim_inline(qtxt, rows, cfg, stype, sdetail)
+            subject = f"Boletim GovGo — {qtxt}"
+        elif kind == 'favorito':
+            pncp = (ctxd.get('pncp') or '').strip()
+            if not pncp:
+                return None
+            from gvg_database import create_connection
+            from gvg_schema import get_contratacao_core_columns, normalize_contratacao_row, project_result_for_output
+            conn = create_connection(); cur = conn.cursor() if conn else None
+            if not cur:
+                raise Exception('Sem conexão de BD')
+            cols = get_contratacao_core_columns('c')
+            cur.execute("SELECT " + ",".join(cols) + " FROM contratacao c WHERE c.numero_controle_pncp=%s LIMIT 1", (pncp,))
+            row = cur.fetchone()
+            if not row:
+                try:
+                    cur.close(); conn.close()
+                except Exception:
+                    pass
+                return None
+            rec = dict(zip([d[0] for d in cur.description], row))
+            details = project_result_for_output(normalize_contratacao_row(rec))
+            try:
+                cur.close(); conn.close()
+            except Exception:
+                pass
+            html = render_favorito_email_html(details)
+            subject = f"Favorito GovGo — PNCP {pncp}"
+        else:
+            return None
+
+        for to in recips:
+            try:
+                send_html_email(to, subject, html)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    # Limpa a fila ao final (fecha ciclo)
+    return None
 
 
 # Clique em bookmark no card: alterna estado e persiste

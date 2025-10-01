@@ -648,6 +648,15 @@ BASE_CSS = """
     /* Altura mínima das janelas (Itens/Docs/Resumo) quando abertas, para caber ~10 linhas */
     .gvg-panel-wrapper { min-height: 360px !important; }
 }
+
+/* ===== Email modal styles ===== */
+#email-modal .modal-content { border-radius: 16px; }
+#email-modal .modal-dialog { border-radius: 16px; }
+#email-modal-input {
+    height: 32px; border-radius: 16px; font-size: 12px; padding: 6px 10px;
+    border: 1px solid #D0D7E2; outline: none; box-shadow: none; box-sizing: border-box; background-color: white;
+}
+#email-modal-input:focus { border-color: #52ACFF; box-shadow: 0 0 0 2px rgba(82,172,255,0.12); outline: none; }
 """
 
 # Classe aplicada em dcc.Markdown(children=..., className='markdown-summary')
