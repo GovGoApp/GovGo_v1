@@ -34,13 +34,8 @@ try:
         record_boletim_results,
         touch_last_run,
     )
+    from search.search_v1.GvG_Search_Function import gvg_search  # retorna dict com 'results'
     from search.gvg_browser.gvg_debug import debug_log as dbg
-    from search.gvg_browser.gvg_preprocessing import SearchQueryProcessor, ENABLE_SEARCH_V2
-    from search.gvg_browser.gvg_search_core import (
-        semantic_search, keyword_search, hybrid_search,
-        correspondence_search, category_filtered_search,
-        get_top_categories_for_query, set_relevance_filter_level
-    )
 except Exception:
     # Execução direta dentro da pasta scripts
     import sys, os
@@ -51,13 +46,8 @@ except Exception:
         touch_last_run,
     )
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+    from search_v1.GvG_Search_Function import gvg_search  # retorna dict com 'results'
     from gvg_debug import debug_log as dbg
-    from gvg_preprocessing import SearchQueryProcessor, ENABLE_SEARCH_V2
-    from gvg_search_core import (
-        semantic_search, keyword_search, hybrid_search,
-        correspondence_search, category_filtered_search,
-        get_top_categories_for_query, set_relevance_filter_level
-    )
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -126,130 +116,6 @@ def _build_rows_from_search(results: List[Dict[str, Any]]) -> List[Dict[str, Any
             'payload': compact,
         })
     return rows
-
-
-# Conversão de filtros (dict) para lista de condições SQL (igual ao Browser)
-def _filters_to_sql_conditions(f: Dict[str, Any] | None) -> List[str]:
-    if not f or not isinstance(f, dict):
-        return []
-    out: List[str] = []
-    def _esc(x: str) -> str:
-        return x.replace("'", "''").replace('%','%%')
-    pncp = (f.get('pncp') or '').strip() if f.get('pncp') else ''
-    orgao = (f.get('orgao') or '').strip() if f.get('orgao') else ''
-    cnpj = (f.get('cnpj') or '').strip() if f.get('cnpj') else ''
-    uf_val = f.get('uf')
-    municipio = (f.get('municipio') or '').strip() if f.get('municipio') else ''
-    modalidade_id = f.get('modalidade_id') if f.get('modalidade_id') is not None else None
-    modo_id = f.get('modo_id') if f.get('modo_id') is not None else None
-    date_field = (f.get('date_field') or 'encerramento').strip()
-    ds = (f.get('date_start') or '').strip() if f.get('date_start') else ''
-    de = (f.get('date_end') or '').strip() if f.get('date_end') else ''
-    if pncp:
-        out.append(f"c.numero_controle_pncp = '{_esc(pncp)}'")
-    if orgao:
-        o = _esc(orgao)
-        out.append(f"( c.orgao_entidade_razao_social ILIKE '%{o}%' OR c.unidade_orgao_nome_unidade ILIKE '%{o}%' )")
-    if cnpj:
-        out.append(f"c.orgao_entidade_cnpj = '{_esc(cnpj)}'")
-    if isinstance(uf_val, list):
-        ufs = [str(u).strip() for u in uf_val if str(u).strip()]
-        if ufs:
-            in_list = ", ".join([f"'{_esc(u)}'" for u in ufs])
-            out.append(f"c.unidade_orgao_uf_sigla IN ({in_list})")
-    else:
-        uf = (str(uf_val).strip() if uf_val is not None else '')
-        if uf:
-            out.append(f"c.unidade_orgao_uf_sigla = '{_esc(uf)}'")
-    if municipio:
-        parts = [p.strip() for p in municipio.split(',') if p and p.strip()]
-        if parts:
-            ors = [f"c.unidade_orgao_municipio_nome ILIKE '%{_esc(p)}%'" for p in parts]
-            out.append("( " + " OR ".join(ors) + " )")
-    if isinstance(modalidade_id, list):
-        mods = [str(x).strip() for x in modalidade_id if str(x).strip()]
-        if mods:
-            in_list = ", ".join([f"'{_esc(m)}'" for m in mods])
-            out.append(f"c.modalidade_id IN ({in_list})")
-    else:
-        mod = (str(modalidade_id).strip() if modalidade_id is not None else '')
-        if mod:
-            out.append(f"c.modalidade_id = '{_esc(mod)}'")
-    if isinstance(modo_id, list):
-        modos = [str(x).strip() for x in modo_id if str(x).strip()]
-        if modos:
-            in_list2 = ", ".join([f"'{_esc(m)}'" for m in modos])
-            out.append(f"c.modo_disputa_id IN ({in_list2})")
-    else:
-        md = (str(modo_id).strip() if modo_id is not None else '')
-        if md:
-            out.append(f"c.modo_disputa_id = '{_esc(md)}'")
-    col = 'data_encerramento_proposta'
-    if date_field == 'abertura':
-        col = 'data_abertura_proposta'
-    elif date_field == 'publicacao':
-        col = 'data_inclusao'
-    if ds and de:
-        out.append(f"to_date(NULLIF(c.{col},''),'YYYY-MM-DD') BETWEEN to_date('{ds}','YYYY-MM-DD') AND to_date('{de}','YYYY-MM-DD')")
-    elif ds:
-        out.append(f"to_date(NULLIF(c.{col},''),'YYYY-MM-DD') >= to_date('{ds}','YYYY-MM-DD')")
-    elif de:
-        out.append(f"to_date(NULLIF(c.{col},''),'YYYY-MM-DD') <= to_date('{de}','YYYY-MM-DD')")
-    return out
-
-
-def _to_float(value):
-    try:
-        if value is None:
-            return None
-        if isinstance(value, (int, float)):
-            return float(value)
-        import re as _re
-        s = str(value).strip()
-        if not s:
-            return None
-        s = _re.sub(r"[^0-9,\.-]", "", s)
-        if s.count(',') == 1 and s.count('.') >= 1:
-            s = s.replace('.', '').replace(',', '.')
-        elif s.count(',') == 1 and s.count('.') == 0:
-            s = s.replace(',', '.')
-        elif s.count(',') > 1 and s.count('.') == 0:
-            s = s.replace(',', '')
-        return float(s)
-    except Exception:
-        return None
-
-
-def _sort_results(results: List[Dict[str, Any]], order_mode: int) -> List[Dict[str, Any]]:
-    if not results:
-        return results
-    if order_mode == 1:
-        return sorted(results, key=lambda x: x.get('similarity', 0), reverse=True)
-    if order_mode == 2:
-        from datetime import datetime as _dt
-        def _to_date(s):
-            if not s:
-                return None
-            ss = str(s)
-            for fmt in ('%Y-%m-%d','%d/%m/%Y'):
-                try:
-                    return _dt.strptime(ss[:10], fmt).date()
-                except Exception:
-                    continue
-            return None
-        def _date_key(item: Dict[str, Any]):
-            d = (item.get('details') or {})
-            v = d.get('data_encerramento_proposta') or d.get('dataEncerramentoProposta') or d.get('dataencerramentoproposta')
-            return _to_date(v) or _dt.max.date()
-        return sorted(results, key=_date_key)
-    if order_mode == 3:
-        def _value_key(item: Dict[str, Any]) -> float:
-            d = (item.get('details') or {})
-            v_est = d.get('valor_total_estimado') or d.get('valorTotalEstimado') or d.get('valortotalestimado')
-            v = _to_float(v_est)
-            return -(v if v is not None else -1.0)
-        return sorted(results, key=_value_key)
-    return results
 
 
 def run_once(now: Optional[datetime] = None) -> None:
@@ -379,45 +245,23 @@ def run_once(now: Optional[datetime] = None) -> None:
         # Log dos parâmetros que serão enviados para a busca
     # (Parâmetros omitidos do log para reduzir ruído)
 
-        # Executa busca respeitando o snapshot (pipeline GSB)
+        # Executa busca respeitando o snapshot (com proteção)
         try:
-            filters_dict = s.get('filters') if isinstance(s.get('filters'), dict) else {}
-            filters_sql = _filters_to_sql_conditions(filters_dict)
-            processor = SearchQueryProcessor()
-            if ENABLE_SEARCH_V2:
-                info = processor.process_query_v2(query or '', filters_sql)
-            else:
-                info = processor.process_query(query or '')
-
-            base_terms = (info.get('search_terms') or query or '').strip()
-            where_sql = info.get('sql_conditions') or filters_sql
-            # Alinhar relevância
-            try:
-                set_relevance_filter_level(relevance_level)
-            except Exception:
-                pass
-
-            results: List[Dict[str, Any]] = []
-            if search_approach == 1:
-                if search_type == 1:
-                    results, _ = semantic_search(query, limit=max_results, filter_expired=filter_expired, use_negation=negation_emb, where_sql=where_sql)
-                elif search_type == 2:
-                    results, _ = keyword_search(query, limit=max_results, filter_expired=filter_expired, where_sql=where_sql)
-                else:
-                    results, _ = hybrid_search(query, limit=max_results, filter_expired=filter_expired, use_negation=negation_emb, where_sql=where_sql)
-            elif search_approach == 2:
-                cats = get_top_categories_for_query(query_text=base_terms or query, top_n=top_categories_count, use_negation=False, search_type=search_type, console=None)
-                if cats:
-                    results, _, _ = correspondence_search(query_text=query, top_categories=cats, limit=max_results, filter_expired=filter_expired, console=None, where_sql=where_sql)
-            else:
-                cats = get_top_categories_for_query(query_text=base_terms or query, top_n=top_categories_count, use_negation=False, search_type=search_type, console=None)
-                if cats:
-                    results, _, _ = category_filtered_search(query_text=query, search_type=search_type, top_categories=cats, limit=max_results, filter_expired=filter_expired, use_negation=negation_emb, console=None, where_sql=where_sql)
-
-            # Ordenação e rank
-            results = _sort_results(results or [], sort_mode or 1)
-            for idx, r in enumerate(results, 1):
-                r['rank'] = idx
+            resp = gvg_search(
+                prompt=query,
+                search=search_type,
+                approach=search_approach,
+                relevance=relevance_level,
+                order=sort_mode,
+                max_results=max_results,
+                top_cat=top_categories_count,
+                negation_emb=negation_emb,
+                filter_expired=filter_expired,
+                intelligent_toggle=False,
+                export=None,
+                return_export_paths=False,
+                return_raw=True,
+            )
         except Exception as e:
             log_line(f"ERRO busca sid={sid}: {e}")
             done += 1
@@ -431,8 +275,8 @@ def run_once(now: Optional[datetime] = None) -> None:
             continue
 
         # Log dos parâmetros efetivos reconhecidos pela função
-        # (Parâmetros efetivos omitidos do log)
-        rows_all = _build_rows_from_search(results or [])
+    # (Parâmetros efetivos omitidos do log)
+        rows_all = _build_rows_from_search(resp.get('results') or [])
 
         # Delta: manter apenas itens com data_publicacao_pncp >= baseline (last_run_at)
         last_run = s.get('last_run_at')

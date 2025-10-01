@@ -584,54 +584,6 @@ def run_once(now: Optional[datetime] = None) -> None:
             continue
 
         rows, last_run = _fetch_latest_run_rows(sid)
-        # Ordenação igual ao GSB
-        try:
-            sm = int((cfg_snapshot or {}).get('sort_mode', 1))
-        except Exception:
-            sm = 1
-        def _to_date_any(v):
-            from datetime import datetime as _dt
-            if not v:
-                return None
-            s = str(v)
-            for fmt in ('%Y-%m-%d','%d/%m/%Y'):
-                try:
-                    return _dt.strptime(s[:10], fmt).date()
-                except Exception:
-                    continue
-            return None
-        def _val(v):
-            try:
-                if v is None:
-                    return None
-                if isinstance(v,(int,float)):
-                    return float(v)
-                import re as _re
-                s=str(v).strip()
-                if not s: return None
-                s=_re.sub(r"[^0-9,\.-]","",s)
-                if s.count(',')==1 and s.count('.')>=1:
-                    s=s.replace('.','').replace(',','.')
-                elif s.count(',')==1 and s.count('.')==0:
-                    s=s.replace(',','.')
-                elif s.count(',')>1 and s.count('.')==0:
-                    s=s.replace(',','')
-                return float(s)
-            except Exception:
-                return None
-        if sm == 1:
-            rows = sorted(rows or [], key=lambda r: (r.get('similarity') or 0), reverse=True)
-        elif sm == 2:
-            def _dk(r):
-                raw = r.get('data_encerramento_proposta') or (r.get('payload') or {}).get('data_encerramento_proposta')
-                return _to_date_any(raw) or _to_date_any('9999-12-31')
-            rows = sorted(rows or [], key=_dk)
-        elif sm == 3:
-            def _vk(r):
-                vv = (r.get('payload') or {}).get('valor')
-                v = _val(vv)
-                return -(v if v is not None else -1.0)
-            rows = sorted(rows or [], key=_vk)
         html = _render_html_boletim(query, rows, cfg_snapshot, stype, sdetail)
         subject = f"Boletim GovGo — {query}"
         ok = send_html_email(email, subject, html)

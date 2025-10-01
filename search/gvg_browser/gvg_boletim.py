@@ -279,14 +279,27 @@ def list_active_schedules_all(now_dt: datetime) -> List[Dict[str, Any]]:
             return []
         cur = conn.cursor()
         try:
-            cur.execute(
-                """
-                SELECT id, user_id, query_text, schedule_type, schedule_detail, channels, config_snapshot, last_run_at
-                  FROM public.user_schedule
-                 WHERE active = true
-                """
-            )
-            rows = cur.fetchall() or []
+            # Tenta trazer também a coluna 'filters' (V2); se não existir, cai no fallback sem filters
+            try:
+                cur.execute(
+                    """
+                    SELECT id, user_id, query_text, schedule_type, schedule_detail, channels, config_snapshot, filters, last_run_at
+                      FROM public.user_schedule
+                     WHERE active = true
+                    """
+                )
+                rows = cur.fetchall() or []
+                have_filters = True
+            except Exception:
+                cur.execute(
+                    """
+                    SELECT id, user_id, query_text, schedule_type, schedule_detail, channels, config_snapshot, last_run_at
+                      FROM public.user_schedule
+                     WHERE active = true
+                    """
+                )
+                rows = cur.fetchall() or []
+                have_filters = False
         except Exception as e1:
             # Fallback: tabela legada public.user_boletins
             try:
@@ -305,13 +318,24 @@ def list_active_schedules_all(now_dt: datetime) -> List[Dict[str, Any]]:
         dow_map = {0:'seg',1:'ter',2:'qua',3:'qui',4:'sex',5:'sab',6:'dom'}
         dow = dow_map[now_dt.weekday()]
         for r in rows:
-            (sid, uid, q, stype, sdetail, channels, snapshot, last_run_at) = r
+            # Mapear colunas conforme presença de 'filters'
+            if 'have_filters' in locals() and have_filters:
+                (sid, uid, q, stype, sdetail, channels, snapshot, filters, last_run_at) = r
+            else:
+                (sid, uid, q, stype, sdetail, channels, snapshot, last_run_at) = r
+                filters = None
             stype = (stype or '').upper()
             # Determinar dias configurados
             try:
                 detail = sdetail if isinstance(sdetail, dict) else _json.loads(sdetail or '{}')
             except Exception:
                 detail = {}
+            # Parse de filters, se vierem como JSON string
+            try:
+                if filters and isinstance(filters, str):
+                    filters = _json.loads(filters)
+            except Exception:
+                filters = filters if isinstance(filters, dict) else {}
             cfg_days = detail.get('days') if isinstance(detail, dict) else None
             due = False
             if stype in ('DIARIO','MULTIDIARIO'):
@@ -332,6 +356,7 @@ def list_active_schedules_all(now_dt: datetime) -> List[Dict[str, Any]]:
                 'schedule_detail': sdetail or {},
                 'channels': channels or [],
                 'config_snapshot': snapshot or {},
+                'filters': filters or {},
                 'last_run_at': last_run_at,
             })
         return items

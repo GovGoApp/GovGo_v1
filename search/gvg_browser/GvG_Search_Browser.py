@@ -5264,6 +5264,7 @@ def replay_from_history(n_clicks_list, history):
 # Rever item de boletim: abre aba BOLETIM com resultados do último run
 @app.callback(
     Output('store-session-event', 'data', allow_duplicate=True),
+    Output('store-search-filters', 'data', allow_duplicate=True),
     Input({'type': 'boletim-replay', 'id': ALL}, 'n_clicks'),
     State('store-boletins', 'data'),
     prevent_initial_call=True,
@@ -5306,6 +5307,7 @@ def replay_from_boletim(n_clicks_list, boletins):
     title = ''
     run_token = None
     cfg = {}
+    filters_cfg = None
     try:
         from gvg_database import create_connection
         from gvg_schema import get_contratacao_core_columns, normalize_contratacao_row, project_result_for_output
@@ -5328,6 +5330,14 @@ def replay_from_boletim(n_clicks_list, boletins):
                     cfg = json.loads(cfg)
             except Exception:
                 cfg = {}
+            # Filtros salvos (se existir coluna)
+            try:
+                if len(row) > 2:
+                    filters_cfg = row[2] or {}
+                    if isinstance(filters_cfg, str):
+                        filters_cfg = json.loads(filters_cfg)
+            except Exception:
+                filters_cfg = None
         # Último run_token
         cur.execute("""
             SELECT run_token
@@ -5474,7 +5484,7 @@ def replay_from_boletim(n_clicks_list, boletins):
         dbg('BOLETIM', f"[replay_from_boletim] emitindo sessão com {len(results)} resultados run_token={run_token}")
     except Exception:
         pass
-    return session_event
+    return session_event, (filters_cfg if filters_cfg else dash.no_update)
 
 
 # Aplicar item do histórico na UI (configs + filtros), sem executar busca
@@ -5752,18 +5762,30 @@ def render_favorites_list(favs, toggles):
             row_style['display'] = 'none'
         else:
             visible_count += 1
+        actions_col = html.Div([
+            html.Button(
+                html.I(className='fas fa-trash'),
+                id={'type': 'favorite-delete', 'index': i},
+                className='delete-btn',
+                style=styles['fav_delete_btn']
+            ),
+            # Botão de e-mail (placeholder, sem funcionalidade por enquanto)
+            html.Button(
+                html.I(className='fas fa-envelope'),
+                id={'type': 'favorite-email', 'index': i},
+                className='email-btn',
+                style=styles['fav_email_btn'],
+                n_clicks=0
+            )
+        ], style=styles['fav_actions_col'])
+
         row = html.Div([
             html.Button(
                 body,
                 id={'type': 'favorite-item', 'index': i},
                 style=btn_style
             ),
-            html.Button(
-                html.I(className='fas fa-trash'),
-                id={'type': 'favorite-delete', 'index': i},
-                className='delete-btn',
-                style=styles['fav_delete_btn']
-            )
+            actions_col
         ], className='fav-item-row', style=row_style)
         items.append(row)
     if not items:

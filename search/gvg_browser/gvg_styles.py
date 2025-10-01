@@ -281,6 +281,18 @@ styles = {
         'backgroundColor': 'white', 'color': '#FF5722',
         'cursor': 'pointer'
     },
+    'fav_actions_col': {
+        'display': 'flex', 'flexDirection': 'column', 'gap': '6px',
+        'alignItems': 'center', 'justifyContent': 'flex-start',
+        'minWidth': '28px'
+    },
+    'fav_email_btn': {
+        'width': '28px', 'height': '28px', 'minWidth': '28px',
+        'borderRadius': '50%', 'border': '1px solid #FF5722',
+        'backgroundColor': 'white', 'color': '#FF5722',
+        'cursor': 'pointer', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+        'textDecoration': 'none'
+    },
     'bookmark_btn': {
         'position': 'absolute', 'top': '10px', 'left': '40px',
         'width': '24px', 'height': '24px', 'minWidth': '24px',
@@ -587,10 +599,13 @@ BASE_CSS = """
 .history-item-row:hover .delete-btn { opacity: 1; }
 .history-item-row .delete-btn:hover { background-color: #FDEDEC; }
 
-/* Favorites row hover: show delete button */
+/* Favorites row hover: show action buttons (delete + email) */
 .fav-item-row .delete-btn { opacity: 0; transition: opacity 0.15s ease-in-out; }
 .fav-item-row:hover .delete-btn { opacity: 1; }
 .fav-item-row .delete-btn:hover { background-color: #FDEDEC; }
+.fav-item-row .email-btn { opacity: 0; transition: opacity 0.15s ease-in-out; }
+.fav-item-row:hover .email-btn { opacity: 1; }
+.fav-item-row .email-btn:hover { background-color: #ECF2FF; }
 
 /* Boletins row hover: show action buttons (trash + edit) */
 .boletim-item-row .delete-btn { opacity: 0; transition: opacity 0.15s ease-in-out; }
@@ -623,7 +638,7 @@ BASE_CSS = """
     :root { --gvg-left-slide-width: 100vw; --gvg-right-slide-width: 100vw; }
     #gvg-main-panels { overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
     #gvg-main-panels > .gvg-slide { flex: 0 0 100vw; scroll-snap-align: start; }
-    /*.gvg-header-title { display: none;}*/
+    .gvg-header-title { display: none;}
     /* Detalhes acima, janelas (Itens/Docs/Resumo) abaixo */
     .gvg-details-row { flex-direction: column !important; gap: 8px !important; }
     .gvg-details-row > div { width: 100% !important; }
