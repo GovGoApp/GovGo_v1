@@ -412,9 +412,15 @@ auth_overlay = html.Div([
             html.Div('Redefinir senha', style=styles['card_title']),
             html.Div('Defina sua nova senha para continuar.', style=styles['auth_subtitle']),
             html.Label('Nova senha', className='gvg-form-label', style={'marginTop': '8px'}),
-            dcc.Input(id='auth-new-pass', type='password', placeholder='Nova senha', autoComplete='new-password', style=styles['auth_input']),
+            html.Div([
+                dcc.Input(id='auth-new-pass', type='password', placeholder='Nova senha', autoComplete='new-password', style=styles['auth_input_eye']),
+                html.Button(html.I(className='fas fa-eye'), id='auth-pass-toggle-reset-1', title='Mostrar/ocultar senha', n_clicks=0, style=styles['auth_eye_button'])
+            ], style=styles['auth_input_group']),
             html.Label('Confirmar nova senha', className='gvg-form-label', style={'marginTop': '8px'}),
-            dcc.Input(id='auth-new-pass2', type='password', placeholder='Repita a nova senha', autoComplete='new-password', style=styles['auth_input']),
+            html.Div([
+                dcc.Input(id='auth-new-pass2', type='password', placeholder='Repita a nova senha', autoComplete='new-password', style=styles['auth_input_eye']),
+                html.Button(html.I(className='fas fa-eye'), id='auth-pass-toggle-reset-2', title='Mostrar/ocultar senha', n_clicks=0, style=styles['auth_eye_button'])
+            ], style=styles['auth_input_group']),
             html.Div([
                 html.Button('Confirmar', id='auth-reset-confirm', style=styles['auth_btn_primary']),
                 html.Button('Cancelar', id='auth-reset-cancel', style=styles['auth_btn_secondary'])
@@ -2291,6 +2297,39 @@ def toggle_signup_password_eye(n_clicks, current_type):
         return 'password', html.I(className='far fa-eye')
 
 
+# Mostrar/ocultar senha (reset) via botões de olho
+@app.callback(
+    Output('auth-new-pass', 'type'),
+    Output('auth-pass-toggle-reset-1', 'children'),
+    Input('auth-pass-toggle-reset-1', 'n_clicks'),
+    State('auth-new-pass', 'type'),
+    prevent_initial_call=False,
+)
+def toggle_reset_password_eye1(n_clicks, current_type):
+    try:
+        show = (current_type == 'password')
+        new_type = 'text' if show else 'password'
+        icon = html.I(className=('far fa-eye-slash' if show else 'far fa-eye'))
+        return new_type, icon
+    except Exception:
+        return 'password', html.I(className='far fa-eye')
+
+
+@app.callback(
+    Output('auth-new-pass2', 'type'),
+    Output('auth-pass-toggle-reset-2', 'children'),
+    Input('auth-pass-toggle-reset-2', 'n_clicks'),
+    State('auth-new-pass2', 'type'),
+    prevent_initial_call=False,
+)
+def toggle_reset_password_eye2(n_clicks, current_type):
+    try:
+        show = (current_type == 'password')
+        new_type = 'text' if show else 'password'
+        icon = html.I(className=('far fa-eye-slash' if show else 'far fa-eye'))
+        return new_type, icon
+    except Exception:
+        return 'password', html.I(className='far fa-eye')
 # Prefill de e-mail/senha com base no store local (quando voltar para a view login)
 @app.callback(
     Output('auth-email', 'value'),
