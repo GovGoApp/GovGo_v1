@@ -145,6 +145,140 @@ def sign_up_with_metadata(email: str, password: str, full_name: str, phone: Opti
         return False, f"{type(e).__name__}: {e}"
 
 
+def set_session(access_token: str, refresh_token: Optional[str] = None) -> Tuple[bool, Optional[Dict[str, Any]], str]:
+    """Define a sessão atual do cliente (após recovery link).
+    Retorna (ok, session_dict, error).
+    """
+    client = init_client()
+    if not client:
+        return False, None, "Cliente Supabase não inicializado"
+    try:
+        _dbg('set_session', 'Setting session from tokens', {
+            'has_access': bool(access_token), 'has_refresh': bool(refresh_token)
+        })
+        # Disponível no GoTrue v2
+        if hasattr(client.auth, 'set_session'):
+            res = client.auth.set_session(access_token=access_token, refresh_token=refresh_token)
+            session = getattr(res, 'session', None)
+            user = getattr(res, 'user', None)
+        else:
+            # Fallback: algumas versões retornam diretamente session atual
+            session = getattr(client.auth, 'session', None)
+            user = getattr(client.auth, 'user', None)
+        if session and user:
+            user_info = {
+                "uid": user.id,
+                "email": user.email,
+                "name": (user.user_metadata or {}).get("full_name") or (user.user_metadata or {}).get("name") or user.email,
+                "phone": (user.user_metadata or {}).get("phone"),
+            }
+            out = {
+                'user': user_info,
+                'access_token': getattr(session, 'access_token', None),
+                'refresh_token': getattr(session, 'refresh_token', None),
+            }
+            _dbg('set_session', 'Session set OK', {'uid': user_info['uid']})
+            return True, out, ""
+        return False, None, "Falha ao definir sessão"
+    except Exception as e:
+        _dbg('set_session', f'Exception during set_session: {type(e).__name__}: {e}')
+        _dbg('set_session', 'Traceback:\n' + _tb.format_exc())
+        return False, None, f"{type(e).__name__}: {e}"
+
+
+def recover_session_from_code(code: str) -> Tuple[bool, Optional[Dict[str, Any]], str]:
+    """Troca o 'code' (type=recovery) por sessão autenticada.
+    Tenta exchange_code_for_session; fallback para verify_otp com type='recovery'.
+    """
+    client = init_client()
+    if not client:
+        return False, None, "Cliente Supabase não inicializado"
+    try:
+        _dbg('recover_session', 'Attempting exchange_code_for_session', {'has_code': bool(code)})
+        if hasattr(client.auth, 'exchange_code_for_session'):
+            res = client.auth.exchange_code_for_session(code)
+            session = getattr(res, 'session', None)
+            user = getattr(res, 'user', None)
+            if session and user:
+                user_info = {
+                    "uid": user.id,
+                    "email": user.email,
+                    "name": (user.user_metadata or {}).get("full_name") or (user.user_metadata or {}).get("name") or user.email,
+                    "phone": (user.user_metadata or {}).get("phone"),
+                }
+                out = {
+                    'user': user_info,
+                    'access_token': getattr(session, 'access_token', None),
+                    'refresh_token': getattr(session, 'refresh_token', None),
+                }
+                _dbg('recover_session', 'Exchange OK', {'uid': user_info['uid']})
+                return True, out, ""
+        # Fallback conservador: alguns servidores aceitam verify_otp para recovery
+        try:
+            _dbg('recover_session', 'Trying verify_otp fallback')
+            res = client.auth.verify_otp({"token": code, "type": "recovery", "email": ""})
+            session = getattr(res, 'session', None)
+            user = getattr(res, 'user', None)
+            if session and user:
+                user_info = {
+                    "uid": user.id,
+                    "email": user.email,
+                    "name": (user.user_metadata or {}).get("full_name") or user.email,
+                    "phone": (user.user_metadata or {}).get("phone"),
+                }
+                out = {
+                    'user': user_info,
+                    'access_token': getattr(session, 'access_token', None),
+                    'refresh_token': getattr(session, 'refresh_token', None),
+                }
+                _dbg('recover_session', 'verify_otp OK', {'uid': user_info['uid']})
+                return True, out, ""
+        except Exception:
+            pass
+        return False, None, "Não foi possível recuperar a sessão"
+    except Exception as e:
+        _dbg('recover_session', f'Exception during recovery: {type(e).__name__}: {e}')
+        _dbg('recover_session', 'Traceback:\n' + _tb.format_exc())
+        return False, None, f"{type(e).__name__}: {e}"
+
+
+def update_user_password(new_password: str) -> Tuple[bool, Optional[Dict[str, Any]], str]:
+    """Atualiza a senha do usuário logado (sessão já deve estar ativa). Retorna (ok, session_dict, error)."""
+    client = init_client()
+    if not client:
+        return False, None, "Cliente Supabase não inicializado"
+    try:
+        _dbg('update_user_password', 'Updating password')
+        res = client.auth.update_user({"password": new_password})
+        user = getattr(res, 'user', None)
+        # Recupera sessão atual, se disponível
+        session_obj = None
+        if hasattr(client.auth, 'get_session'):
+            try:
+                sres = client.auth.get_session()
+                session_obj = getattr(sres, 'session', None) or sres
+            except Exception:
+                session_obj = None
+        out = None
+        if user:
+            user_info = {
+                "uid": user.id,
+                "email": user.email,
+                "name": (user.user_metadata or {}).get("full_name") or (user.user_metadata or {}).get("name") or user.email,
+                "phone": (user.user_metadata or {}).get("phone"),
+            }
+            out = {
+                'user': user_info,
+                'access_token': getattr(session_obj, 'access_token', None),
+                'refresh_token': getattr(session_obj, 'refresh_token', None),
+            }
+        _dbg('update_user_password', 'Password updated')
+        return True, out, ""
+    except Exception as e:
+        _dbg('update_user_password', f'Exception during update_user: {type(e).__name__}: {e}')
+        _dbg('update_user_password', 'Traceback:\n' + _tb.format_exc())
+        return False, None, f"{type(e).__name__}: {e}"
+
 def verify_otp(email: str, token: str, type_: str = "signup") -> Tuple[bool, Optional[Dict[str, Any]], str]:
     """Confirma código OTP. type_: 'signup' ou 'email_change'.
     Retorna (ok, session_dict, error)

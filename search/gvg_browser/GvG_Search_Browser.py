@@ -103,6 +103,9 @@ try:
         reset_password,
         sign_out,
         resend_otp,
+    set_session,
+    recover_session_from_code,
+    update_user_password,
     )
 except Exception:
     # Permite rodar sem pacote instalado (até instalar requirements)
@@ -112,6 +115,12 @@ except Exception:
         return False, None, "Auth indisponível"
     def reset_password(*args, **kwargs):
         return False, "Auth indisponível"
+    def recover_session_from_code(*args, **kwargs):
+        return False, None, "Auth indisponível"
+    def update_user_password(*args, **kwargs):
+        return False, None, "Auth indisponível"
+    def set_session(*args, **kwargs):
+        return False, None, "Auth indisponível"
     def sign_out(*args, **kwargs):
         return False
     def resend_otp(*args, **kwargs):
@@ -399,6 +408,18 @@ auth_overlay = html.Div([
                 html.Button('Reenviar código', id='auth-resend-link', style=styles['auth_btn_secondary'])
             ], style=styles['auth_actions'])
         ], id='auth-view-confirm', style={'display': 'none'}),
+        html.Div([
+            html.Div('Redefinir senha', style=styles['card_title']),
+            html.Div('Defina sua nova senha para continuar.', style=styles['auth_subtitle']),
+            html.Label('Nova senha', className='gvg-form-label', style={'marginTop': '8px'}),
+            dcc.Input(id='auth-new-pass', type='password', placeholder='Nova senha', autoComplete='new-password', style=styles['auth_input']),
+            html.Label('Confirmar nova senha', className='gvg-form-label', style={'marginTop': '8px'}),
+            dcc.Input(id='auth-new-pass2', type='password', placeholder='Repita a nova senha', autoComplete='new-password', style=styles['auth_input']),
+            html.Div([
+                html.Button('Confirmar', id='auth-reset-confirm', style=styles['auth_btn_primary']),
+                html.Button('Cancelar', id='auth-reset-cancel', style=styles['auth_btn_secondary'])
+            ], style=styles['auth_actions'])
+        ], id='auth-view-reset', style={'display': 'none'}),
     ], style=styles['auth_card'])
 ], id='auth-overlay', style=styles['auth_overlay'])
 
@@ -766,6 +787,8 @@ results_panel = html.Div([
 # Layout principal
 
 app.layout = html.Div([
+    # Precisa estar no topo para capturar hash/query do Supabase na navegação inicial
+    dcc.Location(id='url'),
     dcc.Store(id='store-auth', data=AUTH_INIT),
     dcc.Store(id='store-auth-view', data='login'),
     dcc.Store(id='store-auth-error', data=''),
@@ -1813,6 +1836,7 @@ def toggle_auth_overlay(auth_data):
     Output('auth-view-login', 'style'),
     Output('auth-view-signup', 'style'),
     Output('auth-view-confirm', 'style'),
+    Output('auth-view-reset', 'style'),
     Output('auth-confirm-text', 'children'),
     Output('auth-error', 'children'),
     Output('auth-error', 'style'),
@@ -1827,6 +1851,7 @@ def reflect_auth_view(view, err_text, pending_email):
     login_st = show if v == 'login' else hide
     signup_st = show if v == 'signup' else hide
     confirm_st = show if v == 'confirm' else hide
+    reset_st = show if v == 'reset' else hide
     try:
         confirm_txt = f"Enviamos um código para {pending_email}. Confira sua caixa de entrada." if (pending_email or '').strip() else "Digite o código enviado para o seu e-mail."
     except Exception:
@@ -1845,7 +1870,7 @@ def reflect_auth_view(view, err_text, pending_email):
         err_children = ''
         show_err = False
     err_style = {**styles['auth_error'], 'display': ('block' if show_err else 'none')}
-    return login_st, signup_st, confirm_st, confirm_txt, err_children, err_style
+    return login_st, signup_st, confirm_st, reset_st, confirm_txt, err_children, err_style
 
 
 @app.callback(
@@ -2061,6 +2086,144 @@ def do_resend_otp(n_clicks, email):
         return f'Enviamos um novo código para {email}.'
     # Mensagem amigável sempre; detalhes no console via debug
     return 'Não foi possível reenviar o código. Tente novamente em instantes.'
+
+
+# Detecta link de recuperação na URL e aciona a view de reset
+@app.callback(
+    Output('store-auth-view', 'data', allow_duplicate=True),
+    Output('store-auth-error', 'data', allow_duplicate=True),
+    Output('store-auth', 'data', allow_duplicate=True),
+    Output('url', 'search', allow_duplicate=True),
+    Output('url', 'hash', allow_duplicate=True),
+    Input('url', 'search'),
+    Input('url', 'hash'),
+    prevent_initial_call='initial_duplicate',
+)
+def detect_recovery_in_url(search_query, url_hash):
+    # 1) Tentar tokens no fragmento (#...) vindo do Supabase (access_token, refresh_token, type=recovery)
+    try:
+        h = (url_hash or '').lstrip('#')
+        if h:
+            hparams = dict([part.split('=', 1) for part in h.split('&') if '=' in part])
+            typ = (hparams.get('type') or '').lower()
+            acc = hparams.get('access_token')
+            ref = hparams.get('refresh_token')
+            if typ == 'recovery' and acc:
+                # Criar sessão com tokens do fragmento
+                ok, session, err = set_session(acc, ref)
+                if ok and session and session.get('user'):
+                    try:
+                        set_current_user(session.get('user'))
+                        set_access_token(session.get('access_token'))
+                    except Exception:
+                        pass
+                    auth_state = {
+                        'status': 'recovery',
+                        'user': session.get('user'),
+                        'access_token': session.get('access_token'),
+                        'refresh_token': session.get('refresh_token'),
+                    }
+                    # Limpa hash e search (se houver)
+                    return 'reset', '', auth_state, '', ''
+                else:
+                    # Tokens inválidos
+                    return 'login', (err or 'Link de recuperação inválido.'), dash.no_update, dash.no_update, ''
+    except Exception:
+        # Ignora erros de parsing
+        pass
+
+    # 2) Fallback: querystring ?type=recovery&code=...
+    try:
+        s = (search_query or '').lstrip('?')
+        if not s:
+            raise PreventUpdate
+        params = dict([part.split('=', 1) for part in s.split('&') if '=' in part])
+        typ = (params.get('type') or '').lower()
+        code = params.get('code') or params.get('token') or ''
+        if typ != 'recovery' or not code:
+            raise PreventUpdate
+    except Exception:
+        raise PreventUpdate
+    ok, session, err = False, None, None
+    try:
+        ok, session, err = recover_session_from_code(code)
+    except Exception as e:
+        ok, session, err = False, None, f"Erro ao validar link: {e}"
+    if not ok or not session or not session.get('user'):
+        return 'login', (err or 'Link de recuperação inválido ou expirado.'), dash.no_update, '', dash.no_update
+    try:
+        set_current_user(session.get('user'))
+        set_access_token(session.get('access_token'))
+    except Exception:
+        pass
+    auth_state = {
+        'status': 'recovery',
+        'user': session.get('user'),
+        'access_token': session.get('access_token'),
+        'refresh_token': session.get('refresh_token'),
+    }
+    # Limpa a querystring
+    return 'reset', '', auth_state, '', dash.no_update
+
+
+# Confirmar redefinição de senha
+@app.callback(
+    Output('store-auth', 'data', allow_duplicate=True),
+    Output('store-auth-error', 'data', allow_duplicate=True),
+    Output('store-auth-view', 'data', allow_duplicate=True),
+    Output('url', 'search', allow_duplicate=True),
+    Input('auth-reset-confirm', 'n_clicks'),
+    State('auth-new-pass', 'value'),
+    State('auth-new-pass2', 'value'),
+    prevent_initial_call=True,
+)
+def confirm_password_reset(n_clicks, p1, p2):
+    if not n_clicks:
+        raise PreventUpdate
+    p1 = (p1 or '').strip(); p2 = (p2 or '').strip()
+    if not p1 or not p2:
+        return dash.no_update, 'Informe e confirme a nova senha.', dash.no_update, dash.no_update
+    if p1 != p2:
+        return dash.no_update, 'As senhas não conferem.', dash.no_update, dash.no_update
+    ok, session, err = False, None, None
+    try:
+        ok, session, err = update_user_password(p1)
+    except Exception as e:
+        ok, session, err = False, None, f"Erro ao atualizar senha: {e}"
+    if not ok:
+        return dash.no_update, (err or 'Não foi possível atualizar a senha.'), dash.no_update, dash.no_update
+    # Se a API não retornar sessão, mantém usuário atual e fecha overlay assim mesmo
+    user_info = None
+    try:
+        user_info = (session or {}).get('user')
+        if user_info:
+            set_current_user(user_info)
+    except Exception:
+        pass
+    auth_state = {
+        'status': 'auth',
+        'user': user_info or (get_current_user() if 'get_current_user' in globals() else None),
+        'access_token': (session or {}).get('access_token'),
+        'refresh_token': (session or {}).get('refresh_token'),
+    }
+    try:
+        set_access_token(auth_state.get('access_token'))
+    except Exception:
+        pass
+    # Fecha overlay (view login por segurança) e limpa querystring
+    return auth_state, '', 'login', ''
+
+
+# Cancelar redefinição: volta para login
+@app.callback(
+    Output('store-auth-view', 'data', allow_duplicate=True),
+    Input('auth-reset-cancel', 'n_clicks'),
+    prevent_initial_call=True,
+)
+def cancel_password_reset(n_clicks):
+    if not n_clicks:
+        raise PreventUpdate
+    return 'login'
 
 
 @app.callback(
