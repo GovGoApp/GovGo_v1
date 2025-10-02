@@ -4742,7 +4742,7 @@ def load_itens_for_cards(n_clicks_list, active_map, results, cache_itens):
     from gvg_search_core import fetch_itens_contratacao
     children_out, style_out, btn_styles = [], [], []
     updated_cache = dict(cache_itens or {})
-    if not results or not isinstance(n_clicks_list, list):
+    if not results:
         return children_out, style_out, btn_styles, updated_cache
     # Build pncp id list aligned with components order
     pncp_ids = []
@@ -4750,8 +4750,15 @@ def load_itens_for_cards(n_clicks_list, active_map, results, cache_itens):
         d = (r or {}).get('details', {}) or {}
         pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
         pncp_ids.append(str(pid) if pid is not None else 'N/A')
-    count = min(len(pncp_ids), len(n_clicks_list))
-    for i in range(count):
+    # Normaliza cliques para casar com número de componentes
+    if not isinstance(n_clicks_list, list):
+        n_clicks_list = [0] * len(pncp_ids)
+    elif len(n_clicks_list) < len(pncp_ids):
+        n_clicks_list = list(n_clicks_list) + [0] * (len(pncp_ids) - len(n_clicks_list))
+    elif len(n_clicks_list) > len(pncp_ids):
+        n_clicks_list = list(n_clicks_list[:len(pncp_ids)])
+
+    for i in range(len(pncp_ids)):
         pid = pncp_ids[i]
         clicks = n_clicks_list[i] or 0
         # Ativo se mapa marcar 'itens' para esse pncp
@@ -4843,15 +4850,22 @@ def load_itens_for_cards(n_clicks_list, active_map, results, cache_itens):
 def load_docs_for_cards(n_clicks_list, active_map, results, cache_docs):
     children_out, style_out, btn_styles = [], [], []
     updated_cache = dict(cache_docs or {})
-    if not results or not isinstance(n_clicks_list, list):
+    if not results:
         return children_out, style_out, btn_styles, updated_cache
     pncp_ids = []
     for r in results:
         d = (r or {}).get('details', {}) or {}
         pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
         pncp_ids.append(str(pid) if pid is not None else 'N/A')
-    count = min(len(pncp_ids), len(n_clicks_list))
-    for i in range(count):
+    # Normaliza cliques para casar com número de componentes
+    if not isinstance(n_clicks_list, list):
+        n_clicks_list = [0] * len(pncp_ids)
+    elif len(n_clicks_list) < len(pncp_ids):
+        n_clicks_list = list(n_clicks_list) + [0] * (len(pncp_ids) - len(n_clicks_list))
+    elif len(n_clicks_list) > len(pncp_ids):
+        n_clicks_list = list(n_clicks_list[:len(pncp_ids)])
+
+    for i in range(len(pncp_ids)):
         pid = pncp_ids[i]
         clicks = n_clicks_list[i] or 0
         is_open = (str(pid) in (active_map or {}) and (active_map or {}).get(str(pid)) == 'docs')
@@ -4938,7 +4952,8 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
     # Debug início do callback
 
     updated_cache = dict(cache_resumo or {})
-    if not results or not isinstance(n_clicks_list, list):
+    # Quando não há resultados, não há componentes correspondentes; retornar listas vazias é seguro
+    if not results:
         return children_out, style_out, btn_styles, updated_cache
 
     # Helper to pick main doc
@@ -4980,10 +4995,17 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
         pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
         pncp_ids.append(str(pid) if pid is not None else 'N/A')
 
-    count = min(len(pncp_ids), len(n_clicks_list))
-    for i in range(count):
+    # Normaliza a lista de cliques para ter o mesmo tamanho dos componentes
+    if not isinstance(n_clicks_list, list):
+        n_clicks_list = [0] * len(pncp_ids)
+    elif len(n_clicks_list) < len(pncp_ids):
+        n_clicks_list = list(n_clicks_list) + [0] * (len(pncp_ids) - len(n_clicks_list))
+    elif len(n_clicks_list) > len(pncp_ids):
+        n_clicks_list = list(n_clicks_list[:len(pncp_ids)])
+
+    for i in range(len(pncp_ids)):
         pid = pncp_ids[i]
-        clicks = n_clicks_list[i] or 0
+        clicks = (n_clicks_list[i] or 0)
         is_open = (str(pid) in (active_map or {}) and (active_map or {}).get(str(pid)) == 'resumo')
         try:
             from gvg_search_core import SQL_DEBUG
