@@ -26,6 +26,7 @@ def _usage_enabled() -> bool:
 def record_usage(user_id: str, event_type: str, ref_type: Optional[str]=None, ref_id: Optional[str]=None, meta: Optional[Dict[str, Any]]=None) -> None:
     if not user_id or not event_type or not _usage_enabled():
         return
+    dbg('USAGE', f"→ event '{event_type}' user={user_id} ref={ref_type}:{ref_id} meta_keys={list((meta or {}).keys())}")
     try:
         db_execute(
             "INSERT INTO public.user_usage_events (user_id,event_type,ref_type,ref_id,meta) VALUES (%s,%s,%s,%s,%s::jsonb)",
@@ -44,15 +45,17 @@ def record_usage(user_id: str, event_type: str, ref_type: Optional[str]=None, re
             (user_id, metric),
             ctx="USAGE.record_usage:counter"
         )
+        dbg('USAGE', f"✓ counter '{metric}' incremented for user={user_id}")
     except Exception as e:
-        try: dbg('USAGE', f"warn upsert counter {metric}: {e}")
-        except Exception: pass
+        dbg('USAGE', f"warn upsert counter {metric}: {e}")
+        
 
 def record_usage_bulk(user_id: str, events: List[Tuple[str,str,str,Dict[str,Any]]]) -> None:
     if not _usage_enabled():
         return
     rows_evt=[]; rows_cnt=[]
     import json
+    dbg('USAGE', f"→ bulk events count={len(events)} user={user_id}")
     for ev_type, ref_type, ref_id, meta in events:
         rows_evt.append((user_id, ev_type, ref_type, ref_id, json.dumps(meta or {}) ))
         metric=_EVENT_TO_METRIC.get(ev_type)
@@ -71,8 +74,8 @@ def record_usage_bulk(user_id: str, events: List[Tuple[str,str,str,Dict[str,Any]
                 (uid, metric),
                 ctx="USAGE.record_usage_bulk:counter"
             )
+            dbg('USAGE', f"✓ bulk counter '{metric}' incremented user={uid}")
         except Exception as e:
-            try: dbg('USAGE', f"warn bulk counter {metric}: {e}")
-            except Exception: pass
+            dbg('USAGE', f"warn bulk counter {metric}: {e}")
 
 __all__ = ['record_usage','record_usage_bulk']
