@@ -29,6 +29,8 @@ from gvg_schema import (
 	build_itens_by_pncp_select, normalize_item_contratacao_row
 )
 
+# Pré-processamento agora é responsabilidade externa (Browser / Scheduler). Este core aceita string ou dict pré-processado.
+
 # ============================================================================
 # Filtro de Relevância interno (removida dependência de gvg_search_utils_v3)
 # Implementa sistema de 3 níveis com uso opcional de OpenAI Assistant.
@@ -165,59 +167,6 @@ ENABLE_INTELLIGENT_PROCESSING = True
 SQL_DEBUG = False
 
 
-def _safe_close(cursor, conn):
-	# Mantido por compat, não utilizado após migração para wrappers db_*
-	try:
-		if cursor:
-			try:
-				cursor.close()
-			except Exception:
-				pass
-	finally:
-		if conn:
-			try:
-				conn.close()
-			except Exception:
-				pass
-
-
-def _summarize_param(p: Any) -> str:
-	"""Compact representation of a parameter for SQL debug output.
-
-	- Numpy array: <ndarray shape=...> or <ndarray len=N>
-	- Long numeric list (likely embedding): <vector len=N>
-	- Short list/tuple: show first up to 3 elems and total length
-	- Strings: repr trimmed to 120 chars
-	- Others: str()
-	"""
-	try:
-		import numpy as _np  # local import to avoid global dependency issues
-		if isinstance(p, _np.ndarray):
-			try:
-				return f"<ndarray shape={p.shape}>"
-			except Exception:
-				try:
-					return f"<ndarray len={p.size}>"
-				except Exception:
-					return "<ndarray>"
-	except Exception:
-		pass
-	try:
-		if isinstance(p, (list, tuple)):
-			# Heuristic: big numeric vector
-			if len(p) > 100 and all(isinstance(x, (int, float)) for x in p[: min(10, len(p))]):
-				return f"<vector len={len(p)}>"
-			head = ", ".join(repr(x) for x in p[:3])
-			ell = ", ..." if len(p) > 3 else ""
-			return f"[{head}{ell}] (len={len(p)})"
-		if isinstance(p, str):
-			s = repr(p)
-			return s if len(s) <= 120 else s[:117] + "...'"
-		return str(p)
-	except Exception:
-		return f"<{type(p).__name__}>"
-
-
 def _debug_sql(label: str, sql: str, params: List[Any], names: Optional[List[str]] = None):
 	"""Wrapper para debug SQL usando gvg_debug (Rich)."""
 	if not SQL_DEBUG:
@@ -227,49 +176,34 @@ def _debug_sql(label: str, sql: str, params: List[Any], names: Optional[List[str
 	except Exception:
 		pass
 
-def _get_processed(query_text: str):
-	"""Executa processamento inteligente com fallback simples."""
-	processed = {
-		'original_query': query_text,
-		'search_terms': query_text,
+def _normalize_query_input(query_input: Any) -> dict:
+	"""Normaliza entrada (string ou dict) para estrutura unificada sem rodar IA."""
+	if isinstance(query_input, dict):
+		q = dict(query_input)
+		orig = (q.get('original_query') or q.get('raw_query') or q.get('query') or q.get('search_terms') or '')
+		st = (q.get('search_terms') or orig or '')
+		neg = q.get('negative_terms') or q.get('negatives') or ''
+		sqlc = q.get('sql_conditions') or []
+		if not isinstance(sqlc, list):
+			sqlc = []
+		return {
+			'original_query': orig,
+			'search_terms': st,
+			'negative_terms': neg,
+			'sql_conditions': sqlc,
+			'explanation': q.get('explanation') or 'Pré-processado externo',
+			'embeddings': q.get('embeddings', True)
+		}
+	text = str(query_input or '').strip()
+	return {
+		'original_query': text,
+		'search_terms': text,
+		'negative_terms': '',
 		'sql_conditions': [],
-		'explanation': 'Processamento não aplicado'
+		'explanation': 'Entrada simples (sem pré-processamento)',
+		'embeddings': bool(text)
 	}
-	try:
-		if ENABLE_INTELLIGENT_PROCESSING:
-			from gvg_preprocessing import SearchQueryProcessor
-			processor = SearchQueryProcessor()
-			candidate = processor.process_query(query_text)
-			if isinstance(candidate, dict):
-				aliases = {
-					'original_query': ['original_query','raw_query','query_original'],
-					'search_terms': ['search_terms','terms','termos_busca'],
-					'sql_conditions': ['sql_conditions','conditions','condicoes_sql'],
-					'negative_terms': ['negative_terms','negatives','termos_negativos'],
-					'explanation': ['explanation','explicacao','explain']
-				}
-				for target, keys in aliases.items():
-					for k in keys:
-						if k in candidate and candidate[k] is not None:
-							processed[target] = candidate[k]
-							break
-				if not isinstance(processed.get('sql_conditions'), list):
-					processed['sql_conditions'] = []
-				if not processed.get('search_terms'):
-					processed['search_terms'] = query_text
-				if not processed.get('original_query'):
-					processed['original_query'] = query_text
-				if not processed.get('explanation'):
-					processed['explanation'] = 'Processamento aplicado'
-			else:
-				pass
-	except Exception as e:
-		pass
-	return processed
 
-def _ensure_vector_cast(param_placeholder: str = "%s"):
-	"""Retorna expressão de cast para vetor (compat pgvector)."""
-	return f"{param_placeholder}::vector"
 
 # --------------------------------------------------------------
 # Sanitização de condições SQL retornadas pelo Assistant
@@ -389,15 +323,9 @@ def semantic_search(query_text,
 	Agora utiliza `build_semantic_select` para evitar repetição de lista de colunas.
 	"""
 	try:
-		processed = _get_processed(query_text) if (intelligent_mode and ENABLE_INTELLIGENT_PROCESSING) else {
-			'original_query': query_text,
-			'search_terms': query_text,
-			'negative_terms': '',
-			'sql_conditions': [],
-			'explanation': 'Processamento desativado'
-		}
+		processed = _normalize_query_input(query_text)
 		negative_terms = processed.get('negative_terms') or ''
-		search_terms = processed.get('search_terms') or query_text
+		search_terms = processed.get('search_terms') or processed.get('original_query') or ''
 		embedding_input = f"{search_terms} -- {negative_terms}".strip() if negative_terms else search_terms
 		sql_conditions = processed.get('sql_conditions', [])
 		sql_conditions_sanitized = _sanitize_sql_conditions(sql_conditions, context='semantic')
@@ -508,10 +436,10 @@ def semantic_search(query_text,
 			similarity = float(record.get('similarity', 0.0))
 			details = {k: v for k, v in record.items() if k in core_keys}
 			details['similarity'] = similarity
-			if intelligent_mode:
+			if intelligent_mode and ENABLE_INTELLIGENT_PROCESSING:
 				details['intelligent_processing'] = {
-					'original_query': processed.get('original_query', query_text),
-					'processed_terms': processed.get('search_terms', query_text),
+					'original_query': processed.get('original_query'),
+					'processed_terms': processed.get('search_terms'),
 					'applied_conditions': len(sql_conditions),
 					'explanation': processed.get('explanation','')
 				}
@@ -531,7 +459,7 @@ def semantic_search(query_text,
 				'sort_mode': 'Similaridade'
 			}
 			try:
-				filtered, _filter_info = apply_relevance_filter(results, query_text, meta)
+				filtered, _filter_info = apply_relevance_filter(results, processed.get('original_query'), meta)
 				if filtered:
 					results = filtered
 			except Exception as rf_err:
@@ -557,16 +485,7 @@ def keyword_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 	baseada nos ranks retornados pelo PostgreSQL.
 	"""
 	try:
-		if intelligent_mode and ENABLE_INTELLIGENT_PROCESSING:
-			processed = _get_processed(query_text)
-		else:
-			processed = {
-				'original_query': query_text,
-				'search_terms': query_text,
-				'negative_terms': '',
-				'sql_conditions': [],
-				'explanation': 'Processamento desativado'
-			}
+		processed = _normalize_query_input(query_text)
 		search_terms = (processed.get('search_terms') or query_text).strip()
 		negative_terms = (processed.get('negative_terms') or '').strip()
 		sql_conditions = processed.get('sql_conditions', [])
@@ -700,16 +619,7 @@ def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 	"""
 	try:
 		sql_debug = SQL_DEBUG
-		if intelligent_mode and ENABLE_INTELLIGENT_PROCESSING:
-			processed = _get_processed(query_text)
-		else:
-			processed = {
-				'original_query': query_text,
-				'search_terms': query_text,
-				'negative_terms': '',
-				'sql_conditions': [],
-				'explanation': 'Processamento desativado'
-			}
+		processed = _normalize_query_input(query_text)
 		negative_terms = processed.get('negative_terms') or ''
 		search_terms = processed.get('search_terms') or query_text
 		embedding_input = f"{search_terms} -- {negative_terms}".strip() if negative_terms else search_terms

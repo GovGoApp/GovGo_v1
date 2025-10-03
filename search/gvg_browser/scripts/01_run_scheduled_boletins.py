@@ -33,6 +33,7 @@ try:
         list_active_schedules_all,
         record_boletim_results,
         touch_last_run,
+        update_schedule_preproc_output,
     )
     from search.gvg_browser.gvg_debug import debug_log as dbg
     from search.gvg_browser.gvg_preprocessing import SearchQueryProcessor, ENABLE_SEARCH_V2
@@ -49,6 +50,7 @@ except Exception:
         list_active_schedules_all,
         record_boletim_results,
         touch_last_run,
+        update_schedule_preproc_output,
     )
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
     from gvg_debug import debug_log as dbg
@@ -379,18 +381,54 @@ def run_once(now: Optional[datetime] = None) -> None:
         # Log dos parâmetros que serão enviados para a busca
     # (Parâmetros omitidos do log para reduzir ruído)
 
-        # Executa busca respeitando o snapshot (pipeline GSB)
+        # Executa busca respeitando snapshot, sem IA por padrão (usa cache de pré-processamento, se houver)
         try:
             filters_dict = s.get('filters') if isinstance(s.get('filters'), dict) else {}
             filters_sql = _filters_to_sql_conditions(filters_dict)
-            processor = SearchQueryProcessor()
-            if ENABLE_SEARCH_V2:
-                info = processor.process_query_v2(query or '', filters_sql)
-            else:
-                info = processor.process_query(query or '')
 
-            base_terms = (info.get('search_terms') or query or '').strip()
-            where_sql = info.get('sql_conditions') or filters_sql
+            # Ler EXACTO preproc_output do BD, se existir
+            preproc = s.get('preproc_output') if isinstance(s.get('preproc_output'), dict) else None
+            info = None
+            if preproc and isinstance(preproc, dict):
+                info = preproc
+                where_sql = info.get('sql_conditions') or []
+                base_terms = (info.get('search_terms') or query or '').strip()
+                try:
+                    dbg('PRE', f"[BOLETIM] cache HIT user_schedule.preproc_output sid={sid} terms='{base_terms[:60]}' sql_conds={len(where_sql)}")
+                except Exception:
+                    pass
+            else:
+                # Sempre processar se não houver cache (alinha ao GSB)
+                try:
+                    dbg('PRE', f"[BOLETIM] cache MISS sid={sid} (gerando preproc_output)")
+                except Exception:
+                    pass
+                processor = SearchQueryProcessor()
+                try:
+                    info = processor.process_query_v2(query or '', filters_sql) if ENABLE_SEARCH_V2 else processor.process_query(query or '')
+                except Exception:
+                    info = {'search_terms': query or '', 'negative_terms': '', 'sql_conditions': filters_sql, 'embeddings': bool((query or '').strip())}
+                if not isinstance(info, dict):
+                    info = {'search_terms': query or '', 'negative_terms': '', 'sql_conditions': filters_sql, 'embeddings': bool((query or '').strip())}
+                # Salvar EXACTAMENTE output
+                try:
+                    update_schedule_preproc_output(sid, info)
+                    try:
+                        dbg('PRE', f"[BOLETIM] assistant OUTPUT+SAVE sid={sid} terms='{(info.get('search_terms') or '')[:60]}' sql_conds={len(info.get('sql_conditions') or [])}")
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                where_sql = info.get('sql_conditions') or filters_sql
+                base_terms = (info.get('search_terms') or query or '').strip()
+
+            # Negative terms (usados para eventual embedding / futura extensão) - manter referência
+            negative_terms = ''
+            try:
+                negative_terms = (info.get('negative_terms') or '') if isinstance(info, dict) else ''
+            except Exception:
+                negative_terms = ''
+
             # Alinhar relevância
             try:
                 set_relevance_filter_level(relevance_level)
@@ -398,20 +436,32 @@ def run_once(now: Optional[datetime] = None) -> None:
                 pass
 
             results: List[Dict[str, Any]] = []
+            # Monta objeto unificado de query para o core (evita reprocessamento interno)
+            query_obj = {
+                'original_query': query,
+                'search_terms': (info.get('search_terms') if isinstance(info, dict) else query) or query,
+                'negative_terms': (info.get('negative_terms') if isinstance(info, dict) else '') or '',
+                'sql_conditions': (info.get('sql_conditions') if isinstance(info, dict) else where_sql) or [],
+                'embeddings': (info.get('embeddings') if isinstance(info, dict) and info.get('embeddings') is not None else True),
+                'explanation': (info.get('explanation') if isinstance(info, dict) else 'Pré-processado boletim') or 'Pré-processado boletim'
+            }
+
             if search_approach == 1:
                 if search_type == 1:
-                    results, _ = semantic_search(query, limit=max_results, filter_expired=filter_expired, use_negation=negation_emb, where_sql=where_sql)
+                    results, _ = semantic_search(query_obj, limit=max_results, filter_expired=filter_expired, use_negation=negation_emb)
                 elif search_type == 2:
-                    results, _ = keyword_search(query, limit=max_results, filter_expired=filter_expired, where_sql=where_sql)
+                    results, _ = keyword_search(query_obj, limit=max_results, filter_expired=filter_expired)
                 else:
-                    results, _ = hybrid_search(query, limit=max_results, filter_expired=filter_expired, use_negation=negation_emb, where_sql=where_sql)
+                    results, _ = hybrid_search(query_obj, limit=max_results, filter_expired=filter_expired, use_negation=negation_emb)
             elif search_approach == 2:
                 cats = get_top_categories_for_query(query_text=base_terms or query, top_n=top_categories_count, use_negation=False, search_type=search_type, console=None)
                 if cats:
+                    # correspondence_search ainda recebe string; where_sql já aplicado via preproc -> passamos condições também
                     results, _, _ = correspondence_search(query_text=query, top_categories=cats, limit=max_results, filter_expired=filter_expired, console=None, where_sql=where_sql)
             else:
                 cats = get_top_categories_for_query(query_text=base_terms or query, top_n=top_categories_count, use_negation=False, search_type=search_type, console=None)
                 if cats:
+                    # category_filtered_search aceita string; passa where_sql com filtros
                     results, _, _ = category_filtered_search(query_text=query, search_type=search_type, top_categories=cats, limit=max_results, filter_expired=filter_expired, use_negation=negation_emb, console=None, where_sql=where_sql)
 
             # Ordenação e rank
@@ -478,6 +528,12 @@ def run_once(now: Optional[datetime] = None) -> None:
         run_token = uuid.uuid4().hex
         record_boletim_results(sid, uid, run_token, now, rows)
         log_line(f"Boletim {sid}: resultados gravados = {len(rows)}")
+        # Usage metric boletim_run
+        try:
+            from gvg_usage import record_usage  # type: ignore
+            record_usage(str(uid), 'boletim_run', ref_type='boletim', ref_id=str(sid), meta={'results': len(rows)})
+        except Exception:
+            pass
 
         # marcar last_run
         touch_last_run(sid, now)

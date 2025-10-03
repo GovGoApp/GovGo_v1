@@ -79,7 +79,7 @@ def _extract_assistant_text_from_messages(client, thread_id: str, limit: int = 1
 	except Exception:
 		return ""
 
-def ai_assistant_run_text(assistant_id: str, content: str, context_key: str = 'default', timeout: int = 60) -> str:
+def ai_assistant_run_text(assistant_id: str, content: str, context_key: str = 'default', timeout: int = 60, feature: Optional[str] = None) -> str:
 	"""Executa um Assistant com entrada de texto e retorna o texto do assistant.
 
 	Instrumenta tokens (se disponíveis) e tempo de execução.
@@ -118,14 +118,14 @@ def ai_assistant_run_text(assistant_id: str, content: str, context_key: str = 'd
 			pass
 		out = _extract_assistant_text_from_messages(client, thread.id)
 		elapsed_ms = int((time.time() - t0) * 1000)
-		dbg('IA', f"assistant.run context={context_key} tokens_in={tokens_in} tokens_out={tokens_out} total={total_tokens} time_ms={elapsed_ms}")
+		dbg('IA', f"assistant.run func=ai_assistant_run_text feat={feature or ''} context={context_key} tokens_in={tokens_in} tokens_out={tokens_out} total={total_tokens} time_ms={elapsed_ms} in_len={len(content) if isinstance(content,str) else 'N/A'} out_len={len(out) if isinstance(out,str) else 'N/A'}")
 		return out
 	except Exception as e:
 		elapsed_ms = int((time.time() - t0) * 1000)
-		dbg('ASSISTANT', f"assistant.error context={context_key} err={e} time_ms={elapsed_ms}")
+		dbg('ASSISTANT', f"assistant.error func=ai_assistant_run_text feat={feature or ''} context={context_key} err={e} time_ms={elapsed_ms}")
 		return ""
 
-def ai_assistant_run_with_files(assistant_id: str, file_paths: List[str], user_message: str, timeout: int = 180) -> str:
+def ai_assistant_run_with_files(assistant_id: str, file_paths: List[str], user_message: str, timeout: int = 180, feature: Optional[str] = None) -> str:
 	"""Executa Assistant anexando arquivos (purpose='assistants') e retorna texto.
 
 	Instrumenta tokens (se disponíveis) e tempo de execução.
@@ -172,14 +172,14 @@ def ai_assistant_run_with_files(assistant_id: str, file_paths: List[str], user_m
 			pass
 		out = _extract_assistant_text_from_messages(client, thread.id)
 		elapsed_ms = int((time.time() - t0) * 1000)
-		dbg('IA', f"assistant.files tokens_in={tokens_in} tokens_out={tokens_out} total={total_tokens} time_ms={elapsed_ms}")
+		dbg('IA', f"assistant.files func=ai_assistant_run_with_files feat={feature or ''} tokens_in={tokens_in} tokens_out={tokens_out} total={total_tokens} time_ms={elapsed_ms} files={len(file_paths or [])} msg_len={len(user_message) if isinstance(user_message,str) else 'N/A'} out_len={len(out) if isinstance(out,str) else 'N/A'}")
 		return out
 	except Exception as e:
 		elapsed_ms = int((time.time() - t0) * 1000)
-		dbg('ASSISTANT', f"assistant.files.error err={e} time_ms={elapsed_ms}")
+		dbg('ASSISTANT', f"assistant.files.error func=ai_assistant_run_with_files feat={feature or ''} err={e} time_ms={elapsed_ms}")
 		return ""
 
-def ai_chat_complete(model: str, messages: List[Dict[str, Any]], max_tokens: Optional[int] = None, temperature: float = 0.2) -> str:
+def ai_chat_complete(model: str, messages: List[Dict[str, Any]], max_tokens: Optional[int] = None, temperature: float = 0.2, feature: Optional[str] = None) -> str:
 	"""Wrapper para chat.completions com métricas de tokens/tempo."""
 	client = ai_get_client()
 	if client is None:
@@ -195,15 +195,15 @@ def ai_chat_complete(model: str, messages: List[Dict[str, Any]], max_tokens: Opt
 			tt = getattr(usage, 'total_tokens', None)
 		except Exception:
 			pt = ct = tt = None
-		dbg('IA', f"chat.complete model={model} prompt_t={pt} completion_t={ct} total={tt} time_ms={elapsed_ms}")
+		dbg('IA', f"chat.complete func=ai_chat_complete feat={feature or ''} model={model} prompt_t={pt} completion_t={ct} total={tt} time_ms={elapsed_ms}")
 		return (resp.choices[0].message.content or '').strip()
 	except Exception as e:
 		elapsed_ms = int((time.time() - t0) * 1000)
-		dbg('ASSISTANT', f"chat.error model={model} err={e} time_ms={elapsed_ms}")
+		dbg('ASSISTANT', f"chat.error func=ai_chat_complete feat={feature or ''} model={model} err={e} time_ms={elapsed_ms}")
 		return ""
 
 
-def get_embedding(text, model=EMBEDDING_MODEL):
+def get_embedding(text, model=EMBEDDING_MODEL, feature: Optional[str] = None):
 	"""Gera embedding para texto usando OpenAI e retorna lista (ou None em erro).
 
 	Instrumenta tempo e tokens (se disponíveis no SDK).
@@ -221,11 +221,11 @@ def get_embedding(text, model=EMBEDDING_MODEL):
 			tt = getattr(usage, 'total_tokens', None) if usage else None
 		except Exception:
 			tt = None
-		dbg('IA', f"embeddings model={model} total_tokens={tt} time_ms={elapsed_ms}")
+		dbg('IA', f"embeddings func=get_embedding feat={feature or ''} model={model} total_tokens={tt} time_ms={elapsed_ms} text_len={len(text) if isinstance(text,str) else 'N/A'} emb_len={len(response.data[0].embedding) if getattr(response,'data',None) else 'N/A'}")
 		return response.data[0].embedding
 	except Exception as e:
 		elapsed_ms = int((time.time() - t0) * 1000)
-		dbg('ASSISTANT', f"embedding.error model={model} err={e} time_ms={elapsed_ms}")
+		dbg('ASSISTANT', f"embedding.error func=get_embedding feat={feature or ''} model={model} err={e} time_ms={elapsed_ms}")
 		return None
 
 def _normalize(vec: np.ndarray):
@@ -234,7 +234,7 @@ def _normalize(vec: np.ndarray):
 		return vec
 	return vec / norm
 
-def get_negation_embedding(query: str, model: str = EMBEDDING_MODEL, weight: float = None):
+def get_negation_embedding(query: str, model: str = EMBEDDING_MODEL, weight: float = None, feature: Optional[str] = None):
 	"""
 	Gera embedding combinado com suporte a negação.
 
@@ -267,7 +267,7 @@ def get_negation_embedding(query: str, model: str = EMBEDDING_MODEL, weight: flo
 			neg_text = ''
 
 		# Embedding positivo
-		pos_emb = get_embedding(pos_text, model=model)
+		pos_emb = get_embedding(pos_text, model=model, feature=feature)
 		if pos_emb is None:
 			return None
 		pos_emb = np.array(pos_emb, dtype=np.float32)
@@ -276,7 +276,7 @@ def get_negation_embedding(query: str, model: str = EMBEDDING_MODEL, weight: flo
 			return pos_emb
 
 		# Embedding negativo
-		neg_emb = get_embedding(neg_text, model=model)
+		neg_emb = get_embedding(neg_text, model=model, feature=feature)
 		if neg_emb is None:
 			# Falhou negativo -> usar somente positivo
 			return pos_emb
@@ -285,10 +285,10 @@ def get_negation_embedding(query: str, model: str = EMBEDDING_MODEL, weight: flo
 		combined = _normalize(combined)
 		return combined
 	except Exception as e:
-		dbg('ASSISTANT', f"Erro get_negation_embedding: {e}")
+		dbg('ASSISTANT', f"Erro get_negation_embedding feat={feature or ''}: {e}")
 		return None
 
-def generate_keywords(text, max_keywords=10, max_chars=200):
+def generate_keywords(text, max_keywords=10, max_chars=200, feature: Optional[str] = None):
 	"""
 	Gera palavras-chave inteligentes para um texto usando OpenAI
     
@@ -328,6 +328,7 @@ def generate_keywords(text, max_keywords=10, max_chars=200):
 			messages=[{"role": "user", "content": prompt}],
 			max_tokens=150,
 			temperature=0.3,
+			feature=feature or 'generate_keywords',
 		)
         
 		# Processar resposta - separar por vírgula e limpar
@@ -336,11 +337,9 @@ def generate_keywords(text, max_keywords=10, max_chars=200):
 			keyword = keyword.strip()
 			if keyword and len(keyword) > 2:  # Mínimo 3 caracteres
 				keywords.append(keyword)
-        
 		return keywords[:max_keywords]
-        
 	except Exception as e:
-		dbg('ASSISTANT', f"Erro ao gerar palavras-chave: {e}")
+		dbg('ASSISTANT', f"Erro ao gerar palavras-chave feat={feature or ''}: {e}")
 		return []
 
 def calculate_confidence(scores):
@@ -369,7 +368,7 @@ def calculate_confidence(scores):
 	except (ValueError, TypeError):
 		return 0.0
 
-def generate_contratacao_label(descricao: str, timeout: float = 6.0) -> str:
+def generate_contratacao_label(descricao: str, timeout: float = 6.0, feature: Optional[str] = None) -> str:
 	"""Gera rótulo curto para contratação.
 
 	Agora a formatação é delegada ao Assistant (prompt atualizado). Mantemos:
@@ -386,7 +385,7 @@ def generate_contratacao_label(descricao: str, timeout: float = 6.0) -> str:
 	# 1) Assistant API via wrapper
 	if assistant_id:
 		try:
-			label_raw = ai_assistant_run_text(assistant_id, desc, context_key='label', timeout=int(timeout))
+			label_raw = ai_assistant_run_text(assistant_id, desc, context_key='label', timeout=int(timeout), feature=feature or 'label')
 		except Exception as e:
 			dbg('ASSISTANT', f"Assistant fallback: {e}")
 	# 2) Chat fallback
@@ -400,6 +399,7 @@ def generate_contratacao_label(descricao: str, timeout: float = 6.0) -> str:
 				messages=[{"role": "user", "content": prompt}],
 				max_tokens=20,
 				temperature=0.2,
+				feature=feature or 'label_fallback',
 			)
 		except Exception as e:
 			dbg('ASSISTANT', f"Chat fallback: {e}")

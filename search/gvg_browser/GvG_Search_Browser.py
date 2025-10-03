@@ -65,6 +65,7 @@ from gvg_user import (
     remove_bookmark,
     get_current_user,
     fetch_user_results_for_prompt_text,
+    get_prompt_preproc_output,
 )
 from gvg_database import get_user_resumo, upsert_user_resumo, fetch_documentos, db_fetch_all
 
@@ -2797,20 +2798,44 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
     # Pré-processar consulta (V1 ou V2 conforme flag) e capturar filtros UI
     base_terms = query
     filter_list = _build_sql_conditions_from_ui_filters(ui_filters) if ENABLE_SEARCH_V2 else []
+    info = None
     try:
-        processor = SearchQueryProcessor()
+        # 1) Se V2 ativo, tente reutilizar preproc_output salvo (evita custo de IA)
         if ENABLE_SEARCH_V2:
-            # Debug entrada do pré-processamento [FILTER]
-            info = processor.process_query_v2(query or '', filter_list)
-        else:
-            info = processor.process_query(query or '')
+            try:
+                cached = get_prompt_preproc_output((query or '').strip(), (ui_filters or {}))
+            except Exception:
+                cached = None
+            if isinstance(cached, dict) and (cached.get('search_terms') or cached.get('sql_conditions') is not None):
+                info = cached
+                try:
+                    dbg('PRE', f"cache HIT user_prompts.preproc_output terms='{(info.get('search_terms') or '')[:60]}' sql_conds={len(info.get('sql_conditions') or [])}")
+                except Exception:
+                    pass
+                if (info.get('search_terms') or '').strip():
+                    base_terms = info['search_terms']
+            else:
+                try:
+                    dbg('PRE', 'cache MISS user_prompts.preproc_output')
+                except Exception:
+                    pass
+        # 2) Caso não haja cache, processe com o assistant normalmente
+        if info is None:
+            processor = SearchQueryProcessor()
+            if ENABLE_SEARCH_V2:
+                info = processor.process_query_v2(query or '', filter_list)
+            else:
+                info = processor.process_query(query or '')
+            if (info.get('search_terms') or '').strip():
+                base_terms = info['search_terms']
+            try:
+                dbg('PRE', f"assistant OUTPUT terms='{(info.get('search_terms') or '')[:60]}' sql_conds={len(info.get('sql_conditions') or [])}")
+            except Exception:
+                pass
         try:
             progress_set(10, 'Pré-processando consulta')
         except Exception:
             pass
-        # Debug saída do pré-processamento [FILTER]
-        if (info.get('search_terms') or '').strip():
-            base_terms = info['search_terms']
     except Exception:
         info = {'search_terms': query or '', 'negative_terms': '', 'sql_conditions': [], 'embeddings': bool((query or '').strip())}
 
@@ -2978,7 +3003,13 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
                 filter_expired=filter_expired,
                 embedding=prompt_emb,
                 filters=(ui_filters or {}) if ENABLE_SEARCH_V2 else None,
+                preproc_output=(info if (ENABLE_SEARCH_V2 and isinstance(info, dict)) else None),
             )
+            try:
+                if ENABLE_SEARCH_V2 and isinstance(info, dict):
+                    dbg('PRE', f"saved user_prompts.preproc_output ok terms='{(info.get('search_terms') or '')[:60]}' sql_conds={len(info.get('sql_conditions') or [])}")
+            except Exception:
+                pass
             if prompt_id:
                 try:
                     save_user_results(prompt_id, results or [])
@@ -4929,6 +4960,14 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                 )
             ])
 
+            # Usage metric: summary_request (uma vez por abertura sem cache/BD)
+            try:
+                if uid and pid and (str(pid) not in updated_cache or not updated_cache.get(str(pid), {}).get('summary')):
+                    from gvg_usage import record_usage  # type: ignore
+                    record_usage(uid, 'summary_request', ref_type='contratacao', ref_id=str(pid))
+            except Exception:
+                pass
+
             if DOCUMENTS_AVAILABLE:
                 try:
                     if summarize_document:
@@ -4962,6 +5001,13 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                     upsert_user_resumo(uid, pid, summary_text)
                 except Exception:
                     pass
+            # Usage metric: summary_success (quando gerar texto não-vazio)
+            try:
+                if uid and pid and isinstance(summary_text, str) and summary_text.strip():
+                    from gvg_usage import record_usage  # type: ignore
+                    record_usage(uid, 'summary_success', ref_type='contratacao', ref_id=str(pid), meta={'chars': len(summary_text)})
+            except Exception:
+                pass
             # Substitui o spinner pelo conteúdo final (resumo)
             children_out[-1] = [html.Div(dcc.Markdown(children=summary_text, className='markdown-summary'), style=styles['details_content_inner'])]
         else:
@@ -5326,13 +5372,8 @@ def replay_from_boletim(n_clicks_list, boletins):
         # Alguns ambientes retornam None na criação; tratar como 0
         clicks = int(trig_val) if trig_val is not None else 0
         if clicks <= 0:
-            try:
-                dbg('BOLETIM', f"[replay_from_boletim] ignorado: n_clicks=0 para id={boletim_id}")
-            except Exception:
-                pass
             raise PreventUpdate
     except Exception:
-        # Se não conseguirmos ler o n_clicks com segurança, não executar
         raise PreventUpdate
     if not boletim_id:
         raise PreventUpdate

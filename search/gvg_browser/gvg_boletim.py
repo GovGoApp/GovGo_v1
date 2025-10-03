@@ -16,17 +16,17 @@ import time
 try:
     from search.gvg_browser.gvg_user import get_current_user  # type: ignore
     from search.gvg_browser.gvg_database import (
-        db_fetch_all, db_fetch_one, db_execute, db_execute_many
+        db_fetch_all, db_fetch_one, db_execute, db_execute_many, db_execute_returning_one
     )  # type: ignore
     from search.gvg_browser.gvg_debug import debug_log as dbg  # type: ignore
 except Exception:
     try:
         from .gvg_user import get_current_user  # type: ignore
-        from .gvg_database import db_fetch_all, db_fetch_one, db_execute, db_execute_many  # type: ignore
+        from .gvg_database import db_fetch_all, db_fetch_one, db_execute, db_execute_many, db_execute_returning_one  # type: ignore
         from .gvg_debug import debug_log as dbg  # type: ignore
     except Exception:
         from gvg_user import get_current_user  # type: ignore
-        from gvg_database import db_fetch_all, db_fetch_one, db_execute, db_execute_many  # type: ignore
+        from gvg_database import db_fetch_all, db_fetch_one, db_execute, db_execute_many, db_execute_returning_one  # type: ignore
         from gvg_debug import debug_log as dbg  # type: ignore
 
 
@@ -151,55 +151,88 @@ def create_user_boletim(
     user = get_current_user(); uid = user.get('uid')
     if not uid:
         return None
-    # Tenta inserir em user_schedule (com filters)
-    row = db_fetch_one(
-        (
-            """
-            INSERT INTO public.user_schedule
-                (user_id, query_text, schedule_type, schedule_detail, channels, config_snapshot, filters)
-            VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb)
-            RETURNING id
-            """
-        ),
-        (uid, query_text, schedule_type, json.dumps(schedule_detail), json.dumps(channels), json.dumps(config_snapshot), json.dumps(filters or {})),
-        ctx="BOLETIM.create_user_boletim:insert_with_filters",
-    )
-    if row and (isinstance(row, (list, tuple)) and row[0] is not None):
-        # Invalida cache do usuário
-        _cache_invalidate_prefix(f"BOLETIM.fetch_user_boletins:{uid}")
-        return int(row[0])
-    # Sem filters
-    row2 = db_fetch_one(
-        (
-            """
-            INSERT INTO public.user_schedule
-                (user_id, query_text, schedule_type, schedule_detail, channels, config_snapshot)
-            VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb)
-            RETURNING id
-            """
-        ),
-        (uid, query_text, schedule_type, json.dumps(schedule_detail), json.dumps(channels), json.dumps(config_snapshot)),
-        ctx="BOLETIM.create_user_boletim:insert_without_filters",
-    )
-    if row2 and (isinstance(row2, (list, tuple)) and row2[0] is not None):
-        _cache_invalidate_prefix(f"BOLETIM.fetch_user_boletins:{uid}")
-        return int(row2[0])
-    # Fallback para tabela legada
-    row3 = db_fetch_one(
-        (
-            """
-            INSERT INTO public.user_boletins
-                (user_id, query_text, schedule_type, schedule_detail, channels, config_snapshot)
-            VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb)
-            RETURNING id
-            """
-        ),
-        (uid, query_text, schedule_type, json.dumps(schedule_detail), json.dumps(channels), json.dumps(config_snapshot)),
-        ctx="BOLETIM.create_user_boletim:legacy_insert",
-    )
-    pid = int(row3[0]) if row3 and isinstance(row3, (list, tuple)) and row3[0] is not None else None
+    # Descobrir colunas existentes em user_schedule de forma segura
+    try:
+        cols_rows = db_fetch_all(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='user_schedule'",
+            ctx="BOLETIM.create_user_boletim:describe_user_schedule"
+        ) or []
+        cols_existing = { (r[0] if isinstance(r,(list,tuple)) else r.get('column_name')) for r in cols_rows }
+    except Exception:
+        cols_existing = set()
+    want = [
+        ('user_id', uid, None),
+        ('query_text', query_text, None),
+        ('schedule_type', schedule_type, None),
+        ('schedule_detail', json.dumps(schedule_detail), 'jsonb'),
+        ('channels', json.dumps(channels), 'jsonb'),
+        ('config_snapshot', json.dumps(config_snapshot), 'jsonb'),
+    ]
+    if 'filters' in cols_existing and filters is not None:
+        want.append(('filters', json.dumps(filters or {}), 'jsonb'))
+    insert_cols = []
+    placeholders = []
+    values = []
+    for col, val, typ in want:
+        if not cols_existing or col in cols_existing:
+            insert_cols.append(col)
+            if typ == 'jsonb':
+                placeholders.append('%s::jsonb')
+            else:
+                placeholders.append('%s')
+            values.append(val)
+    pid: Optional[int] = None
+    if insert_cols:
+        sql = f"INSERT INTO public.user_schedule ({', '.join(insert_cols)}) VALUES ({', '.join(placeholders)}) RETURNING id"
+        try:
+            row = db_execute_returning_one(sql, tuple(values), ctx="BOLETIM.create_user_boletim:dynamic_insert")
+            if row and isinstance(row, (list, tuple)) and row[0] is not None:
+                pid = int(row[0])
+                # Verificação imediata de persistência (SELECT by id)
+                try:
+                    chk = db_fetch_one("SELECT id FROM public.user_schedule WHERE id=%s", (pid,), ctx="BOLETIM.create_user_boletim:verify")
+                    if not (chk and isinstance(chk,(list,tuple)) and chk[0] == pid):
+                        dbg('BOLETIM', f"WARN create_user_boletim verificação falhou id={pid} (não encontrado imediatamente)")
+                except Exception as _verr:
+                    try:
+                        dbg('BOLETIM', f"WARN create_user_boletim verificação erro id={pid} err={_verr}")
+                    except Exception:
+                        pass
+        except Exception as e:
+            try:
+                dbg('BOLETIM', f"create_user_boletim dynamic_insert erro: {e}")
+            except Exception:
+                pass
+    # Fallback legado se falhou
+    if pid is None:
+        try:
+            row3 = db_execute_returning_one(
+                (
+                    """
+                    INSERT INTO public.user_boletins
+                        (user_id, query_text, schedule_type, schedule_detail, channels, config_snapshot)
+                    VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb)
+                    RETURNING id
+                    """
+                ),
+                (uid, query_text, schedule_type, json.dumps(schedule_detail), json.dumps(channels), json.dumps(config_snapshot)),
+                ctx="BOLETIM.create_user_boletim:legacy_insert",
+            )
+            if row3 and isinstance(row3, (list, tuple)) and row3[0] is not None:
+                pid = int(row3[0])
+        except Exception as e:
+            try:
+                dbg('BOLETIM', f"create_user_boletim legacy_insert erro: {e}")
+            except Exception:
+                pass
     if pid:
         _cache_invalidate_prefix(f"BOLETIM.fetch_user_boletins:{uid}")
+        # Usage metric boletim_create
+        try:
+            from gvg_usage import record_usage  # type: ignore
+            record_usage(str(uid), 'boletim_create', ref_type='boletim', ref_id=str(pid))
+        except Exception:
+            pass
     return pid
 
 
@@ -237,7 +270,7 @@ def list_active_schedules_all(now_dt: datetime) -> List[Dict[str, Any]]:
     rows = db_fetch_all(
         (
             """
-            SELECT id, user_id, query_text, schedule_type, schedule_detail, channels, config_snapshot, filters, last_run_at
+            SELECT id, user_id, query_text, schedule_type, schedule_detail, channels, config_snapshot, filters, preproc_output, last_run_at
               FROM public.user_schedule
              WHERE active = true
             """
@@ -249,7 +282,7 @@ def list_active_schedules_all(now_dt: datetime) -> List[Dict[str, Any]]:
         rows = db_fetch_all(
             (
                 """
-                SELECT id, user_id, query_text, schedule_type, schedule_detail, channels, config_snapshot, last_run_at
+                SELECT id, user_id, query_text, schedule_type, schedule_detail, channels, config_snapshot, preproc_output, last_run_at
                   FROM public.user_schedule
                  WHERE active = true
                 """
@@ -275,9 +308,9 @@ def list_active_schedules_all(now_dt: datetime) -> List[Dict[str, Any]]:
     dow = dow_map[now_dt.weekday()]
     for r in (rows or []):
         if have_filters:
-            (sid, uid, q, stype, sdetail, channels, snapshot, filters, last_run_at) = r
+            (sid, uid, q, stype, sdetail, channels, snapshot, filters, preproc_output, last_run_at) = r
         else:
-            (sid, uid, q, stype, sdetail, channels, snapshot, last_run_at) = r
+            (sid, uid, q, stype, sdetail, channels, snapshot, preproc_output, last_run_at) = r
             filters = None
         stype = (stype or '').upper()
         try:
@@ -289,6 +322,11 @@ def list_active_schedules_all(now_dt: datetime) -> List[Dict[str, Any]]:
                 filters = _json.loads(filters)
         except Exception:
             filters = filters if isinstance(filters, dict) else {}
+        try:
+            if preproc_output and isinstance(preproc_output, str):
+                preproc_output = _json.loads(preproc_output)
+        except Exception:
+            preproc_output = preproc_output if isinstance(preproc_output, dict) else None
         cfg_days = detail.get('days') if isinstance(detail, dict) else None
         due = False
         if stype in ('DIARIO', 'MULTIDIARIO'):
@@ -308,6 +346,7 @@ def list_active_schedules_all(now_dt: datetime) -> List[Dict[str, Any]]:
             'channels': channels or [],
             'config_snapshot': snapshot or {},
             'filters': filters or {},
+            'preproc_output': preproc_output or None,
             'last_run_at': last_run_at,
         })
     return items
@@ -376,7 +415,8 @@ def touch_last_run(boletim_id: int, dt: datetime) -> bool:
 
 __all__ = [
     'fetch_user_boletins', 'create_user_boletim', 'deactivate_user_boletim',
-    'list_active_schedules_all', 'record_boletim_results', 'fetch_unsent_results_for_boletim', 'mark_results_sent', 'touch_last_run'
+    'list_active_schedules_all', 'record_boletim_results', 'fetch_unsent_results_for_boletim', 'mark_results_sent', 'touch_last_run',
+    'update_schedule_preproc_output'
 ]
 
 # --- Helpers adicionais para envio ---
@@ -401,4 +441,17 @@ def set_last_sent(boletim_id: int, dt: datetime) -> bool:
         except Exception:
             pass
         return True
+
+
+def update_schedule_preproc_output(boletim_id: int, preproc_output: Dict[str, Any]) -> bool:
+    """Atualiza o campo JSONB preproc_output do user_schedule com EXACT o assistant.output."""
+    try:
+        db_execute(
+            "UPDATE public.user_schedule SET preproc_output = %s::jsonb, updated_at = now() WHERE id = %s",
+            (json.dumps(preproc_output or {}), boletim_id),
+            ctx="BOLETIM.update_schedule_preproc_output",
+        )
+        return True
+    except Exception:
+        return False
 

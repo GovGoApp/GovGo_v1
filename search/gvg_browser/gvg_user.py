@@ -206,6 +206,7 @@ def add_prompt(
     filter_expired: Optional[bool] = None,
     embedding: Optional[List[float]] = None,
     filters: Optional[Dict[str, Any]] = None,
+    preproc_output: Optional[Dict[str, Any]] = None,
 ) -> Optional[int]:
     """Adiciona um prompt ao histórico do usuário, com configuração (e embedding, se disponível).
 
@@ -253,6 +254,7 @@ def add_prompt(
             ('filter_expired', filter_expired),
             ('embedding', embedding),
             ('filters', filters),
+            ('preproc_output', preproc_output),
         ]
         for col, val in optional_map:
             if col in cols_existing:
@@ -260,7 +262,7 @@ def add_prompt(
                 if col == 'embedding' and col_types.get('embedding') == 'vector':
                     placeholders.append('%s::vector')
                     insert_vals.append(val)
-                elif col == 'filters' and col_types.get('filters') in ('jsonb', 'json'):
+                elif col in ('filters','preproc_output') and col_types.get(col) in ('jsonb', 'json'):
                     placeholders.append('%s::jsonb')
                     insert_vals.append(json.dumps(val) if val is not None else None)
                 else:
@@ -281,7 +283,66 @@ def add_prompt(
         # invalida caches de prompts do usuário
         _cache_invalidate_prefix(f"USER.fetch_prompt_texts:{uid}:")
         _cache_invalidate_prefix(f"USER.fetch_prompts_with_config:{uid}:")
+        # Usage metric
+        try:
+            from gvg_usage import record_usage
+            if pid:
+                record_usage(uid, 'query', ref_type='prompt', ref_id=str(pid), meta={'text_len': len(text or '')})
+        except Exception:
+            pass
         return pid
+    except Exception:
+        return None
+
+
+def get_prompt_preproc_output(text: str, filters: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """Retorna exatamente o preproc_output salvo para o prompt do usuário atual
+    que combina (text, filters). Usa o registro mais recente.
+
+    Se a coluna 'preproc_output' não existir, retorna None.
+    """
+    if not text or not text.strip():
+        return None
+    user = get_current_user(); uid = user.get('uid')
+    if not uid:
+        return None
+    cols_existing = set(_schema_columns_cached('user_prompts'))
+    if 'preproc_output' not in cols_existing:
+        return None
+    try:
+        try:
+            dbg('PRE', f"lookup preproc_output user_prompts text='{(text or '').strip()[:60]}' has_filters={bool(filters)}")
+        except Exception:
+            pass
+        has_filters = 'filters' in cols_existing
+        if has_filters:
+            # Comparar JSON por texto; normaliza para None/{} quando vazio
+            filt_json = json.dumps(filters or {}, ensure_ascii=False)
+            sql = (
+                "SELECT preproc_output FROM public.user_prompts "
+                "WHERE user_id = %s AND text = %s "
+                "AND COALESCE(filters::jsonb,'{}'::jsonb) = %s::jsonb "
+                "ORDER BY created_at DESC LIMIT 1"
+            )
+            row = db_fetch_one(sql, (uid, text.strip(), filt_json), ctx="USER.get_prompt_preproc_output:with_filters")
+        else:
+            row = db_fetch_one(
+                "SELECT preproc_output FROM public.user_prompts WHERE user_id = %s AND text = %s ORDER BY created_at DESC LIMIT 1",
+                (uid, text.strip()), ctx="USER.get_prompt_preproc_output:without_filters"
+            )
+        if not row:
+            return None
+        val = row[0] if isinstance(row, (list, tuple)) else (row.get('preproc_output') if isinstance(row, dict) else None)
+        if not val:
+            return None
+        if isinstance(val, str):
+            try:
+                return json.loads(val)
+            except Exception:
+                return None
+        if isinstance(val, dict):
+            return val
+        return None
     except Exception:
         return None
 
@@ -578,6 +639,11 @@ def add_bookmark(numero_controle_pncp: str, rotulo: Optional[str] = None) -> boo
                 )
         # invalida cache de favoritos
         _cache_invalidate_prefix(f"USER.fetch_bookmarks:{uid}:")
+        try:
+            from gvg_usage import record_usage  # type: ignore
+            record_usage(uid, 'favorite_add', ref_type='contratacao', ref_id=str(numero_controle_pncp))
+        except Exception:
+            pass
         return True
     except Exception:
         return False
@@ -601,6 +667,11 @@ def remove_bookmark(numero_controle_pncp: str) -> bool:
                 (uid, numero_controle_pncp), ctx="USER.remove_bookmark:hard_delete"
             )
         _cache_invalidate_prefix(f"USER.fetch_bookmarks:{uid}:")
+        try:
+            from gvg_usage import record_usage  # type: ignore
+            record_usage(uid, 'favorite_remove', ref_type='contratacao', ref_id=str(numero_controle_pncp))
+        except Exception:
+            pass
         return True
     except Exception:
         return False

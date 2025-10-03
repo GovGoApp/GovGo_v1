@@ -138,6 +138,9 @@ OPENAI_MODEL_CHAT=gpt-4o
 OPENAI_ASSISTANT_FLEXIBLE=asst_...
 OPENAI_ASSISTANT_RESTRICTIVE=asst_...
 # ... todos os assistants do V0
+
+# Usage Tracking (habilita/desabilita gravação de métricas de uso)
+GVG_USAGE_ENABLE=true  # defina como false para não gravar eventos/counters
 ```
 
 ### **Dependências**
