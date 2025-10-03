@@ -116,9 +116,9 @@ def fetch_user_boletins() -> List[Dict[str, Any]]:
                 'channels': r[4] or [],
                 'created_at': r[5] if len(r) > 5 else None,
             })
-    _cache_set(ck, items)
-    return list(items)
-    # Mapear linhas de user_schedule
+        _cache_set(ck, items)
+        return list(items)
+    # Mapear linhas de user_schedule (quando rows veio preenchido)
     for r in rows:
         # rows é tuplas (as_dict=False)
         item = {

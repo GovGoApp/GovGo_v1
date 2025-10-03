@@ -1133,17 +1133,9 @@ def _restrict_results_by_sql(sql_conditions: list[str], current_results: list[di
     prevent_initial_call=False
 )
 def enable_boletim_button(q, is_open):
-    try:
-        dbg('BOLETIM', f"[enable_boletim_button] q_set={bool((q or '').strip())} is_open={is_open}")
-    except Exception:
-        pass
     enabled = bool(q and isinstance(q, str) and q.strip())
     base_style = styles['arrow_button_inverted'] if is_open else styles['arrow_button']
     style = {**base_style, 'marginTop': '6px', 'opacity': 1.0 if enabled else 0.4}
-    try:
-        dbg('BOLETIM', f"[enable_boletim_button] returning enabled={enabled}")
-    except Exception:
-        pass
     return (not enabled), style
 
 @app.callback(
@@ -1157,21 +1149,9 @@ def enable_boletim_button(q, is_open):
 def sync_boletim_controls(freq):
     # UI simplificada: horários e canais escondidos; aqui apenas garantimos defaults coerentes.
     all_days = ['seg','ter','qua','qui','sex']
-    try:
-        dbg('BOLETIM', f"[sync_boletim_controls] freq={freq}")
-    except Exception:
-        pass
     if freq == 'DIARIO':
-        try:
-            dbg('BOLETIM', "[sync_boletim_controls] diario -> slots=['manha'] dias=Seg–Sex (disabled)")
-        except Exception:
-            pass
         return ['manha'], True, all_days, True
     # SEMANAL
-    try:
-        dbg('BOLETIM', "[sync_boletim_controls] semanal -> slots=['manha'] dias=['seg']")
-    except Exception:
-        pass
     return ['manha'], True, ['seg'], False
 
 @app.callback(
@@ -1185,10 +1165,6 @@ def toggle_boletim_panel(n, is_open):
     if not n:
         raise PreventUpdate
     new_state = not bool(is_open)
-    try:
-        dbg('BOLETIM', f"[toggle_boletim_panel] clicked n={n} is_open={is_open} -> new_state={new_state}")
-    except Exception:
-        pass
     return new_state, new_state
 
 @app.callback(
@@ -1202,12 +1178,9 @@ def toggle_boletim_panel(n, is_open):
 def validate_boletim(freq, dias, query_text, boletins):
     # Regras de desabilitação (True = desabilita)
     q = (query_text or '').strip()
-    dbg('BOLETIM', f"[validate_boletim] freq={freq} dias={dias} q_len={len(q)} boletins={len(boletins or [])}")
     if len(q) < 3:
-        dbg('BOLETIM', "[validate_boletim] desabilitado: query curta")
         return True
     if freq == 'SEMANAL' and not (dias and len(dias) > 0):
-        dbg('BOLETIM', "[validate_boletim] desabilitado: sem dias semanais")
         return True
     # Demais campos estão fixos por default nesta fase simplificada
     # Duplicidade por texto (case-insensitive, trim)
@@ -1220,7 +1193,6 @@ def validate_boletim(freq, dias, query_text, boletins):
     except Exception:
         pass
     # Caso válido => habilita (False)
-    dbg('BOLETIM', "[validate_boletim] habilitado")
     return False
 
 @app.callback(
@@ -1298,10 +1270,6 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
         for b in (current or []):
             bt = ((b.get('query_text') or '').strip()).lower()
             if bt == qn:
-                try:
-                    dbg('BOLETIM', f"[save_boletim] ignorado: duplicado q='{query.strip()}'")
-                except Exception:
-                    pass
                 return dash.no_update, html.I(className='fas fa-plus')
     except Exception:
         pass
@@ -1311,8 +1279,9 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
     else:
         # DIARIO
         schedule_detail = {'days': ['seg','ter','qua','qui','sex']}
+    # Log essencial: tentativa de salvar
     try:
-        dbg('BOLETIM', f"[save_boletim] saving freq={freq} days={schedule_detail.get('days')} query='{(query or '').strip()[:80]}'")
+        dbg('BOLETIM', f"save: freq={freq} days={schedule_detail.get('days')} q='{(query or '').strip()[:80]}'")
     except Exception:
         pass
     config_snapshot = {
@@ -1334,7 +1303,7 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
     )
     if not boletim_id:
         try:
-            dbg('BOLETIM', "[save_boletim] falha ao criar boletim (id vazio)")
+            dbg('BOLETIM', "save: falha (id vazio)")
         except Exception:
             pass
         # Mantém ícone '+'
@@ -1355,7 +1324,7 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
     data = _dedupe_boletins(data) if '_dedupe_boletins' in globals() else data
     # Mantém o ícone '+'; desabilitará via validate_boletim (lista agora contém a query)
     try:
-        dbg('BOLETIM', f"[save_boletim] criado id={boletim_id} total={len(data)}")
+        dbg('BOLETIM', f"save: ok id={boletim_id} total={len(data)}")
     except Exception:
         pass
     return data[:200], html.I(className='fas fa-plus')
@@ -1382,14 +1351,10 @@ def _dedupe_boletins(items):
 )
 def load_boletins_on_auth(auth_data):
     if not auth_data or auth_data.get('status') != 'auth':
-        try:
-            dbg('BOLETIM', "[load_boletins_on_auth] não autenticado -> []")
-        except Exception:
-            pass
         return []
     fetched = fetch_user_boletins() or []
     try:
-        dbg('BOLETIM', f"[load_boletins_on_auth] fetched={len(fetched)}")
+        dbg('BOLETIM', f"load: fetched={len(fetched)}")
     except Exception:
         pass
     ui_items = []
@@ -1433,7 +1398,7 @@ def delete_boletim(n_list, boletins):
         #print(f"Ignorando trigger sem clique efetivo id={bid} valor={clicked_value}")
         raise PreventUpdate
     try:
-        dbg('BOLETIM', f"[delete_boletim] id={bid} before={len(boletins or [])}")
+        dbg('BOLETIM', f"delete: id={bid} before={len(boletins or [])}")
     except Exception:
         pass
     deactivate_user_boletim(int(bid))
@@ -1441,7 +1406,7 @@ def delete_boletim(n_list, boletins):
     new_list = [b for b in (boletins or []) if b.get('id') != bid]
     new_list = _dedupe_boletins(new_list) if '_dedupe_boletins' in globals() else new_list
     try:
-        dbg('BOLETIM', f"[delete_boletim] removed id={bid} after={len(new_list)}")
+        dbg('BOLETIM', f"delete: ok id={bid} after={len(new_list)}")
     except Exception:
         pass
     return new_list
@@ -1453,15 +1418,8 @@ def delete_boletim(n_list, boletins):
 )
 def render_boletins_list(data):
     if not data:
-        try:
-            dbg('BOLETIM', "[render_boletins_list] vazio")
-        except Exception:
-            pass
         return [html.Div('Sem boletins.', style={'color': '#555', 'fontSize': '12px'})]
-    try:
-        dbg('BOLETIM', f"[render_boletins_list] itens={len(data or [])}")
-    except Exception:
-        pass
+    # Sem logs verbosos aqui
     items = []
     for b in data:
         # 1) Configurações (mesmo padrão do histórico)
