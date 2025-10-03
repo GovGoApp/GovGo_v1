@@ -31,14 +31,10 @@ import re
 import time
 from dotenv import load_dotenv
 from gvg_debug import debug_log as dbg
-import psycopg2
+from gvg_ai_utils import ai_assistant_run_text, ai_assistant_run_with_files
+from gvg_database import fetch_documentos  # centralizado
 
-# Import OpenAI opcional (não deve impedir carregamento do módulo)
-try:
-    from openai import OpenAI  # type: ignore
-    _OPENAI_AVAILABLE = True
-except ImportError:
-    _OPENAI_AVAILABLE = False
+_OPENAI_AVAILABLE = True  # compat
 
 warnings.filterwarnings("ignore", message=".*pin_memory.*", category=UserWarning)
 warnings.filterwarnings("ignore", message=".*accelerator.*", category=UserWarning)
@@ -93,24 +89,7 @@ def set_markdown_enabled(enabled: bool):
     global GVG_MARKDOWN
     GVG_MARKDOWN = bool(enabled)
 
-# OpenAI Assistants
-_OPENAI_CLIENT = None
 _ASSISTANT_SUMMARY_ID = os.getenv('GVG_SUMMARY_DOCUMENT_v1')
-
-def _get_openai_client():
-    global _OPENAI_CLIENT
-    if not _OPENAI_AVAILABLE:
-        return None
-    if _OPENAI_CLIENT is not None:
-        return _OPENAI_CLIENT
-    api_key = os.getenv('OPENAI_API_KEY')
-    if not api_key:
-        return None
-    try:
-        _OPENAI_CLIENT = OpenAI(api_key=api_key)
-    except Exception:
-        _OPENAI_CLIENT = None
-    return _OPENAI_CLIENT
 
 def create_files_directory():
     Path(FILE_PATH).mkdir(parents=True, exist_ok=True)
@@ -265,12 +244,11 @@ def save_summary_file(summary_content, original_filename, doc_url, timestamp=Non
         return False, None, str(e)
 
 def generate_document_summary(markdown_content, max_tokens=None, pncp_data=None):
-    """Resumo via OpenAI Assistants (ID do .env: GVG_SUMMARY_DOCUMENT_v1)."""
+    """Resumo via OpenAI Assistants (ID do .env: GVG_SUMMARY_DOCUMENT_v1) usando wrappers centrais."""
     try:
         _dbg("[GSB][RESUMO] generate_document_summary() via Assistants...")
-        client = _get_openai_client()
-        if client is None or not _ASSISTANT_SUMMARY_ID:
-            return "OpenAI/Assistant não configurado (verifique OPENAI_API_KEY e GVG_SUMMARY_DOCUMENT_v1 no .env)."
+        if not _ASSISTANT_SUMMARY_ID:
+            return "OpenAI/Assistant não configurado (verifique GVG_SUMMARY_DOCUMENT_v1 no .env)."
         # Truncagem conservadora
         content = markdown_content or ""
         if len(content) > 100_000:
@@ -297,58 +275,20 @@ def generate_document_summary(markdown_content, max_tokens=None, pncp_data=None)
             + anti_citation
             + "Documento (Markdown):\n\n" + content
         )
-        # Threads & Runs
-        thread = client.beta.threads.create()
-        client.beta.threads.messages.create(thread_id=thread.id, role="user", content=[{"type": "text", "text": user_message}])
-        run = client.beta.threads.runs.create(thread_id=thread.id, assistant_id=_ASSISTANT_SUMMARY_ID)
-        t0 = time.time(); timeout_s = 180
-        while True:
-            run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
-            if run.status in ("completed", "failed", "requires_action", "cancelled", "expired"):
-                break
-            if time.time() - t0 > timeout_s:
-                return "Tempo limite excedido ao gerar o resumo."
-            time.sleep(1.2)
-        if run.status != "completed":
-            return f"Falha ao gerar resumo (status: {run.status})."
-        msgs = client.beta.threads.messages.list(thread_id=thread.id, order="desc", limit=10)
-        for m in msgs.data:
-            if getattr(m, 'role', None) == 'assistant' and getattr(m, 'content', None):
-                for p in m.content:
-                    try:
-                        if getattr(p, 'type', None) == 'text' and getattr(p, 'text', None):
-                            val = getattr(p.text, 'value', None)
-                            if isinstance(val, str) and val.strip():
-                                out = strip_citations(val.strip())
-                                _dbg_assistant_output("MD->Assistant", out)
-                                return out
-                    except Exception:
-                        continue
+        out = ai_assistant_run_text(_ASSISTANT_SUMMARY_ID, user_message, context_key='doc_summary', timeout=180)
+        out = strip_citations(out or "")
+        if out:
+            _dbg_assistant_output("MD->Assistant", out)
+            return out
         return "Não foi possível obter o conteúdo do assistente."
     except Exception as e:
         return f"Erro ao gerar resumo (Assistants): {str(e)}"
 
 def generate_document_summary_from_files(file_paths: list[str], max_tokens=None, pncp_data=None):
-    """Generate a summary by uploading original files to the Assistant (skip Docling).
-
-    Expects the Assistant (GVG_SUMMARY_DOCUMENT_v1) to be configured to read attached files.
-    """
+    """Generate a summary by uploading original files to the Assistant (skip Docling) via wrappers."""
     try:
-        client = _get_openai_client()
-        if client is None or not _ASSISTANT_SUMMARY_ID:
-            return "OpenAI/Assistant não configurado (verifique OPENAI_API_KEY e GVG_SUMMARY_DOCUMENT_v1 no .env)."
-        # Upload files
-        attachments = []
-        for p in file_paths or []:
-            try:
-                with open(p, "rb") as f:
-                    up = client.files.create(purpose="assistants", file=f)
-                    # File Search is the most common tool for attachments
-                    attachments.append({"file_id": up.id, "tools": [{"type": "file_search"}]})
-            except Exception as e:
-                _dbg(f"[GSB][RESUMO] Falha ao anexar arquivo '{p}': {e}")
-        if not attachments:
-            return "Nenhum arquivo válido para envio ao Assistente."
+        if not _ASSISTANT_SUMMARY_ID:
+            return "OpenAI/Assistant não configurado (verifique GVG_SUMMARY_DOCUMENT_v1 no .env)."
         # Context block (compact)
         ctx_lines = []
         if isinstance(pncp_data, dict) and pncp_data:
@@ -371,33 +311,11 @@ def generate_document_summary_from_files(file_paths: list[str], max_tokens=None,
             + anti_citation
             + "Documentos anexados. Gerar um resumo executivo com itens de atenção."
         )
-        # Thread & run
-        thread = client.beta.threads.create()
-        client.beta.threads.messages.create(thread_id=thread.id, role="user", content=[{"type": "text", "text": user_message}], attachments=attachments)
-        run = client.beta.threads.runs.create(thread_id=thread.id, assistant_id=_ASSISTANT_SUMMARY_ID)
-        t0 = time.time(); timeout_s = 180
-        while True:
-            run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
-            if run.status in ("completed", "failed", "requires_action", "cancelled", "expired"):
-                break
-            if time.time() - t0 > timeout_s:
-                return "Tempo limite excedido ao gerar o resumo."
-            time.sleep(1.2)
-        if run.status != "completed":
-            return f"Falha ao gerar resumo (status: {run.status})."
-        msgs = client.beta.threads.messages.list(thread_id=thread.id, order="desc", limit=10)
-        for m in msgs.data:
-            if getattr(m, 'role', None) == 'assistant' and getattr(m, 'content', None):
-                for p in m.content:
-                    try:
-                        if getattr(p, 'type', None) == 'text' and getattr(p, 'text', None):
-                            val = getattr(p.text, 'value', None)
-                            if isinstance(val, str) and val.strip():
-                                out = strip_citations(val.strip())
-                                _dbg_assistant_output("Files->Assistant", out)
-                                return out
-                    except Exception:
-                        continue
+        out = ai_assistant_run_with_files(_ASSISTANT_SUMMARY_ID, list(file_paths or []), user_message, timeout=180)
+        out = strip_citations(out or "")
+        if out:
+            _dbg_assistant_output("Files->Assistant", out)
+            return out
         return "Não foi possível obter o conteúdo do assistente."
     except Exception as e:
         return f"Erro ao gerar resumo (Assistants arquivos): {str(e)}"
@@ -852,102 +770,4 @@ __all__ = [
 ]
 
 
-# =========================
-# Document listing (moved from gvg_database)
-# =========================
-load_dotenv()
-
-def _load_env_priority():
-    for candidate in ("supabase_v1.env", ".env", "supabase_v0.env"):
-        if os.path.exists(candidate):
-            load_dotenv(candidate, override=False)
-
-
-def _parse_numero_controle_pncp(numero_controle: str):
-    if not numero_controle:
-        return None, None, None
-    pattern = r"^(\d{14})-1-(\d+)/(\d{4})$"
-    m = re.match(pattern, str(numero_controle).strip())
-    if not m:
-        return None, None, None
-    return m.group(1), m.group(2), m.group(3)
-
-
-def _create_connection():
-    try:
-        _load_env_priority()
-        connection = psycopg2.connect(
-            host=os.getenv("SUPABASE_HOST", "aws-0-sa-east-1.pooler.supabase.com"),
-            database=os.getenv("SUPABASE_DBNAME", os.getenv("SUPABASE_DB_NAME", "postgres")),
-            user=os.getenv("SUPABASE_USER"),
-            password=os.getenv("SUPABASE_PASSWORD"),
-            port=os.getenv("SUPABASE_PORT", "6543"),
-            connect_timeout=10
-        )
-        return connection
-    except Exception as e:
-        dbg('SQL', f"Erro ao conectar ao banco: {e}")
-        return None
-
-
-def fetch_documentos(numero_controle: str):
-    if not numero_controle:
-        return []
-
-    documentos = []
-    conn = _create_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT column_name FROM information_schema.columns
-                WHERE table_schema='public' AND table_name='contratacao'
-                """
-            )
-            cols = {r[0].lower() for r in cur.fetchall()}
-            url_cols_priority = ['link_sistema_origem','url','link']
-            url_cols = [c for c in url_cols_priority if c in cols]
-            if url_cols:
-                col = url_cols[0]
-                cur.execute(f"SELECT {col} FROM contratacao WHERE numero_controle_pncp = %s LIMIT 1", (numero_controle,))
-                for (url,) in cur.fetchall():
-                    if url:
-                        documentos.append({'url': url, 'nome': 'Link Sistema', 'tipo': 'origem', 'origem': 'db'})
-            cur.close(); conn.close()
-        except Exception as e:
-            dbg('SQL', f"⚠️ fetch_documentos DB: {e}")
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-    if documentos:
-        return documentos
-
-    cnpj, sequencial, ano = _parse_numero_controle_pncp(numero_controle)
-    if not all([cnpj, sequencial, ano]):
-        return []
-    api_url = f"https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}/arquivos"
-    try:
-        resp = requests.get(api_url, timeout=20)
-        if resp.status_code == 200:
-            data = resp.json()
-            if isinstance(data, list):
-                for item in data:
-                    if not isinstance(item, dict):
-                        continue
-                    documentos.append({
-                        'url': item.get('url') or item.get('uri') or '',
-                        'nome': item.get('titulo') or 'Documento',
-                        'tipo': item.get('tipoDocumentoNome') or 'N/I',
-                        'tamanho': item.get('tamanhoArquivo'),
-                        'modificacao': item.get('dataPublicacaoPncp'),
-                        'sequencial': item.get('sequencialDocumento'),
-                        'origem': 'api'
-                    })
-        else:
-            dbg('DOCS', f"⚠️ API documentos status {resp.status_code} ({numero_controle})")
-    except Exception as e:
-        dbg('DOCS', f"⚠️ API documentos erro: {e}")
-    return documentos
+## Listagem de documentos centralizada em gvg_database.fetch_documentos

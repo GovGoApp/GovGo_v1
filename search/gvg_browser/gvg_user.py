@@ -10,27 +10,20 @@ import os
 import json
 from typing import List, Optional, Dict, Any, Union
 import datetime as _dt
-try:
-    from search.gvg_browser.gvg_database import create_connection  # type: ignore
-    from search.gvg_browser.gvg_debug import debug_log as dbg  # type: ignore
-    from search.gvg_browser.gvg_schema import get_contratacao_core_columns, PRIMARY_KEY  # type: ignore
-    from search.gvg_browser.gvg_search_core import _augment_aliases  # type: ignore
-except Exception:
-    try:
-        from .gvg_database import create_connection  # type: ignore
-        from .gvg_debug import debug_log as dbg  # type: ignore
-        from .gvg_schema import get_contratacao_core_columns, PRIMARY_KEY  # type: ignore
-        from .gvg_search_core import _augment_aliases  # type: ignore
-    except Exception:
-        from gvg_database import create_connection  # type: ignore
-        from gvg_debug import debug_log as dbg  # type: ignore
-        from gvg_schema import get_contratacao_core_columns, PRIMARY_KEY  # type: ignore
-        from gvg_search_core import _augment_aliases  # type: ignore
+import time
+from gvg_database import (
+    create_connection,  # compat quando precisar
+    db_fetch_all, db_fetch_one, db_execute, db_execute_many,
+    db_execute_returning_one,
+)  # type: ignore
+from gvg_debug import debug_log as dbg  # type: ignore
+from gvg_schema import get_contratacao_core_columns, PRIMARY_KEY  # type: ignore
+from gvg_search_core import _augment_aliases  # type: ignore
 
 # Tenta importar auth para obter usuário da sessão (token em cookies)
 try:
     from gvg_auth import get_user_from_token  # type: ignore
-except Exception:
+except ImportError:
     get_user_from_token = None  # type: ignore
 
 # Usuário atual em memória (anônimo por padrão; será preenchido ao logar)
@@ -42,6 +35,58 @@ _CURRENT_USER = {
 
 # Permite injetar token (por camada Flask) em tempo de execução
 _ACCESS_TOKEN: Optional[str] = None
+
+# --- Caches leves ---
+_SCHEMA_TYPES_CACHE: Dict[str, Dict[str, Any]] = {}
+_DATA_CACHE: Dict[str, Any] = {}
+
+_TTL_SCHEMA_SECONDS = 3600  # 60 minutos
+_TTL_USER_DATA_SECONDS = 300  # 5 minutos
+
+
+def _schema_types_cached(table: str) -> Dict[str, str]:
+    now = time.time()
+    ent = _SCHEMA_TYPES_CACHE.get(table)
+    if ent and ent.get('expires', 0) > now:
+        return ent.get('types', {})
+    rows = db_fetch_all(
+        (
+            """
+            SELECT column_name, udt_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = %s
+            """
+        ),
+        (table,),
+        ctx=f"USER.schema:describe:{table}"
+    ) or []
+    types = {r[0]: r[1] for r in rows}
+    _SCHEMA_TYPES_CACHE[table] = {'types': types, 'expires': now + _TTL_SCHEMA_SECONDS}
+    return types
+
+
+def _schema_columns_cached(table: str) -> List[str]:
+    return list(_schema_types_cached(table).keys())
+
+
+def _cache_get(key: str):
+    ent = _DATA_CACHE.get(key)
+    if not ent:
+        return None
+    if ent.get('expires', 0) > time.time():
+        return ent.get('value')
+    _DATA_CACHE.pop(key, None)
+    return None
+
+
+def _cache_set(key: str, value: Any, ttl: int = _TTL_USER_DATA_SECONDS):
+    _DATA_CACHE[key] = {'value': value, 'expires': time.time() + ttl}
+
+
+def _cache_invalidate_prefix(prefix: str):
+    for k in list(_DATA_CACHE.keys()):
+        if str(k).startswith(prefix):
+            _DATA_CACHE.pop(k, None)
 
 
 def set_access_token(token: Optional[str]):
@@ -122,34 +167,30 @@ def fetch_prompt_texts(limit: int = 50) -> List[str]:
     """Retorna textos dos prompts (mais recentes) já filtrando active = true (coluna garantida)."""
     user = get_current_user()
     uid = user['uid']
-    conn = None
-    cur = None
     try:
-        conn = create_connection()
-        if not conn:
-            return []
-        cur = conn.cursor()
-        cur.execute(
-            """SELECT text
-                   FROM public.user_prompts
-                  WHERE user_id = %s
-                    AND text IS NOT NULL
-                    AND active = true
-               ORDER BY created_at DESC
-                  LIMIT %s""",
-            (uid, limit)
-        )
-        rows = cur.fetchall() or []
-        return [r[0] for r in rows if r and r[0]]
+        # cache por usuário
+        ck = f"USER.fetch_prompt_texts:{uid}:{limit}"
+        cached = _cache_get(ck)
+        if cached is not None:
+            return list(cached)
+        rows = db_fetch_all(
+            (
+                """SELECT text
+                       FROM public.user_prompts
+                      WHERE user_id = %s
+                        AND text IS NOT NULL
+                        AND active = true
+                   ORDER BY created_at DESC
+                      LIMIT %s"""
+            ),
+            (uid, limit),
+            ctx="USER.fetch_prompt_texts",
+        ) or []
+        out = [r[0] for r in rows if r and r[0] is not None]
+        _cache_set(ck, out)
+        return out
     except Exception:
         return []
-    finally:
-        try:
-            if cur:
-                cur.close()
-        finally:
-            if conn:
-                conn.close()
 
 
 def add_prompt(
@@ -174,45 +215,27 @@ def add_prompt(
     if not text:
         return None
     user = get_current_user(); uid = user['uid']
-    conn = None; cur = None
     try:
-        conn = create_connection()
-        if not conn:
-            return None
-        cur = conn.cursor()
-        # Dedup por texto do mesmo usuário
-        # Para garantir remoção consistente dos resultados associados, apagamos primeiro os filhos (user_results)
-        try:
-            cur.execute(
-                "SELECT id FROM public.user_prompts WHERE user_id = %s AND text = %s",
-                (uid, text)
+        # Dedup por texto do mesmo usuário: obter ids
+        ids_rows = db_fetch_all(
+            "SELECT id FROM public.user_prompts WHERE user_id = %s AND text = %s",
+            (uid, text), ctx="USER.add_prompt:find_duplicates"
+        ) or []
+        old_ids = [r[0] for r in ids_rows if r and r[0] is not None]
+        if old_ids:
+            placeholders = ','.join(['%s'] * len(old_ids))
+            db_execute(
+                f"DELETE FROM public.user_results WHERE user_id = %s AND prompt_id IN ({placeholders})",
+                (uid, *old_ids), ctx="USER.add_prompt:delete_old_results"
             )
-            ids_rows = cur.fetchall() or []
-            old_ids = [r[0] for r in ids_rows if r and r[0] is not None]
-            if old_ids:
-                # Apaga resultados vinculados a estes prompts
-                placeholders = ','.join(['%s'] * len(old_ids))
-                cur.execute(
-                    f"DELETE FROM public.user_results WHERE user_id = %s AND prompt_id IN ({placeholders})",
-                    (uid, *old_ids)
-                )
-        except Exception:
-            # Em caso de falha nesta limpeza preventiva, prossegue; ON DELETE CASCADE pode resolver
-            pass
-        # Agora apaga os prompts duplicados por texto
-        cur.execute("DELETE FROM public.user_prompts WHERE user_id = %s AND text = %s", (uid, text))
+        db_execute(
+            "DELETE FROM public.user_prompts WHERE user_id = %s AND text = %s",
+            (uid, text), ctx="USER.add_prompt:delete_old_prompts"
+        )
 
         # Descobrir colunas existentes e tipos
-        cur.execute(
-            """
-            SELECT column_name, udt_name
-            FROM information_schema.columns
-            WHERE table_schema = 'public' AND table_name = 'user_prompts'
-            """
-        )
-        rows_cols = cur.fetchall() or []
-        cols_existing = {r[0] for r in rows_cols}
-        col_types = {r[0]: r[1] for r in rows_cols}
+        col_types = _schema_types_cached('user_prompts')
+        cols_existing = set(col_types.keys())
 
         # Colunas e valores base
         insert_cols = ['user_id', 'title', 'text']
@@ -234,20 +257,16 @@ def add_prompt(
         for col, val in optional_map:
             if col in cols_existing:
                 insert_cols.append(col)
-                # Ajustes por tipo
                 if col == 'embedding' and col_types.get('embedding') == 'vector':
-                    # Vetor precisa de cast explícito
                     placeholders.append('%s::vector')
                     insert_vals.append(val)
                 elif col == 'filters' and col_types.get('filters') in ('jsonb', 'json'):
-                    # JSONB com cast explícito
                     placeholders.append('%s::jsonb')
                     insert_vals.append(json.dumps(val) if val is not None else None)
                 else:
                     placeholders.append('%s')
                     insert_vals.append(val)
 
-        # Debug opcional (auto-gated pelo dbg)
         try:
             dbg('SQL', '[gvg_user.add_prompt] cols_existing = ' + str(sorted(list(cols_existing))))
             dbg('SQL', '[gvg_user.add_prompt] insert_cols = ' + str(insert_cols))
@@ -256,43 +275,24 @@ def add_prompt(
             pass
 
         sql = f"INSERT INTO public.user_prompts ({', '.join(insert_cols)}) VALUES ({', '.join(placeholders)}) RETURNING id"
-        cur.execute(sql, insert_vals)
-        row = cur.fetchone()
-        prompt_id = row[0] if row else None
-        conn.commit()
-        return int(prompt_id) if prompt_id is not None else None
+        row = db_execute_returning_one(sql, tuple(insert_vals), as_dict=False, ctx="USER.add_prompt:insert")
+        prompt_id = row[0] if isinstance(row, (list, tuple)) else (row.get('id') if isinstance(row, dict) else None)
+        pid = int(prompt_id) if prompt_id is not None else None
+        # invalida caches de prompts do usuário
+        _cache_invalidate_prefix(f"USER.fetch_prompt_texts:{uid}:")
+        _cache_invalidate_prefix(f"USER.fetch_prompts_with_config:{uid}:")
+        return pid
     except Exception:
-        try:
-            if conn: conn.rollback()
-        except Exception:
-            pass
         return None
-    finally:
-        try:
-            if cur: cur.close()
-        finally:
-            if conn: conn.close()
 
 
 def fetch_prompts_with_config(limit: int = 50) -> List[Dict[str, Any]]:
     """Retorna prompts (texto, título, criado_em) com as configurações salvas."""
     user = get_current_user()
     uid = user['uid']
-    conn = None; cur = None
     try:
-        conn = create_connection()
-        if not conn:
-            return []
-        cur = conn.cursor()
-        # Ver quais colunas existem para montar SELECT dinamicamente
-        cur.execute(
-            """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_schema = 'public' AND table_name = 'user_prompts'
-            """
-        )
-        cols_existing = {r[0] for r in (cur.fetchall() or [])}
+        # cache de schema
+        cols_existing = set(_schema_columns_cached('user_prompts'))
 
         base_cols = ['text', 'title', 'created_at']
         opt_cols = [
@@ -306,22 +306,26 @@ def fetch_prompts_with_config(limit: int = 50) -> List[Dict[str, Any]]:
         if has_active:
             where_clause += " AND active = true"
         select_sql = f"SELECT {', '.join(select_cols)} FROM public.user_prompts {where_clause} ORDER BY created_at DESC LIMIT %s"
-        cur.execute(select_sql, (uid, limit))
-
+        # cache por usuário
+        ck = f"USER.fetch_prompts_with_config:{uid}:{limit}:{','.join(select_cols)}"
+        cached = _cache_get(ck)
+        if cached is not None:
+            return list(cached)
+        rows = db_fetch_all(select_sql, (uid, limit), ctx="USER.fetch_prompts_with_config:select") or []
         out: List[Dict[str, Any]] = []
-        for row in cur.fetchall() or []:
+        for row in rows:
             item: Dict[str, Any] = {}
+            # rows vem como tuplas; mapear por índice
             for idx, c in enumerate(select_cols):
-                item[c] = row[idx]
+                try:
+                    item[c] = row[idx]
+                except Exception:
+                    item[c] = None
             out.append(item)
+        _cache_set(ck, out)
         return out
     except Exception:
         return []
-    finally:
-        try:
-            if cur: cur.close()
-        finally:
-            if conn: conn.close()
 
 
 def delete_prompt(text: str) -> bool:
@@ -329,56 +333,37 @@ def delete_prompt(text: str) -> bool:
     if not text:
         return False
     user = get_current_user(); uid = user['uid']
-    conn = None; cur = None
     try:
-        conn = create_connection()
-        if not conn:
-            return False
-        cur = conn.cursor()
-        # Detecta se existe coluna active para aplicar soft delete
-        try:
-            cur.execute(
-                """
-                SELECT 1 FROM information_schema.columns
-                WHERE table_schema='public' AND table_name='user_prompts' AND column_name='active'
-                """
-            )
-            has_active = bool(cur.fetchone())
-        except Exception:
-            has_active = False
+        # Detecta coluna active
+        has_active = 'active' in _schema_columns_cached('user_prompts')
         if has_active:
-            cur.execute(
+            aff = db_execute(
                 "UPDATE public.user_prompts SET active=false WHERE user_id=%s AND text=%s",
-                (uid, text)
+                (uid, text), ctx="USER.delete_prompt:soft_delete"
             )
-        else:
-            # Comportamento antigo (hard delete + limpeza de resultados)
-            cur.execute(
-                "SELECT id FROM public.user_prompts WHERE user_id = %s AND text = %s",
-                (uid, text)
+            return bool(aff and aff >= 0)
+        # Hard delete + limpar filhos
+        ids_rows = db_fetch_all(
+            "SELECT id FROM public.user_prompts WHERE user_id = %s AND text = %s",
+            (uid, text), ctx="USER.delete_prompt:find_ids"
+        ) or []
+        prompt_ids = [r[0] for r in ids_rows if r and r[0] is not None]
+        if prompt_ids:
+            placeholders = ','.join(['%s'] * len(prompt_ids))
+            db_execute(
+                f"DELETE FROM public.user_results WHERE user_id = %s AND prompt_id IN ({placeholders})",
+                (uid, *prompt_ids), ctx="USER.delete_prompt:delete_children"
             )
-            ids_rows = cur.fetchall() or []
-            prompt_ids = [r[0] for r in ids_rows if r and r[0] is not None]
-            if prompt_ids:
-                placeholders = ','.join(['%s'] * len(prompt_ids))
-                cur.execute(
-                    f"DELETE FROM public.user_results WHERE user_id = %s AND prompt_id IN ({placeholders})",
-                    (uid, *prompt_ids)
-                )
-            cur.execute("DELETE FROM public.user_prompts WHERE user_id = %s AND text = %s", (uid, text))
-        conn.commit()
+        db_execute(
+            "DELETE FROM public.user_prompts WHERE user_id = %s AND text = %s",
+            (uid, text), ctx="USER.delete_prompt:delete_prompt"
+        )
+        # invalidar caches relacionados
+        _cache_invalidate_prefix(f"USER.fetch_prompt_texts:{uid}:")
+        _cache_invalidate_prefix(f"USER.fetch_prompts_with_config:{uid}:")
         return True
     except Exception:
-        try:
-            if conn: conn.rollback()
-        except Exception:
-            pass
         return False
-    finally:
-        try:
-            if cur: cur.close()
-        finally:
-            if conn: conn.close()
 
 
 def save_user_results(prompt_id: int, results: List[Dict[str, Any]]) -> bool:
@@ -389,25 +374,17 @@ def save_user_results(prompt_id: int, results: List[Dict[str, Any]]) -> bool:
     if not prompt_id or not results:
         return False
     user = get_current_user(); uid = user['uid']
-    conn = None; cur = None
     try:
-        conn = create_connection()
-        if not conn:
-            return False
-        cur = conn.cursor()
-        # Monta linhas a inserir
-        rows = []
+        rows_to_insert = []
         for r in results:
             numero = r.get('numero_controle') or r.get('id')
             rank = r.get('rank')
             similarity = r.get('similarity')
             details = r.get('details') or {}
-            # valor: tenta final, senão estimado (converte para float quando possível)
             raw_val = details.get('valorfinal') or details.get('valorFinal') or details.get('valortotalestimado') or details.get('valorTotalEstimado')
             valor = None
             if raw_val is not None:
                 try:
-                    # aceita strings com vírgula como decimal
                     if isinstance(raw_val, str):
                         rv = raw_val.strip().replace('.', '').replace(',', '.') if raw_val.count(',')==1 and raw_val.count('.')>1 else raw_val
                         valor = float(rv)
@@ -418,30 +395,18 @@ def save_user_results(prompt_id: int, results: List[Dict[str, Any]]) -> bool:
             data_enc = details.get('dataencerramentoproposta') or details.get('dataEncerramentoProposta') or details.get('dataEncerramento')
             if not numero or rank is None:
                 continue
-            rows.append((uid, prompt_id, str(numero), int(rank), float(similarity) if similarity is not None else None, valor, data_enc))
-        if not rows:
+            rows_to_insert.append((uid, prompt_id, str(numero), int(rank), float(similarity) if similarity is not None else None, valor, data_enc))
+        if not rows_to_insert:
             return False
-        # Inserção em lote
-        insert_sql = """
-            INSERT INTO public.user_results
-                (user_id, prompt_id, numero_controle_pncp, rank, similarity, valor, data_encerramento_proposta)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """
-        for tup in rows:
-            cur.execute(insert_sql, tup)
-        conn.commit()
-        return True
+        insert_sql = (
+            "INSERT INTO public.user_results "
+            "(user_id, prompt_id, numero_controle_pncp, rank, similarity, valor, data_encerramento_proposta) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)"
+        )
+        aff = db_execute_many(insert_sql, rows_to_insert, ctx="USER.save_user_results")
+        return bool(aff and aff >= 0)
     except Exception:
-        try:
-            if conn: conn.rollback()
-        except Exception:
-            pass
         return False
-    finally:
-        try:
-            if cur: cur.close()
-        finally:
-            if conn: conn.close()
 
 
 def fetch_user_results_for_prompt_text(text: str, limit: int = 500) -> List[Dict[str, Any]]:
@@ -455,30 +420,15 @@ def fetch_user_results_for_prompt_text(text: str, limit: int = 500) -> List[Dict
     user = get_current_user(); uid = user.get('uid')
     if not uid:
         return []
-    conn = None; cur = None
     try:
-        conn = create_connection()
-        if not conn:
-            return []
-        cur = conn.cursor()
-        # Detecta coluna active em user_prompts
-        try:
-            cur.execute(
-                """
-                SELECT 1 FROM information_schema.columns
-                WHERE table_schema='public' AND table_name='user_prompts' AND column_name='active'
-                """
-            )
-            has_active = bool(cur.fetchone())
-        except Exception:
-            has_active = False
+        # Detecta coluna active em user_prompts (cache de schema)
+        has_active = 'active' in _schema_columns_cached('user_prompts')
         core_cols = get_contratacao_core_columns('c')
         core_expr = ",\n  ".join(core_cols)
         where_up = ["up.user_id = %s", "up.text = %s"]
         params: List[Any] = [uid, text]
         if has_active:
             where_up.append("up.active = true")
-        # Junta prompts (mais recente), results e contratacao
         sql = (
             "SELECT "
             "  ur.numero_controle_pncp, ur.rank, ur.similarity, ur.valor, ur.data_encerramento_proposta,\n  "
@@ -491,17 +441,14 @@ def fetch_user_results_for_prompt_text(text: str, limit: int = 500) -> List[Dict
             "LIMIT %s"
         )
         params.append(limit)
-        cur.execute(sql, params)
-        rows = cur.fetchall() or []
-        colnames = [d[0] for d in cur.description]
+        rows = db_fetch_all(sql, tuple(params), as_dict=True, ctx="USER.fetch_user_results_for_prompt_text:select") or []
+        allowed = { (f.split('.')[-1] if '.' in f else f) for f in core_cols }
         out: List[Dict[str, Any]] = []
-        for row in rows:
-            rec = dict(zip(colnames, row))
+        for rec in rows:
             pid = rec.get('numero_controle_pncp')
             rank = rec.get('rank')
             sim = rec.get('similarity')
-            # Extrai apenas as colunas core para details
-            details = {k: rec.get(k) for k in colnames if k in [f.split('.')[-1] if '.' in f else f for f in core_cols]}
+            details = {k: rec.get(k) for k in rec.keys() if k in allowed}
             _augment_aliases(details)
             out.append({
                 'id': pid,
@@ -512,16 +459,7 @@ def fetch_user_results_for_prompt_text(text: str, limit: int = 500) -> List[Dict
             })
         return out
     except Exception:
-        try:
-            if conn: conn.rollback()
-        except Exception:
-            pass
         return []
-    finally:
-        try:
-            if cur: cur.close()
-        finally:
-            if conn: conn.close()
 
 
 # ==========================
@@ -536,47 +474,12 @@ def fetch_bookmarks(limit: int = 100) -> List[Dict[str, Any]]:
       data_encerramento_proposta, rotulo (opcional)
     """
     user = get_current_user(); uid = user['uid']
-    conn = None; cur = None
     try:
-        conn = create_connection()
-        if not conn:
+        # schema (uma chamada)
+        bm_cols = set(_schema_columns_cached('user_bookmarks'))
+        if not bm_cols:
             return []
-        cur = conn.cursor()
-        # Verificar existência da tabela
-        try:
-            cur.execute(
-                """
-                SELECT 1 FROM information_schema.tables
-                WHERE table_schema='public' AND table_name='user_bookmarks'
-                """
-            )
-            if not cur.fetchone():
-                return []
-        except Exception:
-            return []
-        # Detecta se coluna rotulo existe
-        has_rotulo = False
-        try:
-            cur.execute(
-                """
-                SELECT 1 FROM information_schema.columns
-                WHERE table_schema='public' AND table_name='user_bookmarks' AND column_name='rotulo'
-                """
-            )
-            has_rotulo = bool(cur.fetchone())
-        except Exception:
-            has_rotulo = False
-        # Checar colunas existentes em user_bookmarks para saber se active existe
-        try:
-            cur.execute(
-                """
-                SELECT column_name FROM information_schema.columns
-                WHERE table_schema='public' AND table_name='user_bookmarks'
-                """
-            )
-            bm_cols = {r[0] for r in (cur.fetchall() or [])}
-        except Exception:
-            bm_cols = set()
+        has_rotulo = 'rotulo' in bm_cols
         has_active = 'active' in bm_cols
         select_fields = [
             'ub.id',
@@ -597,8 +500,11 @@ def fetch_bookmarks(limit: int = 100) -> List[Dict[str, Any]]:
             " FROM public.user_bookmarks ub, public.contratacao c WHERE " + ' AND '.join(where_parts) +
             " ORDER BY ub.created_at DESC NULLS LAST, ub.id DESC LIMIT %s"
         )
-        cur.execute(sql, (uid, limit))
-        rows_db = cur.fetchall() or []
+        ck = f"USER.fetch_bookmarks:{uid}:{limit}:{','.join(select_fields)}"
+        cached = _cache_get(ck)
+        if cached is not None:
+            return list(cached)
+        rows_db = db_fetch_all(sql, (uid, limit), ctx="USER.fetch_bookmarks:select") or []
         out: List[Dict[str, Any]] = []
         for row in rows_db:
             pncp = row[1]
@@ -613,16 +519,10 @@ def fetch_bookmarks(limit: int = 100) -> List[Dict[str, Any]]:
             if has_rotulo:
                 item['rotulo'] = row[7]
             out.append(item)
+        _cache_set(ck, out)
         return out
     except Exception:
         return []
-    finally:
-        try:
-            if cur:
-                cur.close()
-        finally:
-            if conn:
-                conn.close()
 
 
 def add_bookmark(numero_controle_pncp: str, rotulo: Optional[str] = None) -> bool:
@@ -633,98 +533,54 @@ def add_bookmark(numero_controle_pncp: str, rotulo: Optional[str] = None) -> boo
     if not numero_controle_pncp:
         return False
     user = get_current_user(); uid = user['uid']
-    conn = None; cur = None
     try:
-        conn = create_connection()
-        if not conn:
+        bm_cols = set(_schema_columns_cached('user_bookmarks'))
+        if not bm_cols:
             return False
-        cur = conn.cursor()
-        # Garante tabela existente
-        try:
-            cur.execute("""
-                SELECT 1 FROM information_schema.tables
-                WHERE table_schema='public' AND table_name='user_bookmarks'
-            """)
-            if not cur.fetchone():
-                return False
-        except Exception:
-            return False
-        # Checa se coluna rotulo existe
-        has_rotulo = False
-        try:
-            cur.execute(
-                """
-                SELECT 1 FROM information_schema.columns
-                WHERE table_schema='public' AND table_name='user_bookmarks' AND column_name='rotulo'
-                """
-            )
-            has_rotulo = bool(cur.fetchone())
-        except Exception:
-            has_rotulo = False
-        # Detecta coluna active
-        has_active = False
-        try:
-            cur.execute(
-                """
-                SELECT 1 FROM information_schema.columns
-                WHERE table_schema='public' AND table_name='user_bookmarks' AND column_name='active'
-                """
-            )
-            has_active = bool(cur.fetchone())
-        except Exception:
-            has_active = False
-        # Se active existe: tentar reativar em vez de remover/inserir
+        has_rotulo = 'rotulo' in bm_cols
+        has_active = 'active' in bm_cols
         if has_active:
             if has_rotulo:
-                cur.execute(
+                aff = db_execute(
                     "UPDATE public.user_bookmarks SET active=true, rotulo=COALESCE(%s, rotulo) WHERE user_id=%s AND numero_controle_pncp=%s",
-                    (rotulo, uid, numero_controle_pncp)
+                    (rotulo, uid, numero_controle_pncp), ctx="USER.add_bookmark:reactivate_with_rotulo"
                 )
             else:
-                cur.execute(
+                aff = db_execute(
                     "UPDATE public.user_bookmarks SET active=true WHERE user_id=%s AND numero_controle_pncp=%s",
-                    (uid, numero_controle_pncp)
+                    (uid, numero_controle_pncp), ctx="USER.add_bookmark:reactivate"
                 )
-            if cur.rowcount == 0:
+            if not aff:
                 if has_rotulo:
-                    cur.execute(
+                    db_execute(
                         "INSERT INTO public.user_bookmarks (user_id, numero_controle_pncp, rotulo) VALUES (%s, %s, %s)",
-                        (uid, numero_controle_pncp, rotulo)
+                        (uid, numero_controle_pncp, rotulo), ctx="USER.add_bookmark:insert_with_rotulo"
                     )
                 else:
-                    cur.execute(
+                    db_execute(
                         "INSERT INTO public.user_bookmarks (user_id, numero_controle_pncp) VALUES (%s, %s)",
-                        (uid, numero_controle_pncp)
+                        (uid, numero_controle_pncp), ctx="USER.add_bookmark:insert"
                     )
         else:
-            # fallback comportamento antigo (sem coluna active)
-            cur.execute(
+            db_execute(
                 "DELETE FROM public.user_bookmarks WHERE user_id = %s AND numero_controle_pncp = %s",
-                (uid, numero_controle_pncp)
+                (uid, numero_controle_pncp), ctx="USER.add_bookmark:legacy_delete"
             )
             if has_rotulo:
-                cur.execute(
+                db_execute(
                     "INSERT INTO public.user_bookmarks (user_id, numero_controle_pncp, rotulo) VALUES (%s, %s, %s)",
-                    (uid, numero_controle_pncp, rotulo)
+                    (uid, numero_controle_pncp, rotulo), ctx="USER.add_bookmark:legacy_insert_with_rotulo"
                 )
             else:
-                cur.execute(
+                db_execute(
                     "INSERT INTO public.user_bookmarks (user_id, numero_controle_pncp) VALUES (%s, %s)",
-                    (uid, numero_controle_pncp)
+                    (uid, numero_controle_pncp), ctx="USER.add_bookmark:legacy_insert"
                 )
-        conn.commit()
+        # invalida cache de favoritos
+        _cache_invalidate_prefix(f"USER.fetch_bookmarks:{uid}:")
         return True
     except Exception:
-        try:
-            if conn: conn.rollback()
-        except Exception:
-            pass
         return False
-    finally:
-        try:
-            if cur: cur.close()
-        finally:
-            if conn: conn.close()
 
 
 def remove_bookmark(numero_controle_pncp: str) -> bool:
@@ -732,44 +588,19 @@ def remove_bookmark(numero_controle_pncp: str) -> bool:
     if not numero_controle_pncp:
         return False
     user = get_current_user(); uid = user['uid']
-    conn = None; cur = None
     try:
-        conn = create_connection()
-        if not conn:
-            return False
-        cur = conn.cursor()
-        # Soft delete se coluna active existir
-        has_active = False
-        try:
-            cur.execute(
-                """
-                SELECT 1 FROM information_schema.columns
-                WHERE table_schema='public' AND table_name='user_bookmarks' AND column_name='active'
-                """
-            )
-            has_active = bool(cur.fetchone())
-        except Exception:
-            has_active = False
+        has_active = 'active' in _schema_columns_cached('user_bookmarks')
         if has_active:
-            cur.execute(
+            db_execute(
                 "UPDATE public.user_bookmarks SET active=false WHERE user_id=%s AND numero_controle_pncp=%s",
-                (uid, numero_controle_pncp)
+                (uid, numero_controle_pncp), ctx="USER.remove_bookmark:soft_delete"
             )
         else:
-            cur.execute(
+            db_execute(
                 "DELETE FROM public.user_bookmarks WHERE user_id = %s AND numero_controle_pncp = %s",
-                (uid, numero_controle_pncp)
+                (uid, numero_controle_pncp), ctx="USER.remove_bookmark:hard_delete"
             )
-        conn.commit()
+        _cache_invalidate_prefix(f"USER.fetch_bookmarks:{uid}:")
         return True
     except Exception:
-        try:
-            if conn: conn.rollback()
-        except Exception:
-            pass
         return False
-    finally:
-        try:
-            if cur: cur.close()
-        finally:
-            if conn: conn.close()

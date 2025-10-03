@@ -34,21 +34,23 @@ except Exception:
                     pass
     _console = _PlainConsole()
 
-# Estilos por área (cores Rich)
-_AREA_STYLE_MAP: Dict[str, str] = {
-    'SQL': 'yellow',
-    'AUTH': 'green',
-    'SEARCH': 'cyan',
-    'DOCS': 'magenta',
-    'ASSISTANT': 'bright_magenta',
-    'UI': 'white',
-    'BROWSER': 'bright_white',
-    'BOLETIM': 'bright_cyan',
-    'BMK': 'bright_magenta',
-    'FAV': 'bright_magenta',
-    'PREPROC': 'blue',
-    'RESUMO': 'bright_green',
-    'ERROR': 'bold red',
+
+_AREA_STYLE_MAP: Dict[str, Dict[str, Any]] = {
+    'SQL':       {'style': 'gold1',             'on': 0},
+    'DB':        {'style': 'gold1',             'on': 1},
+    'AUTH':      {'style': 'green3',            'on': 0},
+    'SEARCH':    {'style': 'deep_sky_blue1',    'on': 1},
+    'DOCS':      {'style': 'orchid',            'on': 0},
+    'ASSISTANT': {'style': 'medium_purple3',    'on': 0},
+    'IA':        {'style': 'spring_green2',     'on': 1},  
+    'UI':        {'style': 'white',             'on': 1},
+    'BROWSER':   {'style': 'bright_white',      'on': 0},
+    'BOLETIM':   {'style': 'turquoise2',        'on': 0},
+    'BMK':       {'style': 'plum1',             'on': 1},
+    'FAV':       {'style': 'medium_purple',     'on': 1},
+    'PRE':   {'style': 'dodger_blue1',      'on': 1},
+    'RESUMO':    {'style': 'yellow',     'on': 0},
+    'ERROR':     {'style': 'bold red',          'on': 1},
 }
 
 _TRUE_SET = {'1', 'true', 'yes', 'on', 'y', 't'}
@@ -63,28 +65,30 @@ def _env_flag(name: str) -> bool:
 
 
 def is_debug_enabled(area: str) -> bool:
-    """Retorna True se a categoria está habilitada.
+    """Retorna True se a categoria está habilitada (master DEBUG e área 'on'=1).
 
     Política:
-    - DEBUG=false => todos desabilitados (ignora flags por área).
-    - DEBUG=true  => NÃO habilita tudo; apenas áreas com GVG_<AREA>_DEBUG=true.
+    - DEBUG=false => todos desabilitados.
+    - DEBUG=true  => imprime apenas áreas com _AREA_STYLE_MAP[area]['on'] == 1.
     """
     area_norm = (area or '').strip().upper() or 'BROWSER'
     if not _env_flag('DEBUG'):
         return False
-    # Área específica
-    if _env_flag(f'GVG_{area_norm}_DEBUG'):
-        return True
-    return False
+    conf = _AREA_STYLE_MAP.get(area_norm)
+    try:
+        return bool(conf and int(conf.get('on', 0)) == 1)
+    except Exception:
+        return False
 
 
 def debug_log(area: str, *args: Any, sep: str = ' ', end: str = '\n') -> None:
-    """Log simples por categoria usando Rich, sem prefixos customizados."""
+    """Log simples por categoria usando Rich, controlado por _AREA_STYLE_MAP."""
     if not is_debug_enabled(area):
         return
     try:
         area_norm = (area or '').strip().upper() or 'BROWSER'
-        style = _AREA_STYLE_MAP.get(area_norm, 'white')
+        conf = _AREA_STYLE_MAP.get(area_norm, {'style': 'white', 'on': 0})
+        style = conf.get('style', 'white')
         # Prefixar a mensagem com [AREA]
         msg = sep.join(str(a) for a in args)
         prefixed = f"[{area_norm}] {msg}" if msg else f"[{area_norm}]"
@@ -131,7 +135,7 @@ def debug_sql(label: str, sql: str, params: Optional[List[Any]] = None, names: O
         placeholders = len(_re.findall(r'(?<!%)%s', sql))
     except Exception:
         placeholders = sql.count('%s') if isinstance(sql, str) else 0
-    style = _AREA_STYLE_MAP.get('SQL', 'yellow')
+    style = (_AREA_STYLE_MAP.get('SQL') or {}).get('style', 'yellow')
     try:
         prefix = "[SQL] "
         _console.print(f"{prefix}{label}: placeholders={placeholders} params={len(params or [])} match={'YES' if placeholders==(len(params or [])) else 'NO'}", style=style)

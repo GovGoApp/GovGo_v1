@@ -9,12 +9,11 @@ import json
 import time
 from datetime import datetime
 from typing import Dict, Any
-from openai import OpenAI
+from gvg_ai_utils import ai_assistant_run_text
 from dotenv import load_dotenv
 
 # Configurações
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Assistant IDs
 ASSISTANT_ID = os.getenv("GVG_PREPROCESSING_QUERY_v1")
@@ -22,20 +21,9 @@ ASSISTANT_ID_V2 = os.getenv("GVG_PREPROCESSING_QUERY_v2")
 ENABLE_SEARCH_V2 = (os.getenv("GVG_ENABLE_SEARCH_V2", "false").strip().lower() in ("1","true","yes","on"))
 MAX_RETRIES = 3
 
-# Thread global para reutilização
-_thread = None
-
 def get_preprocessing_thread():
-	"""
-	Retorna thread global para preprocessamento, criando se necessário
-    
-	Returns:
-		thread: Thread do OpenAI Assistant
-	"""
-	global _thread
-	if _thread is None:
-		_thread = client.beta.threads.create()
-	return _thread
+	"""Mantido por compatibilidade; threads agora são gerenciadas por gvg_ai_utils."""
+	return None
 
 class SearchQueryProcessor:
 	"""
@@ -45,7 +33,8 @@ class SearchQueryProcessor:
     
 	def __init__(self):
 		self.assistant_id = ASSISTANT_ID
-		self.thread = get_preprocessing_thread()
+		# Threads agora são internas ao wrapper; mantemos API
+		self.thread = None
         
 	def process_query(self, user_query: str, max_retries: int = MAX_RETRIES) -> Dict[str, Any]:
 		"""
@@ -67,26 +56,8 @@ class SearchQueryProcessor:
 		
 		for attempt in range(max_retries):
 			try:
-				# Preparar prompt para o Assistant
-				# Prompt mínimo – a lógica principal está no arquivo de especificação do Assistant (GVG_PREPROCESSING_QUERY_v1)
-				# O assistant já sabe retornar: search_terms, negative_terms, sql_conditions, explanation, requires_join_embeddings
 				prompt = f"Consulta: {user_query}"
-                
-				# Enviar mensagem
-				client.beta.threads.messages.create(
-					thread_id=self.thread.id,
-					role="user",
-					content=prompt
-				)
-                
-				# Executar Assistant
-				run = client.beta.threads.runs.create(
-					thread_id=self.thread.id,
-					assistant_id=self.assistant_id
-				)
-                
-				# Aguardar resposta
-				response_content = self._wait_for_response(run.id)
+				response_content = ai_assistant_run_text(self.assistant_id or '', prompt, context_key='preproc', timeout=40)
                 
 				# Processar resposta
 				return self._parse_response(response_content, user_query)
@@ -94,7 +65,7 @@ class SearchQueryProcessor:
 			except Exception as e:
 				try:
 					from gvg_debug import debug_log as dbg
-					dbg('PREPROC', f"Tentativa {attempt + 1} falhou: {e}")
+					dbg('PRE', f"Tentativa {attempt + 1} falhou: {e}")
 				except Exception:
 					pass
 				if attempt == max_retries - 1:
@@ -140,27 +111,18 @@ class SearchQueryProcessor:
 		# DEBUG de entrada do pré-processamento [FILTER]
 		try:
 			from gvg_debug import debug_log as dbg
-			dbg('PREPROC', f"[FILTER] assistant.input={payload}")
+			dbg('PRE', f"[FILTER] assistant.input={payload}")
 		except Exception:
 			pass
 
 		for attempt in range(max_retries):
 			try:
-				client.beta.threads.messages.create(
-					thread_id=self.thread.id,
-					role="user",
-					content=content
-				)
-				run = client.beta.threads.runs.create(
-					thread_id=self.thread.id,
-					assistant_id=ASSISTANT_ID_V2
-				)
-				response_content = self._wait_for_response(run.id)
+				response_content = ai_assistant_run_text(ASSISTANT_ID_V2 or '', content, context_key='preproc_v2', timeout=50)
 				data = self._parse_response(response_content, user_input)
 				# DEBUG de saída do pré-processamento [FILTER]
 				try:
 					from gvg_debug import debug_log as dbg
-					dbg('PREPROC', f"[FILTER] assistant.output={data}")
+					dbg('PRE', f"[FILTER] assistant.output={data}")
 				except Exception:
 					pass
 				# Se v2 não retornou embeddings, inferir conforme regra (termos presentes)
@@ -172,7 +134,7 @@ class SearchQueryProcessor:
 			except Exception as e:
 				try:
 					from gvg_debug import debug_log as dbg
-					dbg('PREPROC', f"V2 tentativa {attempt + 1} falhou: {e}")
+					dbg('PRE', f"V2 tentativa {attempt + 1} falhou: {e}")
 				except Exception:
 					pass
 				if attempt == max_retries - 1:
@@ -181,40 +143,8 @@ class SearchQueryProcessor:
 				time.sleep(1)
     
 	def _wait_for_response(self, run_id: str, max_wait: int = 30) -> str:
-		"""
-		Aguarda resposta do Assistant
-        
-		Args:
-			run_id (str): ID do run
-			max_wait (int): Tempo máximo de espera
-            
-		Returns:
-			str: Conteúdo da resposta
-		"""
-		start_time = time.time()
-        
-		while time.time() - start_time < max_wait:
-			run = client.beta.threads.runs.retrieve(
-				thread_id=self.thread.id,
-				run_id=run_id
-			)
-            
-			if run.status == 'completed':
-				# Buscar última mensagem do assistant
-				messages = client.beta.threads.messages.list(
-					thread_id=self.thread.id,
-					limit=1
-				)
-                
-				if messages.data and messages.data[0].role == 'assistant':
-					return messages.data[0].content[0].text.value
-                    
-			elif run.status in ['failed', 'cancelled', 'expired']:
-				raise Exception(f"Run falhou: {run.status}")
-                
-			time.sleep(1)
-        
-		raise Exception("Timeout aguardando resposta")
+		"""Compat leftover: no-op since wrappers return final text."""
+		return ""
     
 	def _parse_response(self, response_content: str, original_query: str) -> Dict[str, Any]:
 		"""

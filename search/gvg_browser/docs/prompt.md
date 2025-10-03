@@ -61,15 +61,18 @@ Leia e entenda integralmente todos os arquivos sugeridos e também o arquivo `do
   - Ao “ADD” via bookmark, atualizar a Store de forma otimista com os MESMOS valores do card (órgão, município, UF, descrição 100, data de encerramento formatada). Persistência no BD continua só com `(user_id, numero_controle_pncp)`.
   - Remoção: remove do BD e da Store; ícones sincronizados pela Store.
   - Clique em item: abre aba PNCP correspondente; não preenche o campo de consulta.
+  - E‑mail: botão dedicado envia o card do detalhe por e‑mail; modal compacto aceita Enter/Click para envio e fecha imediatamente.
 - Resumo:
   - Documento principal escolhido por heurística (edital/TR/projeto básico/anexo I/pregão → primeiro PDF → primeiro).
   - Spinner laranja imediato; uma geração por PNCP por sessão (cache).
   - Funciona apenas se o pipeline de documentos estiver disponível.
+  - Reuso: quando existir, reutilize o resumo salvo por usuário; caso contrário, gere e armazene para uso posterior.
 - UI/UX:
   - Três janelas por card com toggle e chevrons.
   - Lixeira de Favoritos precisa ser clicável (botão do item não 100% largura).
   - Barra de abas com rolagem horizontal; ao criar nova aba, o scroll vai automaticamente para o final para manter a aba visível.
   - Ordenação custom (similaridade/data/valor) e rank recalculado.
+  - Botões de ação (Histórico/Favoritos/Boletins) padronizados e mais compactos; colunas de ações com espaçamento reduzido. Não alterar o estilo dos itens de lista.
   - Boletins (agendamento):
     - Tabela `public.user_boletins` (soft delete via `active=false`).
     - Frequências: MULTIDIARIO (slots), DIARIO (seg-sex implícito), SEMANAL (dias).
@@ -80,6 +83,7 @@ Leia e entenda integralmente todos os arquivos sugeridos e também o arquivo `do
     - Deduplicação `_dedupe_boletins` aplicada em load/save/delete.
     - Exclusão: valida `n_clicks > 0` antes de soft delete.
     - Limitações: sem editar/reativar/scheduler interno ainda.
+    - Renderização imediata: após salvar, o boletim aparece completo na lista sem precisar recarregar.
 
 ## Execução local
 - Requisitos: Python 3.12+, `dash` e `dash-bootstrap-components`; DB V1 configurado.
@@ -89,9 +93,10 @@ Leia e entenda integralmente todos os arquivos sugeridos e também o arquivo `do
 ## Deploy no Render (essencial)
 - Root Directory: `search/gvg_browser`
 - Build: `pip install -r requirements.txt`
-- Start: `gunicorn GvG_Search_Browser:server -w 2 -k gthread --threads 4 --timeout 180 -b 0.0.0.0:$PORT`
+- Start: `gunicorn GvG_Search_Browser:server -w 2 -k gthread --threads 4 --timeout 180 -b 0.0.0.0:$PORT --access-logfile /dev/null`
 - Env (no painel): `SUPABASE_*`, `OPENAI_API_KEY`, `GVG_PREPROCESSING_QUERY_v1`, `GVG_RELEVANCE_FLEXIBLE`, `GVG_RELEVANCE_RESTRICTIVE`, `GVG_SUMMARY_DOCUMENT_v1` e, recomendado: `BASE_PATH=/tmp`, `FILES_PATH=/tmp/files`, `RESULTS_PATH=/tmp/reports`, `TEMP_PATH=/tmp`, `DEBUG=false`.
 - DNS (www): CNAME `www` → domínio do serviço no Render; remover A de `www`. Apex opcional conforme instruções do Render.
+ - Site (produção): https://www.govgo.com.br (Render)
 
 ## Qualidade e validação
 - Antes de editar: liste mudanças e impacto. Peça confirmação.
@@ -103,4 +108,5 @@ Leia e entenda integralmente todos os arquivos sugeridos e também o arquivo `do
 - Se faltar detalhe, faça no máximo 1–2 suposições razoáveis e siga, apontando-as.
 - Entregue diffs minimalistas; atualize `docs/README.md` quando necessário.
 - Ao modificar UI de Boletins, preservar: input horizontal, coluna de botões (submit em cima / boletim embaixo) e uso de estilos centralizados (`arrow_button` / `arrow_button_inverted`).
+ - Para e‑mail, use o fluxo nativo da UI: gvg_email para envio/renderização; modal compacto que fecha imediatamente.
 

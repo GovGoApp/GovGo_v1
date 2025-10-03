@@ -9,7 +9,6 @@ import re
 import time
 import numpy as np
 from typing import Dict, List, Tuple, Any, Optional
-import psycopg2
 
 # ============================================================================
 # NOTA: Este módulo foi atualizado para replicar as queries e funcionalidades
@@ -19,9 +18,9 @@ import psycopg2
 # ============================================================================
 
 # Importações dos módulos otimizados
-from gvg_database import create_connection
+from gvg_database import db_fetch_all, db_fetch_one, db_read_df
 from gvg_debug import debug_log as dbg, debug_sql as dbg_sql
-from gvg_ai_utils import get_embedding, get_negation_embedding, calculate_confidence
+from gvg_ai_utils import get_embedding, get_negation_embedding, calculate_confidence, ai_assistant_run_text, ai_get_client
 from gvg_schema import (
 	CONTRATACAO_TABLE, CONTRATACAO_EMB_TABLE, CATEGORIA_TABLE,
 	PRIMARY_KEY, EMB_VECTOR_FIELD, CATEGORY_VECTOR_FIELD,
@@ -42,21 +41,8 @@ USE_PARTIAL_DESCRIPTION = True
 RELEVANCE_ASSISTANT_FLEXIBLE = os.getenv("GVG_RELEVANCE_FLEXIBLE")
 RELEVANCE_ASSISTANT_RESTRICTIVE = os.getenv("GVG_RELEVANCE_RESTRICTIVE")
 
-try:
-	from openai import OpenAI  # type: ignore
-	_openai_key = os.getenv("OPENAI_API_KEY")
-	if _openai_key:
-		_openai_client = OpenAI(api_key=_openai_key)
-		_relevance_thread = None
-		_RELEVANCE_AVAILABLE = True
-	else:
-		_openai_client = None
-		_relevance_thread = None
-		_RELEVANCE_AVAILABLE = False
-except Exception:
-	_openai_client = None
-	_relevance_thread = None
-	_RELEVANCE_AVAILABLE = False
+# Disponibilidade do OpenAI passa a ser verificada via gvg_ai_utils
+_RELEVANCE_AVAILABLE = bool(ai_get_client())
 
 def _get_current_assistant_id():
 	if RELEVANCE_FILTER_LEVEL == 2:
@@ -65,50 +51,9 @@ def _get_current_assistant_id():
 		return RELEVANCE_ASSISTANT_RESTRICTIVE
 	return None
 
-def _get_relevance_thread():
-	global _relevance_thread
-	if not _RELEVANCE_AVAILABLE or not _openai_client:
-		return None
-	if _relevance_thread is None:
-		try:
-			_relevance_thread = _openai_client.beta.threads.create()
-		except Exception as e:
-			return None
-	return _relevance_thread
-
-def _poll_run(thread_id, run_id, timeout=30):
-	if not _openai_client:
-		raise RuntimeError("Cliente OpenAI indisponível")
-	start = time.time()
-	while time.time() - start < timeout:
-		run = _openai_client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
-		if run.status == 'completed':
-			msgs = _openai_client.beta.threads.messages.list(thread_id=thread_id, limit=1)
-			if msgs.data and msgs.data[0].role == 'assistant':
-				content = msgs.data[0].content[0].text.value
-				return content
-			break
-		if run.status in ('failed','cancelled','expired'):
-			raise RuntimeError(f"Run falhou: {run.status}")
-		time.sleep(1)
-	raise TimeoutError("Timeout aguardando resposta do Assistant")
-
-def _call_relevance_assistant(assistant_id, payload_json):
-	if not _openai_client:
-		raise RuntimeError("Cliente OpenAI indisponível")
-	thread = _get_relevance_thread()
-	if not thread:
-		raise RuntimeError("Thread de relevância indisponível")
-	_openai_client.beta.threads.messages.create(
-		thread_id=thread.id,
-		role="user",
-		content=payload_json
-	)
-	run = _openai_client.beta.threads.runs.create(
-		thread_id=thread.id,
-		assistant_id=assistant_id
-	)
-	return _poll_run(thread.id, run.id, timeout=60)
+def _is_openai_available() -> bool:
+	"""Checa disponibilidade do cliente OpenAI via ai_get_client()."""
+	return bool(ai_get_client())
 
 def _extract_json_block(text: str) -> str:
 	if "```json" in text:
@@ -164,7 +109,7 @@ def _process_relevance_response(response_text, original_results):
 def apply_relevance_filter(results, query, search_metadata=None):
 	if RELEVANCE_FILTER_LEVEL == 1 or not results:
 		return results, {'filter_applied': False, 'level': RELEVANCE_FILTER_LEVEL}
-	if not _RELEVANCE_AVAILABLE:
+	if not _RELEVANCE_AVAILABLE and not _is_openai_available():
 		return results, {'filter_applied': False, 'reason':'OpenAI indisponível','level':RELEVANCE_FILTER_LEVEL}
 	assistant_id = _get_current_assistant_id()
 	if not assistant_id:
@@ -172,7 +117,7 @@ def apply_relevance_filter(results, query, search_metadata=None):
 	try:
 		import json as _json
 		payload = _prepare_relevance_payload(results, query, search_metadata)
-		response = _call_relevance_assistant(assistant_id, _json.dumps(payload, ensure_ascii=False))
+		response = ai_assistant_run_text(assistant_id, _json.dumps(payload, ensure_ascii=False), context_key='relevance', timeout=60)
 		filtered = _process_relevance_response(response, results)
 		return filtered, {
 			'filter_applied': True,
@@ -221,10 +166,19 @@ SQL_DEBUG = False
 
 
 def _safe_close(cursor, conn):
+	# Mantido por compat, não utilizado após migração para wrappers db_*
 	try:
-		if cursor: cursor.close()
+		if cursor:
+			try:
+				cursor.close()
+			except Exception:
+				pass
 	finally:
-		if conn: conn.close()
+		if conn:
+			try:
+				conn.close()
+			except Exception:
+				pass
 
 
 def _summarize_param(p: Any) -> str:
@@ -434,8 +388,6 @@ def semantic_search(query_text,
 
 	Agora utiliza `build_semantic_select` para evitar repetição de lista de colunas.
 	"""
-	conn = None
-	cursor = None
 	try:
 		processed = _get_processed(query_text) if (intelligent_mode and ENABLE_INTELLIGENT_PROCESSING) else {
 			'original_query': query_text,
@@ -454,11 +406,6 @@ def semantic_search(query_text,
 		if emb is None:
 			return [], 0.0
 		emb_vec = emb.tolist() if isinstance(emb, np.ndarray) else emb
-
-		conn = create_connection()
-		if not conn:
-			return [], 0.0
-		cursor = conn.cursor()
 
 		vector_opt_enabled = os.getenv("GVG_VECTOR_OPT", "1") != "0"
 		executed_optimized = False
@@ -525,16 +472,11 @@ def semantic_search(query_text,
 					name_list.extend(['pre_ids','embedding','pre_knn','limit'])
 					_debug_sql('semantic-opt', final_sql, params, names=name_list)
 
-				cursor.execute(final_sql, params)
+				rows_dict = db_fetch_all(final_sql, params, as_dict=True, ctx="SC.semantic_search.opt")
 				executed_optimized = True
 			except Exception as opt_err:
 				if sql_debug:
 					dbg('SQL', f"⚠️ Vetor otimizado falhou: {opt_err}")
-				try:
-					if conn:
-						conn.rollback()
-				except Exception:
-					pass
 				executed_optimized = False
 
 		if not executed_optimized:
@@ -558,16 +500,12 @@ def semantic_search(query_text,
 			if sql_debug:
 				name_list = ['embedding'] + (["category_codes"] if category_codes else []) + (["limit"])
 				_debug_sql('semantic_fallback', final_sql, params, names=name_list)
-			cursor.execute(final_sql, params)
-
-		rows = cursor.fetchall()
-		column_names = [d[0] for d in cursor.description]
+			rows_dict = db_fetch_all(final_sql, params, as_dict=True, ctx="SC.semantic_search.fallback")
 
 		results: List[Dict[str, Any]] = []
 		core_keys = set(CONTRATACAO_FIELDS.keys())
-		for idx, row in enumerate(rows):
-			record = dict(zip(column_names, row))
-			similarity = float(record['similarity'])
+		for idx, record in enumerate(rows_dict or []):
+			similarity = float(record.get('similarity', 0.0))
 			details = {k: v for k, v in record.items() if k in core_keys}
 			details['similarity'] = similarity
 			if intelligent_mode:
@@ -602,17 +540,12 @@ def semantic_search(query_text,
 
 		return results, calculate_confidence([r['similarity'] for r in results])
 	except Exception as e:
-		try:
-			if conn:
-				conn.rollback()
-		except Exception:
-			pass
 		if SQL_DEBUG:
 			dbg('SQL', f"[ERRO][semantic_search] {type(e).__name__}: {e}")
 		dbg('SEARCH', f"Erro na busca semântica: {e}")
 		return [], 0.0
 	finally:
-		_safe_close(cursor, conn)
+		pass
 
 def keyword_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 				   filter_expired=DEFAULT_FILTER_EXPIRED,
@@ -623,7 +556,6 @@ def keyword_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 	Usa builders para colunas core e normaliza uma métrica de similaridade
 	baseada nos ranks retornados pelo PostgreSQL.
 	"""
-	conn = None; cursor = None
 	try:
 		if intelligent_mode and ENABLE_INTELLIGENT_PROCESSING:
 			processed = _get_processed(query_text)
@@ -640,10 +572,7 @@ def keyword_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 		sql_conditions = processed.get('sql_conditions', [])
 		sql_conditions_sanitized = _sanitize_sql_conditions(sql_conditions, context='keyword')
 
-		conn = create_connection()
-		if not conn:
-			return [], 0.0
-		cursor = conn.cursor()
+
 
 		terms_split = [t for t in search_terms.split() if t]
 		if not terms_split:
@@ -704,16 +633,13 @@ def keyword_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 				name_list.append('neg_query')
 			name_list.append('limit')
 			_debug_sql('keyword', sql, params, names=name_list)
-		cursor.execute(sql, params)
-		rows = cursor.fetchall()
-		column_names = [d[0] for d in cursor.description]
+		rows = db_fetch_all(sql, params, as_dict=True, ctx="SC.keyword_search")
 		core_keys = set(CONTRATACAO_FIELDS.keys())
 		results = []
 		sims = []
 		# Normalização simples: similarity = min( (rank_exact + 0.5*rank_prefix) / (0.1 * n_terms + 1e-6), 1.0 )
 		denom = (0.1 * len(terms_split)) + 1e-6
-		for i, row in enumerate(rows):
-			rec = dict(zip(column_names, row))
+		for i, rec in enumerate(rows or []):
 			rank_exact = float(rec['rank_exact'])
 			rank_prefix = float(rec['rank_prefix'])
 			combined = rank_exact + 0.5 * rank_prefix
@@ -760,7 +686,7 @@ def keyword_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 		dbg('SEARCH', f"Erro na busca por palavras‑chave: {e}")
 		return [], 0.0
 	finally:
-		_safe_close(cursor, conn)
+		pass
 
 def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 				  semantic_weight=SEMANTIC_WEIGHT,
@@ -772,7 +698,6 @@ def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 
 	Usa builders para colunas core e cursor.description para mapear resultados.
 	"""
-	conn=None; cursor=None
 	try:
 		sql_debug = SQL_DEBUG
 		if intelligent_mode and ENABLE_INTELLIGENT_PROCESSING:
@@ -808,10 +733,7 @@ def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 		tsquery_prefix = ':* & '.join(terms_split) + ':*' if terms_split else search_terms
 		max_possible_keyword_score = max(len(terms_split)*0.1, 0.0001)
 
-		conn = create_connection()
-		if not conn:
-			return [], 0.0
-		cursor = conn.cursor()
+
 
 		core_cols = get_contratacao_core_columns('c')  # builder
 		text_field = 'c.objeto_compra'
@@ -843,10 +765,9 @@ def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 				'embedding','tsquery','tsquery_prefix','semantic_weight','embedding','semantic_weight','tsquery','tsquery_prefix','max_keyword_norm','limit'
 			])
 		try:
-			cursor.execute(sql, params)
-			rows = cursor.fetchall(); column_names=[d[0] for d in cursor.description]; results=[]; sims=[]; core_keys=set(CONTRATACAO_FIELDS.keys())
-			for idx,row in enumerate(rows):
-				rec=dict(zip(column_names,row))
+			rows = db_fetch_all(sql, params, as_dict=True, ctx="SC.hybrid_search")
+			results=[]; sims=[]; core_keys=set(CONTRATACAO_FIELDS.keys())
+			for idx, rec in enumerate(rows or []):
 				combined=float(rec['combined_score'])
 				sims.append(combined)
 				details={k:v for k,v in rec.items() if k in core_keys}
@@ -880,8 +801,8 @@ def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 					if filtered:
 						results = filtered
 				except Exception as rf_err:
-							if sql_debug:
-								dbg('SEARCH', f"⚠️ [ERRO] Filtro de relevância falhou: {rf_err}")
+						if sql_debug:
+							dbg('SEARCH', f"⚠️ [ERRO] Filtro de relevância falhou: {rf_err}")
 			return results, calculate_confidence([r['similarity'] for r in results])
 		except Exception as fe:
 			if sql_debug:
@@ -928,15 +849,15 @@ def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 					if filtered:
 						final = filtered
 				except Exception as rf_err:
-							if sql_debug:
-								dbg('SEARCH', f"⚠️ Filtro de relevância falhou: {rf_err}")
+						if sql_debug:
+							dbg('SEARCH', f"⚠️ Filtro de relevância falhou: {rf_err}")
 			conf = sem_conf*semantic_weight + kw_conf*kw_weight
 			return final, conf
 	except Exception as e:
 		dbg('SEARCH', f"Erro na busca híbrida: {e}")
 		return [], 0.0
 	finally:
-		_safe_close(cursor, conn)
+		pass
 
 def toggle_intelligent_processing(enable: bool = True):
 	"""
@@ -971,7 +892,6 @@ def get_intelligent_status():
 # =============================================================
 # CATEGORIAS (migrado de gvg_categories.py para consolidação v3)
 # =============================================================
-from gvg_database import create_engine_connection
 import pandas as pd
 
 def get_top_categories_for_query(query_text: str, top_n: int = 10, use_negation: bool = True, search_type: int = 1, console=None):
@@ -985,13 +905,12 @@ def get_top_categories_for_query(query_text: str, top_n: int = 10, use_negation:
 		if emb is None:
 			return []
 		emb_list = emb.tolist() if isinstance(emb, np.ndarray) else emb
-		engine = create_engine_connection()
-		if not engine:
-			return []
 		# Usa builder centralizado para garantir consistência de colunas
-		base_select = build_category_similarity_select('%(embedding)s')  # já inclui FROM/WHERE
-		query = base_select + "ORDER BY similarity DESC LIMIT %(limit)s"  # adiciona ordenação/limite
-		df = pd.read_sql_query(query, engine, params={"embedding": emb_list, "limit": top_n})
+		base_select = build_category_similarity_select('%s')  # já inclui FROM/WHERE
+		query = base_select + "ORDER BY similarity DESC LIMIT %s"  # adiciona ordenação/limite
+		df = db_read_df(query, (emb_list, top_n), ctx="SC.get_top_categories_for_query")
+		if df is None:
+			return []
 		out = []
 		for idx, row in df.iterrows():
 			# Compat: alguns ambientes podem não ter id_categoria; usar fallback
@@ -1065,10 +984,6 @@ def correspondence_search(query_text, top_categories, limit=30, filter_expired=T
 		category_codes = [c['codigo'] for c in top_categories if c.get('codigo')]
 		if not category_codes:
 			return [], 0.0, {'reason': 'empty_codes'}
-		conn = create_connection()
-		if not conn:
-			return [], 0.0, {'reason': 'db_connection_failed'}
-		cur = conn.cursor()
 		sql = f"""
 		SELECT c.numero_controle_pncp,c.ano_compra,c.objeto_compra,c.valor_total_homologado,c.valor_total_estimado,
 			   c.data_abertura_proposta,c.data_encerramento_proposta,c.data_inclusao,c.link_sistema_origem,c.modalidade_id,
@@ -1079,7 +994,7 @@ def correspondence_search(query_text, top_categories, limit=30, filter_expired=T
 		JOIN {CONTRATACAO_EMB_TABLE} ce ON c.{PRIMARY_KEY} = ce.{PRIMARY_KEY}
 		WHERE ce.top_categories && %s
 		"""
-		params = (category_codes,)
+		params = [category_codes]
 		if filter_expired:
 			sql += " AND to_date(NULLIF(c.data_encerramento_proposta,''),'YYYY-MM-DD') >= CURRENT_DATE"
 		# Pré-filtro adicional vindo do Browser (V2)
@@ -1087,12 +1002,10 @@ def correspondence_search(query_text, top_categories, limit=30, filter_expired=T
 			for cond in _sanitize_sql_conditions(where_sql, context='semantic'):
 				sql += f" AND {cond}"
 		sql += " LIMIT %s"
-		params = (category_codes, limit * 5)
-		cur.execute(sql, params)
-		rows = cur.fetchall(); colnames = [d[0] for d in cur.description]; cur.close(); conn.close()
+		params = [category_codes, limit * 5]
+		rows = db_fetch_all(sql, params, as_dict=True, ctx="SC.correspondence_search")
 		results = []
-		for row in rows:
-			rec = dict(zip(colnames, row))
+		for rec in (rows or []):
 			_augment_aliases(rec)
 			r_categories = rec.get('top_categories') or []
 			r_sims = rec.get('top_similarities') or []
@@ -1157,17 +1070,14 @@ def category_filtered_search(query_text, search_type, top_categories, limit=30, 
 		if not base_results:
 			return [], 0.0, {'reason': 'no_base_results'}
 		ids = [r['id'] for r in base_results]
-		conn = create_connection()
-		if not conn:
-			return [], 0.0, {'reason': 'db_connection_failed'}
-		cur = conn.cursor(); placeholders = ','.join(['%s'] * len(ids))
+		placeholders = ','.join(['%s'] * len(ids))
 		cat_sql = f"""
 		SELECT {PRIMARY_KEY}, top_categories
 		FROM {CONTRATACAO_EMB_TABLE}
 		WHERE {PRIMARY_KEY} IN ({placeholders}) AND top_categories IS NOT NULL
 		"""
-		cur.execute(cat_sql, ids)
-		cat_map = {row[0]: row[1] for row in cur.fetchall()}; cur.close(); conn.close()
+		cat_rows = db_fetch_all(cat_sql, ids, as_dict=True, ctx="SC.category_filtered_search:fetch_categories")
+		cat_map = {row.get(PRIMARY_KEY): row.get('top_categories') for row in (cat_rows or [])}
 		query_codes = {c['codigo'] for c in top_categories if c.get('codigo')}
 		filtered = []; universe_with_categories = 0
 		for r in base_results:
@@ -1210,33 +1120,21 @@ def fetch_itens_contratacao(numero_controle_pncp: str, limit: int = 500) -> List
 	"""
 	if not numero_controle_pncp:
 		return []
-	conn = None; cur = None
 	try:
-		conn = create_connection()
-		if not conn:
-			return []
-		cur = conn.cursor()
 		sql = build_itens_by_pncp_select('%s')
-		cur.execute(sql, (numero_controle_pncp, limit))
-		rows = cur.fetchall()
-		cols = [d[0] for d in cur.description]
+		rows = db_fetch_all(sql, (numero_controle_pncp, limit), as_dict=True, ctx="SC.fetch_itens_contratacao") if db_fetch_all else []
 		out: List[Dict[str, Any]] = []
-		for row in rows:
-			rec = dict(zip(cols, row))
-			norm = normalize_item_contratacao_row(rec)
-			out.append(norm)
+		for rec in (rows or []):
+			try:
+				norm = normalize_item_contratacao_row(rec)
+				out.append(norm)
+			except Exception:
+				pass
 		return out
 	except Exception as e:
 		if SQL_DEBUG:
 			dbg('SQL', f"[ERRO][fetch_itens_contratacao] {e}")
-		try:
-			if conn:
-				conn.rollback()
-		except Exception:
-			pass
 		return []
-	finally:
-		_safe_close(cur, conn)
 
 
 def fetch_contratacao_by_pncp(numero_controle_pncp: str) -> Optional[Dict[str, Any]]:
@@ -1246,12 +1144,7 @@ def fetch_contratacao_by_pncp(numero_controle_pncp: str) -> Optional[Dict[str, A
 	"""
 	if not numero_controle_pncp:
 		return None
-	conn = None; cur = None
 	try:
-		conn = create_connection()
-		if not conn:
-			return None
-		cur = conn.cursor()
 		core_cols = get_contratacao_core_columns('c')
 		sql = (
 			"SELECT "
@@ -1259,21 +1152,13 @@ def fetch_contratacao_by_pncp(numero_controle_pncp: str) -> Optional[Dict[str, A
 			+ f"\nFROM {CONTRATACAO_TABLE} c\nWHERE c.{PRIMARY_KEY} = %s LIMIT 1"
 		)
 		_debug_sql('fetch_by_pncp', sql, [numero_controle_pncp])
-		cur.execute(sql, (numero_controle_pncp,))
-		row = cur.fetchone()
+		row = db_fetch_one(sql, (numero_controle_pncp,), as_dict=True, ctx="SC.fetch_contratacao_by_pncp") if db_fetch_one else None
 		if not row:
 			return None
-		cols = [d[0] for d in cur.description]
-		rec = dict(zip(cols, row))
+		rec = dict(row)
 		_augment_aliases(rec)
 		return rec
 	except Exception as e:
 		if SQL_DEBUG:
 			dbg('SQL', f"[ERRO][fetch_contratacao_by_pncp] {e}")
-		try:
-			if conn: conn.rollback()
-		except Exception:
-			pass
 		return None
-	finally:
-		_safe_close(cur, conn)

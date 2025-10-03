@@ -48,6 +48,11 @@ Este documento resume e explica a arquitetura do módulo `gvg_browser` e, em esp
 - `gvg_exporters.py`
   - Exportação de resultados (JSON/XLSX/CSV/PDF/HTML) com nomes de arquivo padronizados.
 
+- `gvg_email.py`
+  - Envio de e-mails diretamente pela UI (Favoritos e Boletins) usando biblioteca padrão.
+  - Modal compacto: Enter ou Click enviam e a janela fecha imediatamente; envio assíncrono (UI segue responsiva).
+  - Renderização de conteúdo de e-mail consistente com a UI (cards e boletins).
+
 - `gvg_user.py`
   - Usuário atual (mock) e histórico: `user_prompts` / `user_results` no banco (se existirem). Permite salvar consultas, apagar e registrar resultados de uma busca.
 
@@ -82,6 +87,7 @@ Este documento resume e explica a arquitetura do módulo `gvg_browser` e, em esp
   - Ícones nos botões: os três botões exibem chevron para cima (ativo) ou para baixo (inativo), atualizados por callback conforme o toggle.
   - Spinner no Resumo: ao ativar “Resumo”, mostra um spinner laranja centralizado (usando `details_spinner_center`) enquanto o sumário é gerado; ao terminar, o spinner é substituído pelo texto.
   - Cache por PNCP: Resumo é processado apenas uma vez por sessão. O texto é salvo em `store-cache-resumo[pid]` e reapresentado instantaneamente nas próximas aberturas. Itens (`store-cache-itens`) e Documentos (`store-cache-docs`) também usam cache.
+  - Envio de e‑mail pela UI: botões dedicados em Favoritos e Boletins abrem modal compacto; Enter/Click enviam e a janela fecha na hora.
 
 3) Exportações
 - Botões no painel “Exportar” geram arquivos em `reports/`: JSON, XLSX, CSV, PDF (se reportlab instalado) e HTML.
@@ -107,6 +113,10 @@ UI / Layout:
 - Botão consulta (seta) e, logo abaixo dele (mesma coluna à direita do campo), o botão de boletim com ícone `fa-calendar-plus`.
 - Botão Boletim: mesma geometria (32px, circular). Cor normal (laranja) quando fechado; invertida (fundo branco/borda laranja) quando o painel está aberto.
 - Collapse “Configurar Boletim” com: Frequência, Horários/Dias, Canais e botão “Salvar Boletim”.
+
+Comportamento de lista:
+- Após salvar, o boletim aparece completo imediatamente na lista (sem recarregar a página).
+- A coluna de ações usa estilo compacto, com botões menores e espaçamento reduzido.
 
 Stores:
 - `store-boletins`: lista de objetos `{ id, query_text, schedule_type, schedule_detail, channels }` (somente ativos, ordenados por criação desc).
@@ -184,6 +194,8 @@ Impacto visual:
   - `files/DOCLING_*.md` — Markdown completo do(s) documento(s)
   - `reports/SUMMARY_*.md` — Resumo em Markdown
 - Dependência opcional: `docling` (pesada). Se não instalada, o resumo retornará mensagem de erro; o app continua funcionando.
+  - O resumo é reutilizado por usuário quando disponível (persistência opcional no banco) e também é cacheado por sessão por PNCP.
+  - Quando o pipeline de documentos não está habilitado, a UI informa de forma clara e segue operando.
 
 ## Histórico do usuário
 
@@ -191,6 +203,9 @@ Impacto visual:
 - Se `user_prompts` e `user_results` existirem no DB, o app salva consultas e resultados:
   - `add_prompt(...)` insere e retorna `prompt_id` (com embedding do prompt opcionalmente)
   - `save_user_results(prompt_id, results)` insere rank/similaridade/valor/data por resultado
+
+Interação:
+- Ao clicar em um item do histórico, a UI preenche as configurações e filtros correspondentes, mas não executa a busca automaticamente (o envio é manual).
 
 ## Favoritos do usuário
 
@@ -226,6 +241,11 @@ Observação de UX:
 - Estilo e cores (cards, botões, tabelas) vêm de `gvg_styles.styles`.
 - Ícones via FontAwesome (por meio do Bootstrap theme referenciado).
 - Cores da Data Encerramento variam por proximidade (roxo para vencidos; verde para > 30 dias).
+
+Botões e colunas de ação (listas):
+- Botões de ação em Histórico, Favoritos e Boletins foram padronizados e estão mais compactos.
+- As colunas de ações têm espaçamento vertical reduzido para melhor aproveitamento do espaço.
+- Os itens de lista permanecem com o estilo original; somente os botões e o espaçamento entre eles foram reduzidos.
 
 ### Barra de abas (Sessões)
 
@@ -289,11 +309,13 @@ Atenção:
 
 - Serviço Web (env: Python) com raiz do projeto em `search/gvg_browser` (rootDirectory).
 - Build Command: `pip install -r requirements.txt`
-- Start Command: `gunicorn GvG_Search_Browser:server -w 2 -k gthread --threads 4 --timeout 180 -b 0.0.0.0:$PORT`
+- Start Command: `gunicorn GvG_Search_Browser:server -w 2 -k gthread --threads 4 --timeout 180 -b 0.0.0.0:$PORT --access-logfile /dev/null`
+- Site (produção): https://www.govgo.com.br (Render)
 - Variáveis no painel (não commitar .env):
   - Banco: `SUPABASE_HOST`, `SUPABASE_USER`, `SUPABASE_PASSWORD`, `SUPABASE_PORT=6543`, `SUPABASE_DBNAME`.
   - OpenAI/Assistants: `OPENAI_API_KEY`, `GVG_PREPROCESSING_QUERY_v1`, `GVG_RELEVANCE_FLEXIBLE`, `GVG_RELEVANCE_RESTRICTIVE`, `GVG_SUMMARY_DOCUMENT_v1`.
   - Recomendadas (filesystem efêmero): `BASE_PATH=/tmp`, `FILES_PATH=/tmp/files`, `RESULTS_PATH=/tmp/reports`, `TEMP_PATH=/tmp`, `DEBUG=false`.
+  - Opcionais (e‑mail): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_TLS` (1/0), `SMTP_FROM`, `SMTP_FROM_NAME`.
 - DNS (www.govgo.com.br): criar CNAME `www` apontando para o domínio do serviço no Render e remover A de `www`; apex opcional conforme instruções do Render.
 
 ## Depuração

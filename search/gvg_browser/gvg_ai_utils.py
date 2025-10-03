@@ -1,44 +1,231 @@
 """
 gvg_ai_utils.py
-Módulo otimizado para utilitários de IA/Embeddings GvG
-Contém apenas as funções de IA e embeddings realmente utilizadas
+Utilitários centrais de IA para o GvG.
+
+Separação de responsabilidades:
+- Funções básicas (infra OpenAI): cliente, threads, assistants, chat, embeddings.
+- Funções específicas (domínio GovGo): keywords, rótulo, métricas auxiliares.
+
+Todas as chamadas à biblioteca OpenAI devem passar por este módulo.
+Inclui instrumentação: tokens e tempo por utilização, quando disponível.
 """
 
 import os
-from gvg_debug import debug_log as dbg
 import re
 import json
-import numpy as np
 import time
-from openai import OpenAI
+from typing import Dict, Any, List, Optional
+
+import numpy as np
 from dotenv import load_dotenv
-EMBEDDING_MODEL = "text-embedding-3-large"
+from gvg_debug import debug_log as dbg
+
+try:
+	from openai import OpenAI  # type: ignore
+except Exception:
+	OpenAI = None  # type: ignore
+
+EMBEDDING_MODEL = os.getenv("GVG_EMBEDDING_MODEL", "text-embedding-3-large")
 NEGATION_EMB_WEIGHT = float(os.getenv('NEGATION_EMB_WEIGHT', 1.0))
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-"""
-Negation Embedding Strategy (mantida):
+# ======================================================
+# Básicas: Cliente/Threads/Assistants/Chat/Embeddings
+# ======================================================
 
-O novo assistant de pré-processamento (GVG_PREPROCESSING_QUERY_v1) já entrega os
-termos negativos separados. Contudo, ainda aplicamos a estratégia vetorial:
+_OPENAI_CLIENT = None
+_THREADS: Dict[str, Any] = {}
 
-	embedding_final = emb_pos - NEG_WEIGHT * emb_neg
+def ai_get_client():
+	"""Retorna singleton do cliente OpenAI (ou None se indisponível)."""
+	global _OPENAI_CLIENT
+	if _OPENAI_CLIENT is not None:
+		return _OPENAI_CLIENT
+	api_key = os.getenv("OPENAI_API_KEY")
+	if not api_key or OpenAI is None:
+		return None
+	try:
+		_OPENAI_CLIENT = OpenAI(api_key=api_key)
+	except Exception as e:
+		dbg('ASSISTANT', f"OpenAI client init error: {e}")
+		_OPENAI_CLIENT = None
+	return _OPENAI_CLIENT
 
-Este módulo espera receber no get_negation_embedding um texto possivelmente no
-formato "parte_positiva -- parte_negativa" (delimitador `--`). Se não houver
-delimitador ou parte negativa, retorna apenas o embedding positivo.
+def ai_get_thread(context_key: str = "default"):
+	"""Retorna (ou cria) uma thread de Assistant por contexto lógico."""
+	client = ai_get_client()
+	if client is None:
+		return None
+	thread = _THREADS.get(context_key)
+	if thread is None:
+		try:
+			thread = client.beta.threads.create()
+			_THREADS[context_key] = thread
+		except Exception as e:
+			dbg('ASSISTANT', f"Create thread failed [{context_key}]: {e}")
+			return None
+	return thread
 
-NEG_WEIGHT pode ser ajustado via variável de ambiente `NEGATION_EMB_WEIGHT`
-(default 1). O vetor final é normalizado para manter escala consistente.
-"""
+def _extract_assistant_text_from_messages(client, thread_id: str, limit: int = 10) -> str:
+	try:
+		msgs = client.beta.threads.messages.list(thread_id=thread_id, order='desc', limit=limit)
+		for m in getattr(msgs, 'data', []):
+			if getattr(m, 'role', '') == 'assistant':
+				for p in getattr(m, 'content', []) or []:
+					if getattr(p, 'type', '') == 'text':
+						val = getattr(getattr(p, 'text', {}), 'value', '')
+						if isinstance(val, str) and val.strip():
+							return val.strip()
+		return ""
+	except Exception:
+		return ""
+
+def ai_assistant_run_text(assistant_id: str, content: str, context_key: str = 'default', timeout: int = 60) -> str:
+	"""Executa um Assistant com entrada de texto e retorna o texto do assistant.
+
+	Instrumenta tokens (se disponíveis) e tempo de execução.
+	"""
+	client = ai_get_client()
+	if client is None or not assistant_id:
+		dbg('ASSISTANT', f"assistant unavailable (assistant_id? {bool(assistant_id)})")
+		return ""
+	thread = ai_get_thread(context_key)
+	if thread is None:
+		return ""
+	t0 = time.time()
+	tokens_in = tokens_out = total_tokens = None
+	try:
+		client.beta.threads.messages.create(thread_id=thread.id, role='user', content=content)
+		run = client.beta.threads.runs.create(thread_id=thread.id, assistant_id=assistant_id)
+		while True:
+			cur = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+			status = getattr(cur, 'status', '')
+			if status in ('completed', 'failed', 'cancelled', 'expired', 'requires_action'):
+				run = cur
+				break
+			if time.time() - t0 > timeout:
+				dbg('ASSISTANT', f"timeout ({timeout}s) [{context_key}]")
+				return ""
+			time.sleep(0.8)
+		# usage (nem sempre disponível nos Assistants)
+		try:
+			usage = getattr(run, 'usage', None)
+			if usage:
+				# diferentes SDKs: input_tokens/output_tokens/total_tokens
+				tokens_in = getattr(usage, 'input_tokens', None)
+				tokens_out = getattr(usage, 'output_tokens', None)
+				total_tokens = getattr(usage, 'total_tokens', None)
+		except Exception:
+			pass
+		out = _extract_assistant_text_from_messages(client, thread.id)
+		elapsed_ms = int((time.time() - t0) * 1000)
+		dbg('IA', f"assistant.run context={context_key} tokens_in={tokens_in} tokens_out={tokens_out} total={total_tokens} time_ms={elapsed_ms}")
+		return out
+	except Exception as e:
+		elapsed_ms = int((time.time() - t0) * 1000)
+		dbg('ASSISTANT', f"assistant.error context={context_key} err={e} time_ms={elapsed_ms}")
+		return ""
+
+def ai_assistant_run_with_files(assistant_id: str, file_paths: List[str], user_message: str, timeout: int = 180) -> str:
+	"""Executa Assistant anexando arquivos (purpose='assistants') e retorna texto.
+
+	Instrumenta tokens (se disponíveis) e tempo de execução.
+	"""
+	client = ai_get_client()
+	if client is None or not assistant_id:
+		dbg('ASSISTANT', f"assistant unavailable (files)")
+		return ""
+	thread = ai_get_thread('documents')
+	if thread is None:
+		return ""
+	t0 = time.time()
+	tokens_in = tokens_out = total_tokens = None
+	try:
+		attachments = []
+		for p in file_paths or []:
+			try:
+				with open(p, 'rb') as f:
+					up = client.files.create(purpose='assistants', file=f)
+					attachments.append({'file_id': up.id, 'tools': [{'type': 'file_search'}]})
+			except Exception as e:
+				dbg('ASSISTANT', f"file.upload.error path={os.path.basename(p)} err={e}")
+		if not attachments:
+			return ""
+		client.beta.threads.messages.create(thread_id=thread.id, role='user', content=[{"type": "text", "text": user_message}], attachments=attachments)  # type: ignore
+		run = client.beta.threads.runs.create(thread_id=thread.id, assistant_id=assistant_id)
+		while True:
+			cur = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+			status = getattr(cur, 'status', '')
+			if status in ('completed', 'failed', 'cancelled', 'expired', 'requires_action'):
+				run = cur
+				break
+			if time.time() - t0 > timeout:
+				dbg('ASSISTANT', f"timeout ({timeout}s) [documents]")
+				return ""
+			time.sleep(1.0)
+		try:
+			usage = getattr(run, 'usage', None)
+			if usage:
+				tokens_in = getattr(usage, 'input_tokens', None)
+				tokens_out = getattr(usage, 'output_tokens', None)
+				total_tokens = getattr(usage, 'total_tokens', None)
+		except Exception:
+			pass
+		out = _extract_assistant_text_from_messages(client, thread.id)
+		elapsed_ms = int((time.time() - t0) * 1000)
+		dbg('IA', f"assistant.files tokens_in={tokens_in} tokens_out={tokens_out} total={total_tokens} time_ms={elapsed_ms}")
+		return out
+	except Exception as e:
+		elapsed_ms = int((time.time() - t0) * 1000)
+		dbg('ASSISTANT', f"assistant.files.error err={e} time_ms={elapsed_ms}")
+		return ""
+
+def ai_chat_complete(model: str, messages: List[Dict[str, Any]], max_tokens: Optional[int] = None, temperature: float = 0.2) -> str:
+	"""Wrapper para chat.completions com métricas de tokens/tempo."""
+	client = ai_get_client()
+	if client is None:
+		return ""
+	t0 = time.time()
+	try:
+		resp = client.chat.completions.create(model=model, messages=messages, max_tokens=max_tokens, temperature=temperature)
+		elapsed_ms = int((time.time() - t0) * 1000)
+		try:
+			usage = getattr(resp, 'usage', None)
+			pt = getattr(usage, 'prompt_tokens', None)
+			ct = getattr(usage, 'completion_tokens', None)
+			tt = getattr(usage, 'total_tokens', None)
+		except Exception:
+			pt = ct = tt = None
+		dbg('IA', f"chat.complete model={model} prompt_t={pt} completion_t={ct} total={tt} time_ms={elapsed_ms}")
+		return (resp.choices[0].message.content or '').strip()
+	except Exception as e:
+		elapsed_ms = int((time.time() - t0) * 1000)
+		dbg('ASSISTANT', f"chat.error model={model} err={e} time_ms={elapsed_ms}")
+		return ""
+
 
 def get_embedding(text, model=EMBEDDING_MODEL):
-	"""Gera embedding para texto usando OpenAI e retorna lista (ou None em erro)."""
+	"""Gera embedding para texto usando OpenAI e retorna lista (ou None em erro).
+
+	Instrumenta tempo e tokens (se disponíveis no SDK).
+	"""
+	client = ai_get_client()
+	if client is None:
+		return None
+	t0 = time.time()
 	try:
-		response = openai_client.embeddings.create(input=text, model=model)
+		response = client.embeddings.create(input=text, model=model)
+		elapsed_ms = int((time.time() - t0) * 1000)
+		# Nem todos os SDKs/planos retornam usage no embeddings
+		try:
+			usage = getattr(response, 'usage', None)
+			tt = getattr(usage, 'total_tokens', None) if usage else None
+		except Exception:
+			tt = None
+		dbg('IA', f"embeddings model={model} total_tokens={tt} time_ms={elapsed_ms}")
 		return response.data[0].embedding
 	except Exception as e:
-		dbg('ASSISTANT', f"Erro ao gerar embedding: {e}")
+		elapsed_ms = int((time.time() - t0) * 1000)
+		dbg('ASSISTANT', f"embedding.error model={model} err={e} time_ms={elapsed_ms}")
 		return None
 
 def _normalize(vec: np.ndarray):
@@ -121,7 +308,6 @@ def generate_keywords(text, max_keywords=10, max_chars=200):
 		text = text[:max_chars] + "..."
     
 	try:
-		# Prompt para gerar palavras-chave
 		prompt = f"""
 		Analise o seguinte texto de um contrato/licitação pública e extraia {max_keywords} palavras-chave mais relevantes:
 
@@ -137,15 +323,12 @@ def generate_keywords(text, max_keywords=10, max_chars=200):
 
 		Palavras-chave:
 		"""
-        
-		response = openai_client.chat.completions.create(
-			model="gpt-4o",
+		keywords_text = ai_chat_complete(
+			model=os.getenv('GVG_CHAT_MODEL', 'gpt-4o'),
 			messages=[{"role": "user", "content": prompt}],
 			max_tokens=150,
-			temperature=0.3
+			temperature=0.3,
 		)
-        
-		keywords_text = response.choices[0].message.content.strip()
         
 		# Processar resposta - separar por vírgula e limpar
 		keywords = []
@@ -186,9 +369,6 @@ def calculate_confidence(scores):
 	except (ValueError, TypeError):
 		return 0.0
 
-### Removidas heurísticas complexas de normalização.
-### Qualidade agora delegada ao prompt do Assistant.
-
 def generate_contratacao_label(descricao: str, timeout: float = 6.0) -> str:
 	"""Gera rótulo curto para contratação.
 
@@ -203,53 +383,26 @@ def generate_contratacao_label(descricao: str, timeout: float = 6.0) -> str:
 		return 'Indefinido'
 	assistant_id = os.getenv('GVG_ROTULO_CONTRATATACAO')
 	label_raw = ''
-	start = time.time()
-	# 1) Assistant API
+	# 1) Assistant API via wrapper
 	if assistant_id:
 		try:
-			thread = openai_client.beta.threads.create(messages=[{"role": "user", "content": desc}])  # type: ignore
-			run = openai_client.beta.threads.runs.create(thread_id=thread.id, assistant_id=assistant_id)  # type: ignore
-			while time.time() - start < timeout:
-				run = openai_client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)  # type: ignore
-				if run.status in ('completed', 'failed', 'cancelled'):  # type: ignore
-					break
-				time.sleep(0.35)
-			if getattr(run, 'status', '') == 'completed':  # type: ignore
-				msgs = openai_client.beta.threads.messages.list(thread_id=thread.id, order='desc', limit=5)  # type: ignore
-				for m in getattr(msgs, 'data', []):  # type: ignore
-					if getattr(m, 'role', '') == 'assistant':
-						parts = getattr(m, 'content', [])
-						for p in parts:
-							if getattr(p, 'type', '') == 'text':
-								label_raw = getattr(getattr(p, 'text', {}), 'value', '')
-								break
-						if label_raw:
-							break
+			label_raw = ai_assistant_run_text(assistant_id, desc, context_key='label', timeout=int(timeout))
 		except Exception as e:
-			try:
-				from gvg_debug import debug_log as dbg
-				dbg('ASSISTANT', f"Assistant fallback: {e}")
-			except Exception:
-				pass
+			dbg('ASSISTANT', f"Assistant fallback: {e}")
 	# 2) Chat fallback
 	if not label_raw:
 		try:
 			prompt = (
 				"Gerar rótulo curto (até 3 palavras) do objeto a seguir. Sem órgão, local, códigos ou números. Apenas o objeto/serviço/material. Sem pontuação!\n" + desc[:600]
 			)
-			resp = openai_client.chat.completions.create(
-				model='gpt-4o',
+			label_raw = ai_chat_complete(
+				model=os.getenv('GVG_CHAT_MODEL', 'gpt-4o'),
 				messages=[{"role": "user", "content": prompt}],
 				max_tokens=20,
-				temperature=0.2
+				temperature=0.2,
 			)
-			label_raw = resp.choices[0].message.content.strip()
 		except Exception as e:
-			try:
-				from gvg_debug import debug_log as dbg
-				dbg('ASSISTANT', f"Chat fallback: {e}")
-			except Exception:
-				pass
+			dbg('ASSISTANT', f"Chat fallback: {e}")
 	# 3) Fallback mínimo
 	if not label_raw:
 		tokens = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]{2,}", desc)

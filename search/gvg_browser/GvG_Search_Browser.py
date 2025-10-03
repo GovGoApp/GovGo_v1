@@ -14,6 +14,7 @@ Funcionalidades principais:
 from __future__ import annotations
 
 import os
+from dotenv import load_dotenv
 import re
 import io
 import json
@@ -65,16 +66,19 @@ from gvg_user import (
     get_current_user,
     fetch_user_results_for_prompt_text,
 )
-from gvg_database import get_user_resumo, upsert_user_resumo
+from gvg_database import get_user_resumo, upsert_user_resumo, fetch_documentos, db_fetch_all
+
 from gvg_boletim import (
     create_user_boletim,
     deactivate_user_boletim,
     fetch_user_boletins,
 )
 from gvg_styles import styles, CSS_ALL
+
 from gvg_debug import debug_log as dbg
-from gvg_user import get_current_user
+
 from gvg_search_core import (
+    SQL_DEBUG,
     set_sql_debug,
     get_relevance_filter_status,
     set_relevance_filter_level,
@@ -90,7 +94,12 @@ from gvg_search_core import (
     _sanitize_sql_conditions,
     
 )
-from gvg_database import fetch_documentos
+from gvg_schema import (
+    get_contratacao_core_columns,
+    normalize_contratacao_row,
+    project_result_for_output,
+    PRIMARY_KEY,
+)
 from gvg_ai_utils import generate_contratacao_label
 from gvg_email import send_html_email, render_boletim_email_html, render_favorito_email_html
 
@@ -187,6 +196,26 @@ RELEVANCE_LEVELS = {
     3: {"name": "Restritivo"},
 }
 
+# Opções estáticas (Modalidade e Modo de Disputa)
+# Observação: value usa o código cru (sem zero à esquerda); label exibe zero à esquerda para clareza visual
+MODALIDADE_OPTIONS = [
+    {"label": "01 - Pregão", "value": "1"},
+    {"label": "02 - Concorrência", "value": "2"},
+    {"label": "03 - Concurso", "value": "3"},
+    {"label": "04 - Leilão", "value": "4"},
+    {"label": "05 - Diálogo Competitivo", "value": "5"},
+    {"label": "06 - Dispensa de Licitação", "value": "6"},
+    {"label": "07 - Inexigibilidade de Licitação", "value": "7"},
+    {"label": "08 - Credenciamento", "value": "8"},
+]
+
+MODO_OPTIONS = [
+    {"label": "01 - Aberto", "value": "1"},
+    {"label": "02 - Fechado", "value": "2"},
+    {"label": "03 - Aberto/Fechado", "value": "3"},
+    {"label": "04 - Fechado/Aberto", "value": "4"},
+]
+
 
 # =====================================================================================
 # Cores padronizadas para datas de encerramento (tabela e detalhes)
@@ -227,18 +256,11 @@ try:
             pass
     # Bypass de autenticação via variáveis de ambiente quando --pass for usado
     if _known and getattr(_known, 'auto_pass', False):
-        import os as _os
         try:
-            # Tenta carregar .env se ainda não carregado por outro módulo
-            try:
-                if not _os.getenv('PASS_USER_UID'):
-                    from dotenv import load_dotenv as _ld
-                    _ld()  # silencioso
-            except Exception:
-                pass
-            _uid = _os.getenv('PASS_USER_UID')
-            _name = _os.getenv('PASS_USER_NAME')
-            _email = _os.getenv('PASS_USER_EMAIL')
+            load_dotenv()
+            _uid = os.getenv('PASS_USER_UID')
+            _name = os.getenv('PASS_USER_NAME')
+            _email = os.getenv('PASS_USER_EMAIL')
             if _uid and _name and _email:
                 _bypass_user = {'uid': _uid, 'name': _name, 'email': _email}
                 AUTH_INIT = {'status': 'auth', 'user': _bypass_user}
@@ -273,18 +295,11 @@ try:
 
     # PASS via ambiente => mesmo efeito de --pass (bypass de autenticação)
     if _truthy(os.getenv("PASS")):
-        import os as _os
         try:
-            # Carregar .env se variáveis do usuário de bypass não estiverem presentes
-            try:
-                if not _os.getenv('PASS_USER_UID'):
-                    from dotenv import load_dotenv as _ld
-                    _ld()  # silencioso
-            except Exception:
-                pass
-            _uid = _os.getenv('PASS_USER_UID')
-            _name = _os.getenv('PASS_USER_NAME')
-            _email = _os.getenv('PASS_USER_EMAIL')
+            load_dotenv()
+            _uid = os.getenv('PASS_USER_UID')
+            _name = os.getenv('PASS_USER_NAME')
+            _email = os.getenv('PASS_USER_EMAIL')
             if _uid and _name and _email:
                 _bypass_user = {'uid': _uid, 'name': _name, 'email': _email}
                 AUTH_INIT = {'status': 'auth', 'user': _bypass_user}
@@ -1006,43 +1021,41 @@ def _sql_only_search(sql_conditions: list[str], limit: int, filter_expired: bool
 
     Retorna lista de resultados no formato esperado pela UI (details em snake_case + aliases).
     """
-    from gvg_database import create_connection
+    # Centraliza acesso ao BD via wrappers com métricas [DB]
+    try:
+        from gvg_database import db_fetch_all  # type: ignore
+    except Exception:
+        db_fetch_all = None  # type: ignore
     from gvg_schema import get_contratacao_core_columns, normalize_contratacao_row, project_result_for_output
     results: list[dict] = []
-    conn = None
-    cur = None
+    cols = get_contratacao_core_columns('c')
+    # Sanitizar condições para escapar '%' e padronizar parênteses
+    sanitized = _sanitize_sql_conditions(sql_conditions or [], context='generic')
+    where_parts = []
+    for cond in sanitized:
+        if isinstance(cond, str) and cond.strip():
+            where_parts.append(f"( {cond.strip()} )")
+    if filter_expired:
+        where_parts.append("(to_date(NULLIF(c.data_encerramento_proposta,''),'YYYY-MM-DD') >= current_date OR c.data_encerramento_proposta IS NULL OR c.data_encerramento_proposta='')")
+    where_sql = ("\nWHERE " + "\n  AND ".join(where_parts)) if where_parts else ""
+    sql = (
+        "SELECT\n  " + ",\n  ".join(cols) + "\n" +
+        "FROM contratacao c" + where_sql + "\n" +
+        "LIMIT %s"
+    )
+    if SQL_DEBUG:
+        dbg('SQL', 'SQL-only query montada (sem embeddings).')
+        dbg('SQL', sql)
     try:
-        conn = create_connection()
-        if not conn:
-            return []
-        cur = conn.cursor()
-        cols = get_contratacao_core_columns('c')
-        # Sanitizar condições para escapar '%' e padronizar parênteses
-        sanitized = _sanitize_sql_conditions(sql_conditions or [], context='generic')
-        where_parts = []
-        for cond in sanitized:
-            if isinstance(cond, str) and cond.strip():
-                where_parts.append(f"( {cond.strip()} )")
-        if filter_expired:
-            where_parts.append("(to_date(NULLIF(c.data_encerramento_proposta,''),'YYYY-MM-DD') >= current_date OR c.data_encerramento_proposta IS NULL OR c.data_encerramento_proposta='')")
-        where_sql = ("\nWHERE " + "\n  AND ".join(where_parts)) if where_parts else ""
-        sql = (
-            "SELECT\n  " + ",\n  ".join(cols) + "\n" +
-            "FROM contratacao c" + where_sql + "\n" +
-            "LIMIT %s"
-        )
+        rows = db_fetch_all(sql, (int(limit or 30),), as_dict=True, ctx="GSB._sql_only_search") if db_fetch_all else []
+    except Exception as e:
         try:
-            from gvg_search_core import SQL_DEBUG
-            if SQL_DEBUG:
-                dbg('SQL', 'SQL-only query montada (sem embeddings).')
-                dbg('SQL', sql)
+            dbg('SQL', f"Erro na busca SQL-only: {e}")
         except Exception:
             pass
-        cur.execute(sql, (int(limit or 30),))
-        rows = cur.fetchall() or []
-        colnames = [d[0] for d in cur.description]
-        for row in rows:
-            rec = dict(zip(colnames, row))
+        rows = []
+    for rec in (rows or []):
+        try:
             norm = normalize_contratacao_row(rec)
             details = project_result_for_output(norm)
             try:
@@ -1057,19 +1070,8 @@ def _sql_only_search(sql_conditions: list[str], limit: int, filter_expired: bool
                 'rank': 0,
                 'details': details,
             })
-    except Exception as e:
-        try:
-            dbg('SQL', f"Erro na busca SQL-only: {e}")
         except Exception:
-            pass
-        results = []
-    finally:
-        try:
-            if cur:
-                cur.close()
-        finally:
-            if conn:
-                conn.close()
+            continue
     return results
 
 
@@ -1081,42 +1083,34 @@ def _restrict_results_by_sql(sql_conditions: list[str], current_results: list[di
     """
     if not current_results:
         return []
-    from gvg_database import create_connection
+    try:
+        from gvg_database import db_fetch_all  # type: ignore
+    except Exception:
+        db_fetch_all = None  # type: ignore
     from gvg_schema import PRIMARY_KEY
-    conn = None
-    cur = None
+    # Sanitizar condições também aqui
+    sanitized = _sanitize_sql_conditions(sql_conditions or [], context='generic')
+    where_parts = []
+    for cond in sanitized:
+        if isinstance(cond, str) and cond.strip():
+            where_parts.append(f"( {cond.strip()} )")
+    if filter_expired:
+        where_parts.append("(to_date(NULLIF(c.data_encerramento_proposta,'') ,'YYYY-MM-DD') >= current_date OR c.data_encerramento_proposta IS NULL OR c.data_encerramento_proposta='')")
+    where_sql = ("\nWHERE " + "\n  AND ".join(where_parts)) if where_parts else ""
+    sql = f"SELECT c.{PRIMARY_KEY} FROM contratacao c{where_sql} LIMIT %s"
     valid: set[str] = set()
     try:
-        conn = create_connection()
-        if not conn:
-            return current_results[:limit]
-        cur = conn.cursor()
-        where_parts = []
-        for cond in (sql_conditions or []):
-            if isinstance(cond, str) and cond.strip():
-                where_parts.append(f"( {cond.strip()} )")
-        if filter_expired:
-            where_parts.append("(to_date(NULLIF(c.data_encerramento_proposta,'') ,'YYYY-MM-DD') >= current_date OR c.data_encerramento_proposta IS NULL OR c.data_encerramento_proposta='')")
-        where_sql = ("\nWHERE " + "\n  AND ".join(where_parts)) if where_parts else ""
-        sql = f"SELECT c.{PRIMARY_KEY} FROM contratacao c{where_sql} LIMIT %s"
-        cur.execute(sql, (int(limit or 30),))
-        rows = cur.fetchall() or []
-        for row in rows:
-            if row and row[0]:
-                valid.add(str(row[0]))
+        rows = db_fetch_all(sql, (int(limit or 30),), as_dict=True, ctx="GSB._restrict_results_by_sql") if db_fetch_all else []
+        for rec in (rows or []):
+            v = rec.get(PRIMARY_KEY)
+            if v is not None:
+                valid.add(str(v))
     except Exception as e:
         try:
             dbg('SQL', f"Pós-filtro falhou: {e}")
         except Exception:
             pass
         return current_results[:limit]
-    finally:
-        try:
-            if cur:
-                cur.close()
-        finally:
-            if conn:
-                conn.close()
     # Interseção preservando ordem
     out = []
     for r in current_results:
@@ -1208,21 +1202,12 @@ def toggle_boletim_panel(n, is_open):
 def validate_boletim(freq, dias, query_text, boletins):
     # Regras de desabilitação (True = desabilita)
     q = (query_text or '').strip()
-    try:
-        dbg('BOLETIM', f"[validate_boletim] freq={freq} dias={dias} q_len={len(q)} boletins={len(boletins or [])}")
-    except Exception:
-        pass
+    dbg('BOLETIM', f"[validate_boletim] freq={freq} dias={dias} q_len={len(q)} boletins={len(boletins or [])}")
     if len(q) < 3:
-        try:
-            dbg('BOLETIM', "[validate_boletim] desabilitado: query curta")
-        except Exception:
-            pass
+        dbg('BOLETIM', "[validate_boletim] desabilitado: query curta")
         return True
     if freq == 'SEMANAL' and not (dias and len(dias) > 0):
-        try:
-            dbg('BOLETIM', "[validate_boletim] desabilitado: sem dias semanais")
-        except Exception:
-            pass
+        dbg('BOLETIM', "[validate_boletim] desabilitado: sem dias semanais")
         return True
     # Demais campos estão fixos por default nesta fase simplificada
     # Duplicidade por texto (case-insensitive, trim)
@@ -1231,18 +1216,11 @@ def validate_boletim(freq, dias, query_text, boletins):
         for b in (boletins or []):
             bt = ((b.get('query_text') or '').strip()).lower()
             if bt == qn:
-                try:
-                    dbg('BOLETIM', "[validate_boletim] desabilitado: duplicado")
-                except Exception:
-                    pass
                 return True
     except Exception:
         pass
     # Caso válido => habilita (False)
-    try:
-        dbg('BOLETIM', "[validate_boletim] habilitado")
-    except Exception:
-        pass
+    dbg('BOLETIM', "[validate_boletim] habilitado")
     return False
 
 @app.callback(
@@ -1265,18 +1243,10 @@ def refresh_boletim_save_visuals(freq, dias, query_text, boletins):
     if len(q) < 3:
         base.update({'opacity': 0.4})
         title = 'Digite uma consulta (mín. 3 caracteres)'
-        try:
-            dbg('BOLETIM', f"[refresh_boletim_save_visuals] title='{title}' opacity=0.4")
-        except Exception:
-            pass
         return title, base
     if freq == 'SEMANAL' and not (dias and len(dias) > 0):
         base.update({'opacity': 0.4})
         title = 'Selecione ao menos um dia'
-        try:
-            dbg('BOLETIM', f"[refresh_boletim_save_visuals] title='{title}' opacity=0.4")
-        except Exception:
-            pass
         return title, base
     # Campos avançados estão com defaults
     # Duplicado?
@@ -1287,19 +1257,12 @@ def refresh_boletim_save_visuals(freq, dias, query_text, boletins):
             if bt == qn:
                 base.update({'opacity': 0.4})
                 title = 'Já salvo para esta consulta'
-                try:
-                    dbg('BOLETIM', f"[refresh_boletim_save_visuals] title='{title}' opacity=0.4 (duplicado)")
-                except Exception:
-                    pass
                 return title, base
     except Exception:
         pass
     # Válido e não duplicado
     base.update({'opacity': 1.0})
-    try:
-        dbg('BOLETIM', "[refresh_boletim_save_visuals] title='Salvar boletim' opacity=1.0")
-    except Exception:
-        pass
+
     return 'Salvar boletim', base
 
 @app.callback(
@@ -3480,44 +3443,22 @@ def open_pncp_tab_from_favorite(n_clicks_list, favs, sessions, active):
         title = None
     details = {'numerocontrolepncp': pid}
     try:
-        from gvg_database import create_connection
-        from gvg_schema import get_contratacao_core_columns, PRIMARY_KEY
-        from gvg_search_core import _augment_aliases
-        conn = create_connection()
-        cur = conn.cursor() if conn else None
-        if cur:
-            cols = get_contratacao_core_columns('c')
-            sql = "SELECT\n  " + ",\n  ".join(cols) + f"\nFROM contratacao c\nWHERE c.{PRIMARY_KEY} = %s LIMIT 1"
-            cur.execute(sql, (pid,))
-            row = cur.fetchone()
-            if row is not None:
-                colnames = [d[0] for d in cur.description]
-                rec = dict(zip(colnames, row))
-                # usa todas as colunas core em snake_case
-                details = {k: rec.get(k) for k in colnames}
-                _augment_aliases(details)
-                # Título preferencial com descrição
-                try:
-                    desc = (
-                        details.get('descricaocompleta')
-                        or details.get('descricaoCompleta')
-                        or details.get('objeto')
-                        or details.get('descricao')
-                    )
-                    if isinstance(desc, str) and desc.strip():
-                        title = desc.strip()
-                except Exception:
-                    pass
-        if cur:
-            try:
-                cur.close()
-            except Exception:
-                pass
-        if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
+        # Preferir wrappers centralizados
+        sql = "SELECT\n  " + ",\n  ".join(get_contratacao_core_columns('c')) + f"\nFROM contratacao c\nWHERE c.{PRIMARY_KEY} = %s LIMIT 1"
+        rows = db_fetch_all(sql, (pid,), as_dict=True, ctx="GSB.open_pncp_tab_from_favorite")
+        if rows:
+            rec = rows[0]
+            details = {k: rec.get(k) for k in rec.keys()}
+            _augment_aliases(details)
+            # Título preferencial com descrição
+            desc = (
+                details.get('descricaocompleta')
+                or details.get('descricaoCompleta')
+                or details.get('objeto')
+                or details.get('descricao')
+            )
+            if isinstance(desc, str) and desc.strip():
+                title = desc.strip()
     except Exception:
         # mantém details mínimo (com id) como fallback
         pass
@@ -3951,49 +3892,10 @@ def move_query_on_collapse(is_open):
     prevent_initial_call=False,
 )
 def load_modalidade_options(_auth):
-    """Carrega opções distintas de modalidade (ID - Nome) do BD.
-
-    Mantém simples: DISTINCT modalidade_id, modalidade_nome, ignora nulos/vazios; ordena por ID.
-    """
+    """Retorna opções estáticas de modalidades (sem consultar o BD)."""
     try:
-        from gvg_database import create_connection
-        conn = create_connection()
-        if not conn:
-            return []
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT DISTINCT NULLIF(TRIM(modalidade_id),'') AS id,
-                            NULLIF(TRIM(modalidade_nome),'') AS nome
-            FROM contratacao
-            WHERE NULLIF(TRIM(modalidade_id),'') IS NOT NULL
-        """)
-        rows = cur.fetchall() or []
-        # Ordena numericamente quando possível
-        def _to_int(s):
-            try:
-                return int(str(s).strip())
-            except Exception:
-                return None
-        sorted_rows = sorted(rows, key=lambda r: (_to_int(r[0]) if _to_int(r[0]) is not None else 9999, str(r[0]).strip()))
-        opts = []
-        for rid, nome in sorted_rows:
-            rid_s = str(rid).strip() if rid is not None else ''
-            nome_s = str(nome).strip() if nome is not None else ''
-            # label mostrado com zero à esquerda somente para exibição
-            try:
-                rid_int = int(rid_s)
-                rid_label = f"{rid_int:02d}"
-            except Exception:
-                rid_label = rid_s
-            label = f"{rid_label} - {nome_s}" if nome_s else rid_label
-            opts.append({'label': label, 'value': rid_s})
-        cur.close(); conn.close()
-        return opts
-    except Exception as e:
-        try:
-            dbg('UI', f"Falha ao carregar modalidades: {e}")
-        except Exception:
-            pass
+        return MODALIDADE_OPTIONS
+    except Exception:
         return []
 
 @app.callback(
@@ -4002,44 +3904,10 @@ def load_modalidade_options(_auth):
     prevent_initial_call=False,
 )
 def load_modo_options(_auth):
-    """Carrega opções distintas de modo de disputa (ID - Nome) do BD, rotulando com zero à esquerda (<10)."""
+    """Retorna opções estáticas de modos de disputa (sem consultar o BD)."""
     try:
-        from gvg_database import create_connection
-        conn = create_connection()
-        if not conn:
-            return []
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT DISTINCT NULLIF(TRIM(modo_disputa_id),'') AS id,
-                            NULLIF(TRIM(modo_disputa_nome),'') AS nome
-            FROM contratacao
-            WHERE NULLIF(TRIM(modo_disputa_id),'') IS NOT NULL
-        """)
-        rows = cur.fetchall() or []
-        def _to_int(s):
-            try:
-                return int(str(s).strip())
-            except Exception:
-                return None
-        sorted_rows = sorted(rows, key=lambda r: (_to_int(r[0]) if _to_int(r[0]) is not None else 9999, str(r[0]).strip()))
-        opts = []
-        for rid, nome in sorted_rows:
-            rid_s = str(rid).strip() if rid is not None else ''
-            nome_s = str(nome).strip() if nome is not None else ''
-            try:
-                rid_int = int(rid_s)
-                rid_label = f"{rid_int:02d}"
-            except Exception:
-                rid_label = rid_s
-            label = f"{rid_label} - {nome_s}" if nome_s else rid_label
-            opts.append({'label': label, 'value': rid_s})
-        cur.close(); conn.close()
-        return opts
-    except Exception as e:
-        try:
-            dbg('UI', f"Falha ao carregar modos de disputa: {e}")
-        except Exception:
-            pass
+        return MODO_OPTIONS
+    except Exception:
         return []
 
 
@@ -4502,12 +4370,8 @@ def render_results_table(results, sort_state):
 def render_details(results, last_query):
     if not results:
         # Debug: sem resultados
-        try:
-            from gvg_search_core import SQL_DEBUG
-            if SQL_DEBUG:
-                dbg('UI', "render_details: Nenhum resultado para renderizar.")
-        except Exception:
-            pass
+        if SQL_DEBUG:
+            dbg('UI', "render_details: Nenhum resultado para renderizar.")
         return []
 
     cards = []
@@ -4637,13 +4501,7 @@ def render_details(results, last_query):
         # Card final com duas colunas (detalhes 60% / itens 40%)
         _card_style = dict(styles['result_card'])
         _card_style['marginBottom'] = '6px'  # reduzir espaço vertical entre cards (apenas nos cards de detalhe)
-        # Debug por card
-        try:
-            from gvg_search_core import SQL_DEBUG
-            #if SQL_DEBUG:
-            #    print(f"[GSB][render_details] Card rank={r.get('rank')} pncp={pncp_id} pronto.")
-        except Exception:
-            pass
+        
         # Botão bookmark ao lado do número do card
         bookmark_btn = html.Button(
             html.I(className="far fa-bookmark"),
@@ -5007,12 +4865,9 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
         pid = pncp_ids[i]
         clicks = (n_clicks_list[i] or 0)
         is_open = (str(pid) in (active_map or {}) and (active_map or {}).get(str(pid)) == 'resumo')
-        try:
-            from gvg_search_core import SQL_DEBUG
-            #if SQL_DEBUG:
-            #    print(f"[GSB][RESUMO] index={i} pncp={pid} clicks={clicks} -> {'abrir' if is_open else 'fechar'}")
-        except Exception:
-            pass
+    # debug opcional
+    # if SQL_DEBUG:
+    #     dbg('RESUMO', f"index={i} pncp={pid} clicks={clicks} -> {'abrir' if is_open else 'fechar'}")
 
         normal_btn_style = styles['btn_pill']
         inverted_btn_style = styles['btn_pill_inverted']
@@ -5059,13 +4914,9 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                     db_summary = None
                 if db_summary:
                     # Debug: indicar caminho GET (BD)
-                    try:
-                        from gvg_search_core import SQL_DEBUG
-                        if SQL_DEBUG:
-                            sz = len(db_summary) if isinstance(db_summary, str) else 'N/A'
-                            dbg('RESUMO', f"Resumo obtido do BD (chars={sz})")
-                    except Exception:
-                        pass
+                    if SQL_DEBUG:
+                        sz = len(db_summary) if isinstance(db_summary, str) else 'N/A'
+                        dbg('RESUMO', f"Resumo obtido do BD (chars={sz})")
                     try:
                         updated_cache[str(pid)] = {'docs': (docs or []), 'summary': db_summary}
                     except Exception:
@@ -5074,12 +4925,8 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                     style_out[-1] = {**style_out[-1], 'display': 'block'}
                     btn_styles[-1] = inverted_btn_style
                     continue
-            try:
-                from gvg_search_core import SQL_DEBUG
-                if SQL_DEBUG:
-                    dbg('DOCS', f"RESUMO pncp={pid} documentos_encontrados={len(docs)}")
-            except Exception:
-                pass
+            if SQL_DEBUG:
+                dbg('DOCS', f"RESUMO pncp={pid} documentos_encontrados={len(docs)}")
             if not docs:
                 children_out.append(html.Div('Nenhum documento encontrado para este processo.', style=styles['details_content_inner']))
                 style_out[-1] = {**style_out[-1], 'display': 'block'}
@@ -5095,13 +4942,9 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
 
             nome = main_doc.get('nome') or main_doc.get('titulo') or 'Documento'
             url = main_doc.get('url') or main_doc.get('uri') or ''
-            try:
-                from gvg_search_core import SQL_DEBUG
-                if SQL_DEBUG:
-                    short = (url[:80] + '...') if len(url) > 80 else url
-                    dbg('RESUMO', f"Documento escolhido: nome='{nome}' url='{short}'")
-            except Exception:
-                pass
+            if SQL_DEBUG:
+                short = (url[:80] + '...') if len(url) > 80 else url
+                dbg('RESUMO', f"Documento escolhido: nome='{nome}' url='{short}'")
             pncp_data = {}
             # Build pncp_data from matching result
             try:
@@ -5131,33 +4974,21 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
             if DOCUMENTS_AVAILABLE:
                 try:
                     if summarize_document:
-                        try:
-                            from gvg_search_core import SQL_DEBUG
-                            if SQL_DEBUG:
-                                dbg('RESUMO', "Gerando resumo via summarize_document...")
-                        except Exception:
-                            pass
+                        if SQL_DEBUG:
+                            dbg('RESUMO', "Gerando resumo via summarize_document...")
                         summary_text = summarize_document(url, max_tokens=500, document_name=nome, pncp_data=pncp_data)
                     elif process_pncp_document:
-                        try:
-                            from gvg_search_core import SQL_DEBUG
-                            if SQL_DEBUG:
-                                dbg('RESUMO', "Gerando resumo via process_pncp_document (fallback)...")
-                        except Exception:
-                            pass
+                        if SQL_DEBUG:
+                            dbg('RESUMO', "Gerando resumo via process_pncp_document (fallback)...")
                         summary_text = process_pncp_document(url, max_tokens=500, document_name=nome, pncp_data=pncp_data)
                 except Exception as e:
                     summary_text = f"Erro ao gerar resumo: {e}"
             else:
                 summary_text = 'Pipeline de documentos não está disponível neste ambiente.'
 
-            try:
-                from gvg_search_core import SQL_DEBUG
-                if SQL_DEBUG and summary_text is not None:
-                    sz = len(summary_text) if isinstance(summary_text, str) else 'N/A'
-                    dbg('RESUMO', f"Resumo GERADO (chars={sz})")
-            except Exception:
-                pass
+            if SQL_DEBUG and summary_text is not None:
+                sz = len(summary_text) if isinstance(summary_text, str) else 'N/A'
+                dbg('RESUMO', f"Resumo GERADO (chars={sz})")
 
             if not summary_text:
                 summary_text = 'Não foi possível gerar o resumo.'
@@ -5558,19 +5389,19 @@ def replay_from_boletim(n_clicks_list, boletins):
     cfg = {}
     filters_cfg = None
     try:
-        from gvg_database import create_connection
-        from gvg_schema import get_contratacao_core_columns, normalize_contratacao_row, project_result_for_output
-        from gvg_search_core import _augment_aliases
-        conn = create_connection()
-        cur = conn.cursor() if conn else None
-        if not cur:
-            raise Exception('Sem conexão de BD')
-        # Título/config da aba: query_text e config_snapshot do user_schedule
+        # Título/config da aba
+        row = None
         try:
-            cur.execute("SELECT query_text, config_snapshot, filters FROM user_schedule WHERE id = %s", (int(boletim_id),))
+            row = db_fetch_all(
+                "SELECT query_text, config_snapshot, filters FROM user_schedule WHERE id = %s",
+                (int(boletim_id),), as_dict=False, ctx="GSB.replay_from_boletim:load_schedule_with_filters"
+            )
         except Exception:
-            cur.execute("SELECT query_text, config_snapshot FROM user_schedule WHERE id = %s", (int(boletim_id),))
-        row = cur.fetchone()
+            row = db_fetch_all(
+                "SELECT query_text, config_snapshot FROM user_schedule WHERE id = %s",
+                (int(boletim_id),), as_dict=False, ctx="GSB.replay_from_boletim:load_schedule"
+            )
+        row = (row or [None])[0]
         if row:
             title = (row[0] or '').strip()
             try:
@@ -5579,7 +5410,6 @@ def replay_from_boletim(n_clicks_list, boletins):
                     cfg = json.loads(cfg)
             except Exception:
                 cfg = {}
-            # Filtros salvos (se existir coluna)
             try:
                 if len(row) > 2:
                     filters_cfg = row[2] or {}
@@ -5588,23 +5418,20 @@ def replay_from_boletim(n_clicks_list, boletins):
             except Exception:
                 filters_cfg = None
         # Último run_token
-        cur.execute("""
+        rt = db_fetch_all(
+            """
             SELECT run_token
             FROM user_boletim
             WHERE boletim_id = %s
             GROUP BY run_token
             ORDER BY MAX(run_at) DESC
             LIMIT 1
-        """, (int(boletim_id),))
-        rt = cur.fetchone()
+            """,
+            (int(boletim_id),), as_dict=False, ctx="GSB.replay_from_boletim:last_run_token"
+        )
         if rt:
-            run_token = rt[0]
+            run_token = rt[0][0]
         if not run_token:
-            # Sem execuções ainda
-            try:
-                cur.close(); conn.close()
-            except Exception:
-                pass
             try:
                 dbg('BOLETIM', f"[replay_from_boletim] boletim_id={boletim_id} sem run_token")
             except Exception:
@@ -5619,11 +5446,11 @@ def replay_from_boletim(n_clicks_list, boletins):
             " WHERE ub.boletim_id = %s AND ub.run_token = %s"
             " ORDER BY COALESCE(ub.similarity,0) DESC, ub.numero_controle_pncp"
         )
-        cur.execute(sql, (int(boletim_id), run_token))
-        rows = cur.fetchall() or []
-        desc = cur.description
-        # Mapeamento das colunas de contratacao
+        rows = db_fetch_all(sql, (int(boletim_id), run_token), as_dict=False, ctx="GSB.replay_from_boletim:load_results") or []
         c_start = 3  # após numero_controle_pncp, similarity, payload
+        # Para nomes, reexecutamos a lista de cols importada
+        desc = ['numero_controle_pncp', 'similarity', 'payload'] + cols
+        # Mapeamento das colunas de contratacao
         results = []
         for idx, row in enumerate(rows):
             pncp = row[0]
@@ -5633,7 +5460,7 @@ def replay_from_boletim(n_clicks_list, boletins):
             # Se há colunas da contratacao, projetar
             try:
                 if len(row) > c_start:
-                    colnames = [d[0] for d in desc][c_start:]
+                    colnames = desc[c_start:]
                     rec = dict(zip(colnames, row[c_start:]))
                     norm = normalize_contratacao_row(rec)
                     details = project_result_for_output(norm)
@@ -5693,10 +5520,6 @@ def replay_from_boletim(n_clicks_list, boletins):
                 'rank': idx + 1,
                 'details': details,
             })
-        try:
-            cur.close(); conn.close()
-        except Exception:
-            pass
     except Exception as e:
         # Falha geral ao carregar; não cria evento
         try:
@@ -6167,12 +5990,8 @@ def process_email_send(req):
     try:
         if kind == 'boletim':
             bid = ctxd.get('id')
-            from gvg_database import create_connection
-            conn = create_connection(); cur = conn.cursor() if conn else None
-            if not cur:
-                raise Exception('Sem conexão de BD')
-            cur.execute("SELECT query_text, config_snapshot, schedule_type, schedule_detail FROM user_schedule WHERE id=%s", (int(bid),))
-            row = cur.fetchone() or ['','','',{}]
+            row = db_fetch_all("SELECT query_text, config_snapshot, schedule_type, schedule_detail FROM user_schedule WHERE id=%s", (int(bid),), as_dict=False, ctx="GSB.email:load_schedule")
+            row = (row or [["","", "", {}]])[0]
             qtxt = (row[0] or '').strip()
             cfg = row[1] or {}
             if isinstance(cfg, str):
@@ -6182,50 +6001,29 @@ def process_email_send(req):
                     cfg = {}
             stype = row[2] or None
             sdetail = row[3] or {}
-            cur.execute("SELECT MAX(run_at) FROM public.user_boletim WHERE boletim_id=%s", (int(bid),))
-            last_run = (cur.fetchone() or [None])[0]
+            last_run_row = db_fetch_all("SELECT MAX(run_at) FROM public.user_boletim WHERE boletim_id=%s", (int(bid),), as_dict=False, ctx="GSB.email:last_run_at")
+            last_run = (last_run_row or [[None]])[0][0]
             if not last_run:
-                try:
-                    cur.close(); conn.close()
-                except Exception:
-                    pass
                 return None
-            cur.execute("""
+            rows = db_fetch_all(
+                """
                 SELECT id, numero_controle_pncp, similarity, data_publicacao_pncp, data_encerramento_proposta, payload
                 FROM public.user_boletim WHERE boletim_id=%s AND run_at=%s
-            """, (int(bid), last_run))
-            cols = [d[0] for d in cur.description]
-            rows = [dict(zip(cols, r)) for r in (cur.fetchall() or [])]
-            try:
-                cur.close(); conn.close()
-            except Exception:
-                pass
+                """,
+                (int(bid), last_run), as_dict=True, ctx="GSB.email:load_results"
+            ) or []
             html = _render_email_boletim_inline(qtxt, rows, cfg, stype, sdetail)
             subject = f"Boletim GovGo — {qtxt}"
         elif kind == 'favorito':
             pncp = (ctxd.get('pncp') or '').strip()
             if not pncp:
                 return None
-            from gvg_database import create_connection
-            from gvg_schema import get_contratacao_core_columns, normalize_contratacao_row, project_result_for_output
-            conn = create_connection(); cur = conn.cursor() if conn else None
-            if not cur:
-                raise Exception('Sem conexão de BD')
             cols = get_contratacao_core_columns('c')
-            cur.execute("SELECT " + ",".join(cols) + " FROM contratacao c WHERE c.numero_controle_pncp=%s LIMIT 1", (pncp,))
-            row = cur.fetchone()
-            if not row:
-                try:
-                    cur.close(); conn.close()
-                except Exception:
-                    pass
+            rows = db_fetch_all("SELECT " + ",".join(cols) + " FROM contratacao c WHERE c.numero_controle_pncp=%s LIMIT 1", (pncp,), as_dict=True, ctx="GSB.email:load_favorito")
+            if not rows:
                 return None
-            rec = dict(zip([d[0] for d in cur.description], row))
+            rec = rows[0]
             details = project_result_for_output(normalize_contratacao_row(rec))
-            try:
-                cur.close(); conn.close()
-            except Exception:
-                pass
             html = render_favorito_email_html(details)
             subject = f"Favorito GovGo — PNCP {pncp}"
         else:
@@ -6669,7 +6467,7 @@ if __name__ == '__main__':
             dev_tools_props_check=False,
             dev_tools_ui=False,
             dev_tools_hot_reload_interval=0.5,
-            use_reloader=True,
+            use_reloader=False,
         )
     else:
         # Produção: sem dev tools, exposto em todas as interfaces
