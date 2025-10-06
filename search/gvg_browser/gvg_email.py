@@ -17,13 +17,11 @@ from email.message import EmailMessage
 from typing import Optional, Any, Dict, List
 
 # Opcional: estilos do site para reaproveitar no HTML de e-mail
+
 try:
-    from .gvg_styles import styles  # type: ignore
+    from gvg_styles import styles  # type: ignore
 except Exception:
-    try:
-        from gvg_styles import styles  # type: ignore
-    except Exception:
-        styles = {}
+    styles = {}
 
 def _env_bool(name: str, default: bool = False) -> bool:
     v = os.getenv(name)
@@ -99,6 +97,10 @@ def send_html_email(to: str, subject: str, html: str, text_alt: Optional[str] = 
 
 __all__ = ["send_html_email"]
 
+# Limites para anexar detalhes adicionais
+EMAIL_MAX_ITENS_PER_PNCP = 10
+EMAIL_MAX_DOCS_PER_PNCP = 10
+
 
 # ========================
 # Renderers de e-mail HTML
@@ -145,6 +147,16 @@ def _to_float(value):
         return float(s)
     except Exception:
         return None
+
+def _format_qty(v: float | None) -> str:
+    if v is None:
+        return ''
+    try:
+        if abs(v - int(v)) < 1e-9:
+            return str(int(v))
+        return f"{v:.2f}".rstrip('0').rstrip('.')
+    except Exception:
+        return str(v)
 
 
 def _format_money(value) -> str:
@@ -236,10 +248,90 @@ def _enc_status_text(status: str, dt_value) -> str:
     return ''
 
 
+def _render_itens_inline(itens: List[Dict[str, Any]], limit: int = EMAIL_MAX_ITENS_PER_PNCP) -> str:
+    if itens is None:
+        return ""
+    if not itens:
+        return "<div style='font-size:12px;color:#003A70;'>Sem itens.</div>"
+    rows_html = []
+    total_geral = 0.0
+    for i, it in enumerate(itens[:limit], start=1):
+        desc = (it.get('descricao_item') or it.get('descricao') or it.get('objeto') or '')
+        desc = str(desc)
+        if len(desc) > 120:
+            desc = desc[:117] + '...'
+        qty = it.get('quantidade_item') or it.get('quantidade') or it.get('qtd')
+        unit = it.get('valor_unitario_estimado') or it.get('valor_unitario') or it.get('valorUnitario')
+        tot = it.get('valor_total_estimado') or it.get('valor_total') or it.get('valorTotal')
+        f_qty = _to_float(qty) or 0.0
+        f_unit = _to_float(unit) or 0.0
+        f_total = _to_float(tot) if _to_float(tot) is not None else (f_qty * f_unit)
+        total_geral += (f_total or 0.0)
+        rows_html.append(
+            f"<tr style='font-size:11px;'>"
+            f"<td style='border:1px solid #ddd;padding:4px;'>{i}</td>"
+            f"<td style='border:1px solid #ddd;padding:4px;'>{desc}</td>"
+            f"<td style='border:1px solid #ddd;padding:4px;text-align:right;'>{_format_qty(f_qty)}</td>"
+            f"<td style='border:1px solid #ddd;padding:4px;text-align:right;'>{_format_money(f_unit)}</td>"
+            f"<td style='border:1px solid #ddd;padding:4px;text-align:right;'>{_format_money(f_total)}</td>"
+            f"</tr>"
+        )
+    extra = max(0, len(itens) - limit)
+    header = (
+        "<thead><tr style='font-size:11px;font-weight:bold;background:#f8f9fa;'>"
+        "<th style='border:1px solid #ddd;padding:4px;width:28px;'>#</th>"
+        "<th style='border:1px solid #ddd;padding:4px;'>Descrição</th>"
+        "<th style='border:1px solid #ddd;padding:4px;width:55px;text-align:right;'>Qtd</th>"
+        "<th style='border:1px solid #ddd;padding:4px;width:80px;text-align:right;'>V.Unit</th>"
+        "<th style='border:1px solid #ddd;padding:4px;width:95px;text-align:right;'>V.Total</th>"
+        "</tr></thead>"
+    )
+    footer = (
+        f"<tr style='font-size:11px;font-weight:bold;background:#fafafa;'>"
+        f"<td colspan='4' style='border:1px solid #ddd;padding:4px;text-align:right;'>Soma</td>"
+        f"<td style='border:1px solid #ddd;padding:4px;text-align:right;'>{_format_money(total_geral)}</td>"
+        f"</tr>"
+    )
+    table = (
+        "<table style='border-collapse:collapse;width:100%;margin-top:4px;'>"
+        + header + "<tbody>" + ''.join(rows_html) + footer + "</tbody></table>"
+    )
+    if extra:
+        table += f"<div style='font-size:10px;color:#003A70;margin-top:2px;'>+{extra} itens não exibidos...</div>"
+    return table
+
+
+def _render_docs_inline(docs: List[Dict[str, Any]], limit: int = EMAIL_MAX_DOCS_PER_PNCP) -> str:
+    if docs is None:
+        return ""
+    if not docs:
+        return "<div style='font-size:12px;color:#003A70;'>Sem documentos.</div>"
+    lines = []
+    for d in docs[:limit]:
+        url = d.get('url') or d.get('link') or ''
+        nome = d.get('nome') or d.get('nome_arquivo') or ''
+        if not nome and url:
+            try:
+                nome = url.split('/')[-1][:80]
+            except Exception:
+                nome = 'documento'
+        if len(nome) > 80:
+            nome = nome[:77] + '...'
+        link_html = f"<a href='{url}' target='_blank'>{nome or 'documento'}</a>" if url else (nome or 'documento')
+        lines.append(f"<li style='margin-bottom:2px;'>{link_html}</li>")
+    extra = max(0, len(docs) - limit)
+    html_list = "<ul style='padding-left:16px;margin:4px 0;'>" + ''.join(lines) + "</ul>"
+    if extra:
+        html_list += f"<div style='font-size:10px;color:#003A70;margin-top:2px;'>+{extra} documentos não exibidos...</div>"
+    return html_list
+
+
 def render_boletim_email_html(query_text: str, items: List[Dict[str, Any]],
                               cfg_snapshot: Optional[Dict[str, Any]] = None,
                               schedule_type: Optional[str] = None,
-                              schedule_detail: Optional[Dict[str, Any]] = None) -> str:
+                              schedule_detail: Optional[Dict[str, Any]] = None,
+                              items_map: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+                              docs_map: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> str:
     """Render completo de boletim (título + resumo + tabela + cards)."""
     card_style = _style_inline(styles.get('result_card', {}))
     title_style = _style_inline(styles.get('card_title', {}))
@@ -388,27 +480,38 @@ def render_boletim_email_html(query_text: str, items: List[Dict[str, Any]],
         if link and len(link_text) > 100:
             link_text = link_text[:97] + '...'
         link_html = f"<a href='{link}' target='_blank'>{link_text}</a>" if link else 'N/A'
-        body_html = (
-            f"<div style='{details_body_style}'>"
-            f"<div style='font-weight:bold;color:#003A70;margin-bottom:6px;'>{i}</div>"
-            f"<div><span style='font-weight:bold;'>Órgão: </span><span>{orgao}</span></div>"
-            f"<div><span style='font-weight:bold;'>Unidade: </span><span>{unidade or 'N/A'}</span></div>"
-            f"<div><span style='font-weight:bold;'>Local: </span><span>{local}</span></div>"
-            f"<div><span style='font-weight:bold;'>ID PNCP: </span><span>{pncp_id or 'N/A'}</span></div>"
-            f"<div><span style='font-weight:bold;'>Valor: </span><span>{valor}</span></div>"
-            f"<div style='display:flex;align-items:center;gap:6px;margin-top:2px;'>"
-            f"<span style='font-weight:bold;'>Data de Encerramento: </span>"
-            f"<span style='color:{enc_color};font-weight:bold;'> {data_enc} - {status_text}</span></div>"
-            f"<div style='margin-bottom:8px;'><span style='font-weight:bold;'>Link: </span>{link_html}</div>"
-            f"<div><span style='font-weight:bold;'>Descrição: </span><span>{objeto}</span></div>"
-            f"</div>"
-        )
+        body_parts = [
+            f"<div style='{details_body_style}'>",
+            f"<div style='font-weight:bold;color:#003A70;margin-bottom:6px;'>{i}</div>",
+            f"<div><span style='font-weight:bold;'>Órgão: </span><span>{orgao}</span></div>",
+            f"<div><span style='font-weight:bold;'>Unidade: </span><span>{unidade or 'N/A'}</span></div>",
+            f"<div><span style='font-weight:bold;'>Local: </span><span>{local}</span></div>",
+            f"<div><span style='font-weight:bold;'>ID PNCP: </span><span>{pncp_id or 'N/A'}</span></div>",
+            f"<div><span style='font-weight:bold;'>Valor: </span><span>{valor}</span></div>",
+            f"<div style='display:flex;align-items:center;gap:6px;margin-top:2px;'><span style='font-weight:bold;'>Data de Encerramento: </span><span style='color:{enc_color};font-weight:bold;'> {data_enc} - {status_text}</span></div>",
+            f"<div style='margin-bottom:8px;'><span style='font-weight:bold;'>Link: </span>{link_html}</div>",
+            f"<div><span style='font-weight:bold;'>Descrição: </span><span>{objeto}</span></div>",
+        ]
+        if items_map is not None:
+            body_parts.append(
+                "<hr style='margin:10px 0;border:none;border-top:1px solid #ddd;'>"
+                + "<div style='font-weight:bold;color:#003A70;font-size:13px;'>Itens</div>"
+                + _render_itens_inline((items_map or {}).get(pncp_id, []))
+            )
+        if docs_map is not None:
+            body_parts.append(
+                "<hr style='margin:10px 0;border:none;border-top:1px solid #ddd;'>"
+                + "<div style='font-weight:bold;color:#003A70;font-size:13px;'>Documentos</div>"
+                + _render_docs_inline((docs_map or {}).get(pncp_id, []))
+            )
+        body_parts.append("</div>")
+        body_html = ''.join(body_parts)
         parts.append(f"<div style='{card_style}'>{body_html}</div>")
 
     return "\n".join(parts)
 
 
-def render_favorito_email_html(details: Dict[str, Any]) -> str:
+def render_favorito_email_html(details: Dict[str, Any], itens: Optional[List[Dict[str, Any]]] = None, docs: Optional[List[Dict[str, Any]]] = None) -> str:
     """Render do card de detalhes de uma contratação única (favorito)."""
     card_style = _style_inline(styles.get('result_card', {}))
     details_body_style = _style_inline(styles.get('details_body', {}))
@@ -431,24 +534,162 @@ def render_favorito_email_html(details: Dict[str, Any]) -> str:
     link_html = f"<a href='{link}' target='_blank'>{link_text}</a>" if link else 'N/A'
     objeto = details.get('objeto_compra') or ''
 
-    body_html = (
-        f"<div style='{details_body_style}'>"
-        f"<div><span style='font-weight:bold;'>Órgão: </span><span>{orgao}</span></div>"
-        f"<div><span style='font-weight:bold;'>Unidade: </span><span>{unidade or 'N/A'}</span></div>"
-        f"<div><span style='font-weight:bold;'>Local: </span><span>{local}</span></div>"
-        f"<div><span style='font-weight:bold;'>ID PNCP: </span><span>{pncp_id or 'N/A'}</span></div>"
-        f"<div><span style='font-weight:bold;'>Valor: </span><span>{valor}</span></div>"
-        f"<div style='display:flex;align-items:center;gap:6px;margin-top:2px;'>"
-        f"<span style='font-weight:bold;'>Data de Encerramento: </span>"
-        f"<span style='color:{enc_color};font-weight:bold;'> {data_enc} - {status_text}</span></div>"
-        f"<div style='margin-bottom:8px;'><span style='font-weight:bold;'>Link: </span>{link_html}</div>"
-        f"<div><span style='font-weight:bold;'>Descrição: </span><span>{objeto}</span></div>"
+    body_parts = [
+        f"<div style='{details_body_style}'>",
+        f"<div><span style='font-weight:bold;'>Órgão: </span><span>{orgao}</span></div>",
+        f"<div><span style='font-weight:bold;'>Unidade: </span><span>{unidade or 'N/A'}</span></div>",
+        f"<div><span style='font-weight:bold;'>Local: </span><span>{local}</span></div>",
+        f"<div><span style='font-weight:bold;'>ID PNCP: </span><span>{pncp_id or 'N/A'}</span></div>",
+        f"<div><span style='font-weight:bold;'>Valor: </span><span>{valor}</span></div>",
+        f"<div style='display:flex;align-items:center;gap:6px;margin-top:2px;'><span style='font-weight:bold;'>Data de Encerramento: </span><span style='color:{enc_color};font-weight:bold;'> {data_enc} - {status_text}</span></div>",
+        f"<div style='margin-bottom:8px;'><span style='font-weight:bold;'>Link: </span>{link_html}</div>",
+        f"<div><span style='font-weight:bold;'>Descrição: </span><span>{objeto}</span></div>",
+    ]
+    if itens is not None:
+        body_parts.append(
+            "<hr style='margin:10px 0;border:none;border-top:1px solid #ddd;'>"
+            + "<div style='font-weight:bold;color:#003A70;font-size:13px;'>Itens</div>"
+            + _render_itens_inline(itens or [])
+        )
+    if docs is not None:
+        body_parts.append(
+            "<hr style='margin:10px 0;border:none;border-top:1px solid #ddd;'>"
+            + "<div style='font-weight:bold;color:#003A70;font-size:13px;'>Documentos</div>"
+            + _render_docs_inline(docs or [])
+        )
+    body_parts.append("</div>")
+    body_html = ''.join(body_parts)
+    return f"<div style='{card_style}'>{body_html}</div>"
+
+
+def render_history_email_html(prompt_text: str, results: List[Dict[str, Any]], items_map: Optional[Dict[str, List[Dict[str, Any]]]] = None, docs_map: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> str:
+    """Render e-mail para histórico de consulta reutilizando formato de boletim (sem config de agenda).
+
+    results: saída de fetch_user_results_for_prompt_text (lista com 'details').
+    """
+    LOGO_PATH = "https://hemztmtbejcbhgfmsvfq.supabase.co/storage/v1/object/public/govgo/LOGO/LOGO_TEXTO_GOvGO_TRIM_v3.png"
+    card_style = _style_inline(styles.get('result_card', {}))
+    title_style = _style_inline(styles.get('card_title', {}))
+    details_body_style = _style_inline(styles.get('details_body', {}))
+    header_logo_style = _style_inline(styles.get('header_logo', {}))
+    header_title_style = _style_inline(styles.get('header_title', {}))
+    header_html = (
+        f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:8px;'>"
+        f"<img src='{LOGO_PATH}' alt='GovGo' style='{header_logo_style}'/>"
+        f"<h4 style='{header_title_style}'>GvG Search</h4>"
         f"</div>"
     )
-    return f"<div style='{card_style}'>{body_html}</div>"
+    parts: List[str] = [header_html]
+    parts.append(
+        f"<div style='{title_style}'>Histórico de Consulta</div>"
+        f"<div style='font-size:12px;color:#003A70;'><span style='font-weight:bold;'>Texto: </span>{(prompt_text or '').strip()}</div>"
+    )
+    if not results:
+        parts.append(f"<div style='{card_style}'>Sem resultados salvos para esta consulta.</div>")
+        return "\n".join(parts)
+    # Sort por rank asc
+    try:
+        results_sorted = sorted(results, key=lambda r: r.get('rank') or 10**9)
+    except Exception:
+        results_sorted = results
+    # Tabela
+    table_rows = []
+    for r in results_sorted[:200]:  # limite de segurança
+        d = r.get('details') or {}
+        orgao = d.get('orgao_entidade_razao_social') or ''
+        municipio = d.get('unidade_orgao_municipio_nome') or ''
+        uf = d.get('unidade_orgao_uf_sigla') or ''
+        valor = _format_money(d.get('valor_total_estimado') or d.get('valor_total_homologado'))
+        enc = d.get('data_encerramento_proposta')
+        enc_txt = _format_br_date(enc)
+        _, enc_color = _enc_status_and_color(enc)
+        rank = r.get('rank') or ''
+        sim = r.get('similarity')
+        try:
+            sim_val = (round(float(sim),4) if sim is not None else '')
+        except Exception:
+            sim_val = sim or ''
+        table_rows.append(
+            f"<tr style='font-size:12px;'>"
+            f"<td style='padding:6px;border:1px solid #ddd;'>{rank}</td>"
+            f"<td style='padding:6px;border:1px solid #ddd;'>{orgao}</td>"
+            f"<td style='padding:6px;border:1px solid #ddd;'>{municipio}</td>"
+            f"<td style='padding:6px;border:1px solid #ddd;'>{uf}</td>"
+            f"<td style='padding:6px;border:1px solid #ddd;'>{sim_val}</td>"
+            f"<td style='padding:6px;border:1px solid #ddd;'>R$ {valor}</td>"
+            f"<td style='padding:6px;border:1px solid #ddd;color:{enc_color};font-weight:bold;'>{enc_txt}</td>"
+            f"</tr>"
+        )
+    parts.append(
+        f"<div style='{card_style}'>"
+        f"<div style='{title_style}'>Resultados Salvos</div>"
+        f"<table style='border-collapse:collapse;width:100%;'>"
+        f"<thead style='background-color:#f8f9fa;'>"
+        f"<tr style='font-size:13px;font-weight:bold;'>"
+        f"<th style='padding:6px;border:1px solid #ddd;text-align:left;'>#</th>"
+        f"<th style='padding:6px;border:1px solid #ddd;text-align:left;'>Órgão</th>"
+        f"<th style='padding:6px;border:1px solid #ddd;text-align:left;'>Município</th>"
+        f"<th style='padding:6px;border:1px solid #ddd;text-align:left;'>UF</th>"
+        f"<th style='padding:6px;border:1px solid #ddd;text-align:left;'>Similaridade</th>"
+        f"<th style='padding:6px;border:1px solid #ddd;text-align:left;'>Valor (R$)</th>"
+        f"<th style='padding:6px;border:1px solid #ddd;text-align:left;'>Data Enc.</th>"
+        f"</tr>"
+        f"</thead><tbody>{''.join(table_rows)}</tbody></table></div>"
+    )
+    # Cards
+    for r in results_sorted[:200]:
+        d = r.get('details') or {}
+        orgao = d.get('orgao_entidade_razao_social') or ''
+        unidade = d.get('unidade_orgao_nome_unidade') or ''
+        municipio = d.get('unidade_orgao_municipio_nome') or ''
+        uf = d.get('unidade_orgao_uf_sigla') or ''
+        local = f"{municipio}/{uf}" if uf else municipio
+        objeto = d.get('objeto_compra') or ''
+        valor = _format_money(d.get('valor_total_estimado') or d.get('valor_total_homologado'))
+        enc = d.get('data_encerramento_proposta')
+        enc_txt = _format_br_date(enc)
+        status_key, enc_color = _enc_status_and_color(enc)
+        status_text = _enc_status_text(status_key, enc)
+        link = d.get('link_sistema_origem') or ''
+        pid = d.get('numero_controle_pncp') or ''
+        link_text = link or 'N/A'
+        if link and len(link_text) > 100:
+            link_text = link_text[:97] + '...'
+        link_html = f"<a href='{link}' target='_blank'>{link_text}</a>" if link else 'N/A'
+        body_html = (
+            f"<div style='{details_body_style}'>"
+            f"<div style='font-weight:bold;color:#003A70;margin-bottom:6px;'>{r.get('rank') or ''}</div>"
+            f"<div><span style='font-weight:bold;'>Órgão: </span><span>{orgao}</span></div>"
+            f"<div><span style='font-weight:bold;'>Unidade: </span><span>{unidade or 'N/A'}</span></div>"
+            f"<div><span style='font-weight:bold;'>Local: </span><span>{local}</span></div>"
+            f"<div><span style='font-weight:bold;'>ID PNCP: </span><span>{pid or 'N/A'}</span></div>"
+            f"<div><span style='font-weight:bold;'>Valor: </span><span>{valor}</span></div>"
+            f"<div style='display:flex;align-items:center;gap:6px;margin-top:2px;'>"
+            f"<span style='font-weight:bold;'>Data de Encerramento: </span>"
+            f"<span style='color:{enc_color};font-weight:bold;'> {enc_txt} - {status_text}</span></div>"
+            f"<div style='margin-bottom:8px;'><span style='font-weight:bold;'>Link: </span>{link_html}</div>"
+            f"<div><span style='font-weight:bold;'>Descrição: </span><span>{objeto}</span></div>"
+        )
+        if items_map is not None:
+            body_html += (
+                "<hr style='margin:10px 0;border:none;border-top:1px solid #ddd;'>"
+                + "<div style='font-weight:bold;color:#003A70;font-size:13px;'>Itens</div>"
+                + _render_itens_inline((items_map or {}).get(pid, []))
+            )
+        if docs_map is not None:
+            body_html += (
+                "<hr style='margin:10px 0;border:none;border-top:1px solid #ddd;'>"
+                + "<div style='font-weight:bold;color:#003A70;font-size:13px;'>Documentos</div>"
+                + _render_docs_inline((docs_map or {}).get(pid, []))
+            )
+        body_html += "</div>"
+        parts.append(f"<div style='{card_style}'>{body_html}</div>")
+    return "\n".join(parts)
 
 
 __all__ += [
     'render_boletim_email_html',
     'render_favorito_email_html',
+    'render_history_email_html',
+    '_render_itens_inline','_render_docs_inline'
 ]

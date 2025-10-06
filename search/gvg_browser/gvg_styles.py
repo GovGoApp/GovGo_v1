@@ -254,6 +254,13 @@ styles = {
         'backgroundColor': 'white', 'color': '#FF5722',
         'cursor': 'pointer'
     },
+    'history_email_btn': {
+    'width': '28px', 'height': '28px', 'minWidth': '28px',
+    'borderRadius': '50%', 'border': '1px solid #FF5722',
+    'backgroundColor': 'white', 'color': '#FF5722',
+    'cursor': 'pointer', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+    'padding': '0'
+    },
     'history_item_row': {
         'display': 'flex', 'gap': '8px', 'alignItems': 'flex-start', 'marginBottom': '6px'
     },

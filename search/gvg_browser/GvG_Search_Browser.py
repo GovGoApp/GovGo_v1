@@ -102,7 +102,8 @@ from gvg_schema import (
     PRIMARY_KEY,
 )
 from gvg_ai_utils import generate_contratacao_label
-from gvg_email import send_html_email, render_boletim_email_html, render_favorito_email_html
+from gvg_email import send_html_email, render_boletim_email_html, render_favorito_email_html, render_history_email_html
+from gvg_search_core import fetch_itens_contratacao
 
 # Autenticação (Supabase)
 try:
@@ -4105,6 +4106,13 @@ def render_history_list(history):
                         title='Reabrir resultados desta consulta',
                         style=styles['history_replay_btn'],
                         className='delete-btn'
+                    ),
+                    html.Button(
+                        html.I(className='fas fa-envelope'),
+                        id={'type': 'history-email', 'index': i},
+                        title='Enviar resultados por e-mail',
+                        style=styles.get('fav_email_btn', styles.get('history_replay_btn', {})),
+                        className='delete-btn'
                     )
                 ], style=styles['history_actions_col'])
             ], className='history-item-row', style=styles['history_item_row'])
@@ -5874,10 +5882,12 @@ def render_favorites_list(favs, toggles):
     Output('store-email-modal-context', 'data', allow_duplicate=True),
     Input({'type': 'boletim-email', 'id': ALL}, 'n_clicks'),
     Input({'type': 'favorite-email', 'index': ALL}, 'n_clicks'),
+    Input({'type': 'history-email', 'index': ALL}, 'n_clicks'),
     State('store-favorites', 'data'),
+    State('store-history', 'data'),
     prevent_initial_call=True
 )
-def open_email_modal(n_clicks_boletim, n_clicks_fav, favs):
+def open_email_modal(n_clicks_boletim, n_clicks_fav, n_clicks_hist, favs, history_list):
     ctx = callback_context
     if not ctx or not ctx.triggered:
         raise PreventUpdate
@@ -5900,6 +5910,24 @@ def open_email_modal(n_clicks_boletim, n_clicks_fav, favs):
         except Exception:
             pncp = None
         return {'kind': 'favorito', 'pncp': pncp}
+    if comp.get('type') == 'history-email':
+        idx = comp.get('index')
+        prompt = None
+        try:
+            prompt = (history_list or [])[int(idx)]
+        except Exception:
+            prompt = None
+        if prompt:
+            try:
+                from gvg_usage import record_usage
+                record_usage('history_email_open', meta={'len': len(prompt)})
+            except Exception:
+                pass
+            try:
+                dbg('EMAIL', f"open history email prompt='{(prompt or '')[:60]}'")
+            except Exception:
+                pass
+        return {'kind': 'history', 'prompt': prompt}
     raise PreventUpdate
 
 
@@ -5916,6 +5944,8 @@ def reflect_email_modal(ctx_data):
         return True, 'Enviar boletim por e-mail'
     if kind == 'favorito':
         return True, 'Enviar favorito por e-mail'
+    if kind == 'history':
+        return True, 'Enviar histórico (consulta) por e-mail'
     return False, 'Enviar por e-mail'
 
 
@@ -5939,10 +5969,6 @@ def _parse_recipients(raw: str) -> list[str]:
             seen.add(e.lower())
     return uniq
 
-
-def _render_email_boletim_inline(query_text: str, rows: list[dict], cfg_snapshot: dict | None, stype: str | None, sdetail: dict | None) -> str:
-    # Centralizado em gvg_email
-    return render_boletim_email_html(query_text, rows or [], cfg_snapshot or {}, stype, sdetail)
 
 
 @app.callback(
@@ -5989,8 +6015,10 @@ def process_email_send(req):
     try:
         if kind == 'boletim':
             bid = ctxd.get('id')
-            row = db_fetch_all("SELECT query_text, config_snapshot, schedule_type, schedule_detail FROM user_schedule WHERE id=%s", (int(bid),), as_dict=False, ctx="GSB.email:load_schedule")
-            row = (row or [["","", "", {}]])[0]
+            row = db_fetch_all(
+                "SELECT query_text, config_snapshot, schedule_type, schedule_detail FROM user_schedule WHERE id=%s",
+                (int(bid),), as_dict=False, ctx="GSB.email:load_schedule")
+            row = (row or [["", "", "", {}]])[0]
             qtxt = (row[0] or '').strip()
             cfg = row[1] or {}
             if isinstance(cfg, str):
@@ -6011,8 +6039,34 @@ def process_email_send(req):
                 """,
                 (int(bid), last_run), as_dict=True, ctx="GSB.email:load_results"
             ) or []
-            html = _render_email_boletim_inline(qtxt, rows, cfg, stype, sdetail)
+            # Montar mapas de itens e documentos
+            pncp_ids = [str(r.get('numero_controle_pncp') or '') for r in rows if r.get('numero_controle_pncp')]
+            items_map = {}
+            docs_map = {}
+            for pid in pncp_ids:
+                try:
+                    itens = fetch_itens_contratacao(pid, limit=200) or []  # limite de segurança
+                except Exception:
+                    itens = []
+                try:
+                    docs = fetch_documentos(pid) or []
+                except Exception:
+                    docs = []
+                items_map[pid] = itens
+                docs_map[pid] = docs
+                try:
+                    dbg('EMAIL', f"boletim pncp={pid} itens={len(itens)} docs={len(docs)}")
+                except Exception:
+                    pass
+            try:
+                html = render_boletim_email_html(qtxt, rows, cfg, stype, sdetail, items_map=items_map, docs_map=docs_map)
+            except Exception:
+                html = render_boletim_email_html(qtxt, rows, cfg, stype, sdetail)
             subject = f"Boletim GovGo — {qtxt}"
+            try:
+                dbg('EMAIL', f"boletim email total_results={len(rows)} pncp_ids={len(pncp_ids)}")
+            except Exception:
+                pass
         elif kind == 'favorito':
             pncp = (ctxd.get('pncp') or '').strip()
             if not pncp:
@@ -6023,8 +6077,77 @@ def process_email_send(req):
                 return None
             rec = rows[0]
             details = project_result_for_output(normalize_contratacao_row(rec))
-            html = render_favorito_email_html(details)
+            # Buscar itens e documentos
+            try:
+                fav_itens = fetch_itens_contratacao(pncp, limit=200) or []
+            except Exception:
+                fav_itens = []
+            try:
+                fav_docs = fetch_documentos(pncp) or []
+            except Exception:
+                fav_docs = []
+            try:
+                dbg('EMAIL', f"favorito pncp={pncp} itens={len(fav_itens)} docs={len(fav_docs)}")
+            except Exception:
+                pass
+            try:
+                html = render_favorito_email_html(details, itens=fav_itens, docs=fav_docs)
+            except Exception:
+                html = render_favorito_email_html(details)
             subject = f"Favorito GovGo — PNCP {pncp}"
+        elif kind == 'history':
+            prompt_text = (ctxd.get('prompt') or '').strip()
+            if not prompt_text:
+                return None
+            try:
+                from gvg_user import fetch_user_results_for_prompt_text
+                rows = fetch_user_results_for_prompt_text(prompt_text, limit=500) or []
+            except Exception:
+                rows = []
+            # Montar mapas itens/docs
+            pncp_ids = []
+            for r in rows:
+                try:
+                    pid = (r.get('details') or {}).get('numero_controle_pncp')
+                    if pid:
+                        pncp_ids.append(str(pid))
+                except Exception:
+                    pass
+            items_map = {}
+            docs_map = {}
+            for pid in pncp_ids:
+                try:
+                    itens = fetch_itens_contratacao(pid, limit=200) or []
+                except Exception:
+                    itens = []
+                try:
+                    docs = fetch_documentos(pid) or []
+                except Exception:
+                    docs = []
+                items_map[pid] = itens
+                docs_map[pid] = docs
+                try:
+                    dbg('EMAIL', f"history pncp={pid} itens={len(itens)} docs={len(docs)}")
+                except Exception:
+                    pass
+            try:
+                from gvg_email import render_history_email_html
+                html = render_history_email_html(prompt_text, rows, items_map=items_map, docs_map=docs_map)
+            except Exception:
+                try:
+                    html = render_history_email_html(prompt_text, rows)
+                except Exception:
+                    html = f"<div>Falha ao gerar e-mail de histórico para: {prompt_text}</div>"
+            subject = f"Consulta GovGo — {prompt_text[:80]}" if prompt_text else "Consulta GovGo"
+            try:
+                from gvg_usage import record_usage
+                record_usage('history_email', meta={'results': len(rows)})
+            except Exception:
+                pass
+            try:
+                dbg('EMAIL', f"history email prompt='{prompt_text[:50]}' results={len(rows)} pncp_ids={len(pncp_ids)}")
+            except Exception:
+                pass
         else:
             return None
 
