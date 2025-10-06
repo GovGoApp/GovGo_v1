@@ -19,6 +19,11 @@ from typing import Dict, Any, List, Optional
 import numpy as np
 from dotenv import load_dotenv
 from gvg_debug import debug_log as dbg
+try:
+	from gvg_usage import _get_current_aggregator
+except Exception:  # fallback se circular
+	def _get_current_aggregator():
+		return None
 
 try:
 	from openai import OpenAI  # type: ignore
@@ -118,6 +123,12 @@ def ai_assistant_run_text(assistant_id: str, content: str, context_key: str = 'd
 			pass
 		out = _extract_assistant_text_from_messages(client, thread.id)
 		elapsed_ms = int((time.time() - t0) * 1000)
+		try:
+			aggr = _get_current_aggregator()
+			if aggr:
+				aggr.add_tokens(tokens_in, tokens_out, total_tokens)
+		except Exception:
+			pass
 		dbg('IA', f"assistant.run func=ai_assistant_run_text feat={feature or ''} context={context_key} tokens_in={tokens_in} tokens_out={tokens_out} total={total_tokens} time_ms={elapsed_ms} in_len={len(content) if isinstance(content,str) else 'N/A'} out_len={len(out) if isinstance(out,str) else 'N/A'}")
 		return out
 	except Exception as e:
@@ -146,6 +157,14 @@ def ai_assistant_run_with_files(assistant_id: str, file_paths: List[str], user_m
 				with open(p, 'rb') as f:
 					up = client.files.create(purpose='assistants', file=f)
 					attachments.append({'file_id': up.id, 'tools': [{'type': 'file_search'}]})
+					try:
+						aggr = _get_current_aggregator()
+						if aggr:
+							import os as _os
+							size = _os.path.getsize(p)
+							aggr.add_file_out(size)
+					except Exception:
+						pass
 			except Exception as e:
 				dbg('ASSISTANT', f"file.upload.error path={os.path.basename(p)} err={e}")
 		if not attachments:
@@ -172,6 +191,12 @@ def ai_assistant_run_with_files(assistant_id: str, file_paths: List[str], user_m
 			pass
 		out = _extract_assistant_text_from_messages(client, thread.id)
 		elapsed_ms = int((time.time() - t0) * 1000)
+		try:
+			aggr = _get_current_aggregator()
+			if aggr:
+				aggr.add_tokens(tokens_in, tokens_out, total_tokens)
+		except Exception:
+			pass
 		dbg('IA', f"assistant.files func=ai_assistant_run_with_files feat={feature or ''} tokens_in={tokens_in} tokens_out={tokens_out} total={total_tokens} time_ms={elapsed_ms} files={len(file_paths or [])} msg_len={len(user_message) if isinstance(user_message,str) else 'N/A'} out_len={len(out) if isinstance(out,str) else 'N/A'}")
 		return out
 	except Exception as e:
@@ -195,6 +220,12 @@ def ai_chat_complete(model: str, messages: List[Dict[str, Any]], max_tokens: Opt
 			tt = getattr(usage, 'total_tokens', None)
 		except Exception:
 			pt = ct = tt = None
+		try:
+			aggr = _get_current_aggregator()
+			if aggr:
+				aggr.add_tokens(pt, ct, tt)
+		except Exception:
+			pass
 		dbg('IA', f"chat.complete func=ai_chat_complete feat={feature or ''} model={model} prompt_t={pt} completion_t={ct} total={tt} time_ms={elapsed_ms}")
 		return (resp.choices[0].message.content or '').strip()
 	except Exception as e:
@@ -221,6 +252,12 @@ def get_embedding(text, model=EMBEDDING_MODEL, feature: Optional[str] = None):
 			tt = getattr(usage, 'total_tokens', None) if usage else None
 		except Exception:
 			tt = None
+		try:
+			aggr = _get_current_aggregator()
+			if aggr and tt:
+				aggr.add_tokens(tt, 0, tt)
+		except Exception:
+			pass
 		dbg('IA', f"embeddings func=get_embedding feat={feature or ''} model={model} total_tokens={tt} time_ms={elapsed_ms} text_len={len(text) if isinstance(text,str) else 'N/A'} emb_len={len(response.data[0].embedding) if getattr(response,'data',None) else 'N/A'}")
 		return response.data[0].embedding
 	except Exception as e:

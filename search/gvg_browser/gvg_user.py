@@ -283,13 +283,7 @@ def add_prompt(
         # invalida caches de prompts do usuário
         _cache_invalidate_prefix(f"USER.fetch_prompt_texts:{uid}:")
         _cache_invalidate_prefix(f"USER.fetch_prompts_with_config:{uid}:")
-        # Usage metric
-        try:
-            from gvg_usage import record_usage
-            if pid:
-                record_usage(uid, 'query', ref_type='prompt', ref_id=str(pid), meta={'text_len': len(text or '')})
-        except Exception:
-            pass
+    # Métrica de uso: agora o ID será associado via usage_event_set_ref em run_search
         return pid
     except Exception:
         return None
@@ -641,7 +635,7 @@ def add_bookmark(numero_controle_pncp: str, rotulo: Optional[str] = None) -> boo
         _cache_invalidate_prefix(f"USER.fetch_bookmarks:{uid}:")
         try:
             from gvg_usage import record_usage  # type: ignore
-            record_usage(uid, 'favorite_add', ref_type='contratacao', ref_id=str(numero_controle_pncp))
+            record_usage(uid, 'favorite_add', ref_type='favorito', ref_id=str(numero_controle_pncp))
         except Exception:
             pass
         return True
@@ -669,7 +663,7 @@ def remove_bookmark(numero_controle_pncp: str) -> bool:
         _cache_invalidate_prefix(f"USER.fetch_bookmarks:{uid}:")
         try:
             from gvg_usage import record_usage  # type: ignore
-            record_usage(uid, 'favorite_remove', ref_type='contratacao', ref_id=str(numero_controle_pncp))
+            record_usage(uid, 'favorite_remove', ref_type='favorito', ref_id=str(numero_controle_pncp))
         except Exception:
             pass
         return True

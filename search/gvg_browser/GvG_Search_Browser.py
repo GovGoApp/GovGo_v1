@@ -352,7 +352,7 @@ LOGO_PATH = "https://hemztmtbejcbhgfmsvfq.supabase.co/storage/v1/object/public/g
 header = html.Div([
     html.Div([
     html.Img(src=LOGO_PATH, style=styles['header_logo']),
-    html.Div("GvG Search", className='gvg-header-title', style=styles['header_title'])
+    html.Div("Search", className='gvg-header-title', style=styles['header_title'])
     ], style=styles['header_left']),
     html.Div([
         html.Div(
@@ -577,51 +577,7 @@ controls_panel = html.Div([
         ], style=styles.get('query_table', {'width': '100%'}) ),
     ], id='query-container', style=styles['input_container']),
 
-    
-    html.Div([
-        html.Button([
-            html.Div([
-                html.I(className='fas fa-sliders-h', style=styles['section_icon']),
-                html.Div("Configurações de Busca", style=styles['card_title'])
-            ], style=styles['section_header_left']),
-            html.I(className="fas fa-chevron-down")
-        ], id='config-toggle-btn', title='Mostrar/ocultar configurações', style=styles['section_header_button'])
-    ], style=styles['row_header']),
-    dbc.Collapse(
-        html.Div([
-            html.Div([
-                html.Label('Tipo', className='gvg-form-label'),
-                dcc.Dropdown(id='search-type', options=[{'label': f"{k} - {v['name']}", 'value': k} for k, v in SEARCH_TYPES.items()], value=1, clearable=False, style=styles['input_fullflex'])
-            ], className='gvg-form-row'),
-            html.Div([
-                html.Label('Abordagem', className='gvg-form-label'),
-                dcc.Dropdown(id='search-approach', options=[{'label': f"{k} - {v['name']}", 'value': k} for k, v in SEARCH_APPROACHES.items()], value=3, clearable=False, style=styles['input_fullflex'])
-            ], className='gvg-form-row'),
-            html.Div([
-                html.Label('Relevância', className='gvg-form-label'),
-                dcc.Dropdown(id='relevance-level', options=[{'label': f"{k} - {v['name']}", 'value': k} for k, v in RELEVANCE_LEVELS.items()], value=2, clearable=False, style=styles['input_fullflex'])
-            ], className='gvg-form-row'),
-            html.Div([
-                html.Label('Ordenação', className='gvg-form-label'),
-                dcc.Dropdown(id='sort-mode', options=[{'label': f"{k} - {v['name']}", 'value': k} for k, v in SORT_MODES.items()], value=1, clearable=False, style=styles['input_fullflex'])
-            ], className='gvg-form-row'),
-            html.Div([
-                html.Label('Máx. resultados', className='gvg-form-label'),
-                dcc.Input(id='max-results', type='number', min=5, max=1000, value=DEFAULT_MAX_RESULTS, style=styles['input_fullflex'])
-            ], className='gvg-form-row'),
-            html.Div([
-                html.Label('TOP categorias', className='gvg-form-label'),
-                dcc.Input(id='top-categories', type='number', min=5, max=50, value=DEFAULT_TOP_CATEGORIES, style=styles['input_fullflex'])
-            ], className='gvg-form-row'),
-            html.Div([
-                dcc.Checklist(id='toggles', options=[
-                    {'label': ' Filtrar encerrados', 'value': 'filter_expired'},
-                ], value=['filter_expired'])
-            ], style=styles['row_wrap_gap'])
-        ], style={**styles['controls_group'], 'position': 'relative'}, className='gvg-controls'),
-        id='config-collapse', is_open=True
-    ),
-
+    ######## FILTROS AVANÇADOS ########
     html.Div([
         html.Button([
             html.Div([
@@ -712,6 +668,52 @@ controls_panel = html.Div([
     id='filters-collapse', is_open=False, style=({} if ENABLE_SEARCH_V2 else {'display': 'none'})
     ),
 
+    ######## CONFIGURAÇÔES DE BUSCA ########
+    html.Div([
+        html.Button([
+            html.Div([
+                html.I(className='fas fa-sliders-h', style=styles['section_icon']),
+                html.Div("Configurações de Busca", style=styles['card_title'])
+            ], style=styles['section_header_left']),
+            html.I(className="fas fa-chevron-down")
+        ], id='config-toggle-btn', title='Mostrar/ocultar configurações', style=styles['section_header_button'])
+    ], style=styles['row_header']),
+    dbc.Collapse(
+        html.Div([
+            html.Div([
+                html.Label('Tipo', className='gvg-form-label'),
+                dcc.Dropdown(id='search-type', options=[{'label': f"{k} - {v['name']}", 'value': k} for k, v in SEARCH_TYPES.items()], value=1, clearable=False, style=styles['input_fullflex'])
+            ], className='gvg-form-row'),
+            html.Div([
+                html.Label('Abordagem', className='gvg-form-label'),
+                dcc.Dropdown(id='search-approach', options=[{'label': f"{k} - {v['name']}", 'value': k} for k, v in SEARCH_APPROACHES.items()], value=3, clearable=False, style=styles['input_fullflex'])
+            ], className='gvg-form-row'),
+            html.Div([
+                html.Label('Relevância', className='gvg-form-label'),
+                dcc.Dropdown(id='relevance-level', options=[{'label': f"{k} - {v['name']}", 'value': k} for k, v in RELEVANCE_LEVELS.items()], value=2, clearable=False, style=styles['input_fullflex'])
+            ], className='gvg-form-row'),
+            html.Div([
+                html.Label('Ordenação', className='gvg-form-label'),
+                dcc.Dropdown(id='sort-mode', options=[{'label': f"{k} - {v['name']}", 'value': k} for k, v in SORT_MODES.items()], value=1, clearable=False, style=styles['input_fullflex'])
+            ], className='gvg-form-row'),
+            html.Div([
+                html.Label('Máx. resultados', className='gvg-form-label'),
+                dcc.Input(id='max-results', type='number', min=5, max=1000, value=DEFAULT_MAX_RESULTS, style=styles['input_fullflex'])
+            ], className='gvg-form-row'),
+            html.Div([
+                html.Label('TOP categorias', className='gvg-form-label'),
+                dcc.Input(id='top-categories', type='number', min=5, max=50, value=DEFAULT_TOP_CATEGORIES, style=styles['input_fullflex'])
+            ], className='gvg-form-row'),
+            html.Div([
+                dcc.Checklist(id='toggles', options=[
+                    {'label': ' Filtrar encerrados', 'value': 'filter_expired'},
+                ], value=['filter_expired'])
+            ], style=styles['row_wrap_gap'])
+        ], style={**styles['controls_group'], 'position': 'relative'}, className='gvg-controls'),
+    id='config-collapse', is_open=False
+    ),
+
+    ######## HISTÓRICO ########
     html.Div([
         html.Button([
             html.Div([
@@ -727,6 +729,8 @@ controls_panel = html.Div([
         ], id='history-card', style=styles['controls_group']),
         id='history-collapse', is_open=True
     ),
+    
+    ######## FAVORITOS ########
     html.Div([
         html.Button([
             html.Div([
@@ -742,6 +746,8 @@ controls_panel = html.Div([
         ], id='favorites-card', style=styles['controls_group']),
         id='favorites-collapse', is_open=True
     ),
+
+    ######## BOLETINS ########
     html.Div([
         html.Button([
             html.Div([
@@ -834,7 +840,7 @@ app.layout = html.Div([
     dcc.Store(id='store-favorites', data=[]),
     dcc.Store(id='store-favorites-open', data=True),
     dcc.Store(id='processing-state', data=False),
-    dcc.Store(id='store-config-open', data=True),
+    dcc.Store(id='store-config-open', data=False),
     dcc.Store(id='store-items', data={}),
     dcc.Store(id='store-sort', data=None),
     dcc.Store(id='store-panel-active', data={}),
@@ -2725,7 +2731,7 @@ def _sanitize_limit(value, default=DEFAULT_MAX_RESULTS, min_v=5, max_v=1000) -> 
 # ==========================
 # Histórico de consultas (por usuário)
 # ==========================
-def load_history(max_items: int = 50) -> list:
+def load_history(max_items: int = 20) -> list:
     try:
         return fetch_prompt_texts(limit=max_items)
     except Exception:
@@ -2842,6 +2848,15 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
 
     import time
     t0 = time.time()
+    # Início do evento de uso (query). Ref será ajustado após persistir prompt.
+    try:
+        from gvg_usage import usage_event_start
+        user = get_current_user() if 'get_current_user' in globals() else {'uid': ''}
+        uid = (user or {}).get('uid') or ''
+        if uid:
+            usage_event_start(uid, 'query', ref_type='prompt', ref_id=None)
+    except Exception:
+        pass
 
     # Sanitizar limites vindos da UI ANTES de usar
     safe_limit = _sanitize_limit(max_results, default=DEFAULT_MAX_RESULTS, min_v=5, max_v=1000)
@@ -3016,6 +3031,12 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
                     save_user_results(prompt_id, results or [])
                 except Exception:
                     pass
+                # Atualiza ref do evento agora que temos prompt_id
+                try:
+                    from gvg_usage import usage_event_set_ref
+                    usage_event_set_ref('prompt', str(prompt_id))
+                except Exception:
+                    pass
     except Exception:
         pass
     meta = {
@@ -3056,6 +3077,12 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
         session_event = None
     # Importante: evitar escrever diretamente nas stores globais (results/categories/meta/last_query)
     # para não competir com sync_active_session. Apenas emitir o evento de sessão e encerrar o processamento.
+    # Finalizar evento de uso
+    try:
+        from gvg_usage import usage_event_finish
+        usage_event_finish({'results': len(results or [])})
+    except Exception:
+        pass
     return dash.no_update, dash.no_update, dash.no_update, dash.no_update, session_event, False
 
 
@@ -4968,13 +4995,15 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                 )
             ])
 
-            # Usage metric: summary_request (uma vez por abertura sem cache/BD)
+            # Iniciar evento de uso summary_request (se não há cache nem BD)
+            event_started = False
             try:
                 if uid and pid and (str(pid) not in updated_cache or not updated_cache.get(str(pid), {}).get('summary')):
-                    from gvg_usage import record_usage  # type: ignore
-                    record_usage(uid, 'summary_request', ref_type='contratacao', ref_id=str(pid))
+                    from gvg_usage import usage_event_start  # type: ignore
+                    usage_event_start(uid, 'summary_request', ref_type='sumário', ref_id=str(pid))
+                    event_started = True
             except Exception:
-                pass
+                event_started = False
 
             if DOCUMENTS_AVAILABLE:
                 try:
@@ -5009,11 +5038,17 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                     upsert_user_resumo(uid, pid, summary_text)
                 except Exception:
                     pass
-            # Usage metric: summary_success (quando gerar texto não-vazio)
+            # Finalizar evento summary_request -> summary_success (se iniciado)
             try:
-                if uid and pid and isinstance(summary_text, str) and summary_text.strip():
-                    from gvg_usage import record_usage  # type: ignore
-                    record_usage(uid, 'summary_success', ref_type='contratacao', ref_id=str(pid), meta={'chars': len(summary_text)})
+                if event_started and uid and pid:
+                    from gvg_usage import usage_event_finish  # type: ignore
+                    extra = {}
+                    if isinstance(summary_text, str) and summary_text.strip():
+                        extra['chars'] = len(summary_text)
+                        extra['status'] = 'success'
+                    else:
+                        extra['status'] = 'empty'
+                    usage_event_finish(extra)
             except Exception:
                 pass
             # Substitui o spinner pelo conteúdo final (resumo)
@@ -5236,6 +5271,9 @@ def update_history_on_search(meta, last_query, history):
     # Dedup and move to top
     items = [x for x in items if x != q]
     items.insert(0, q)
+    # Limitar a 20 entradas
+    if len(items) > 20:
+        items = items[:20]
     save_history(items)
     return items
 

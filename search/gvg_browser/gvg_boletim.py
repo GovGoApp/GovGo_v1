@@ -227,10 +227,11 @@ def create_user_boletim(
                 pass
     if pid:
         _cache_invalidate_prefix(f"BOLETIM.fetch_user_boletins:{uid}")
-        # Usage metric boletim_create
+        # Evento de uso boletim_create
         try:
-            from gvg_usage import record_usage  # type: ignore
-            record_usage(str(uid), 'boletim_create', ref_type='boletim', ref_id=str(pid))
+            from gvg_usage import usage_event_start, usage_event_finish  # type: ignore
+            usage_event_start(str(uid), 'boletim_create', ref_type='boletim', ref_id=str(pid))
+            usage_event_finish()
         except Exception:
             pass
     return pid

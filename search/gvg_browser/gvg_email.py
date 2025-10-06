@@ -310,6 +310,14 @@ def _render_docs_inline(docs: List[Dict[str, Any]], limit: int = EMAIL_MAX_DOCS_
     for d in docs[:limit]:
         url = d.get('url') or d.get('link') or ''
         nome = d.get('nome') or d.get('nome_arquivo') or ''
+        # Se nome é placeholder genérico, usar a própria URL (simplificada)
+        if nome and isinstance(nome, str) and nome.strip().lower() in {'link sistema', 'link do sistema', 'link_sistema'}:
+            if url:
+                try:
+                    base = url.split('://',1)[-1]
+                except Exception:
+                    base = url
+                nome = base[:80]
         if not nome and url:
             try:
                 nome = url.split('/')[-1][:80]
@@ -343,7 +351,7 @@ def render_boletim_email_html(query_text: str, items: List[Dict[str, Any]],
     header_html = (
         f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:8px;'>"
         f"<img src='{LOGO_PATH}' alt='GovGo' style='{header_logo_style}'/>"
-        f"<h4 style='{header_title_style}'>GvG Search</h4>"
+        f"<h4 style='{header_title_style}'>Search</h4>"
         f"</div>"
     )
 
@@ -494,14 +502,12 @@ def render_boletim_email_html(query_text: str, items: List[Dict[str, Any]],
         ]
         if items_map is not None:
             body_parts.append(
-                "<hr style='margin:10px 0;border:none;border-top:1px solid #ddd;'>"
-                + "<div style='font-weight:bold;color:#003A70;font-size:13px;'>Itens</div>"
+                "<div style='font-weight:bold;color:#003A70;font-size:13px;margin-top:8px;'>Itens</div>"
                 + _render_itens_inline((items_map or {}).get(pncp_id, []))
             )
         if docs_map is not None:
             body_parts.append(
-                "<hr style='margin:10px 0;border:none;border-top:1px solid #ddd;'>"
-                + "<div style='font-weight:bold;color:#003A70;font-size:13px;'>Documentos</div>"
+                "<div style='font-weight:bold;color:#003A70;font-size:13px;margin-top:8px;'>Documentos</div>"
                 + _render_docs_inline((docs_map or {}).get(pncp_id, []))
             )
         body_parts.append("</div>")
@@ -547,14 +553,12 @@ def render_favorito_email_html(details: Dict[str, Any], itens: Optional[List[Dic
     ]
     if itens is not None:
         body_parts.append(
-            "<hr style='margin:10px 0;border:none;border-top:1px solid #ddd;'>"
-            + "<div style='font-weight:bold;color:#003A70;font-size:13px;'>Itens</div>"
+            "<div style='font-weight:bold;color:#003A70;font-size:13px;margin-top:8px;'>Itens</div>"
             + _render_itens_inline(itens or [])
         )
     if docs is not None:
         body_parts.append(
-            "<hr style='margin:10px 0;border:none;border-top:1px solid #ddd;'>"
-            + "<div style='font-weight:bold;color:#003A70;font-size:13px;'>Documentos</div>"
+            "<div style='font-weight:bold;color:#003A70;font-size:13px;margin-top:8px;'>Documentos</div>"
             + _render_docs_inline(docs or [])
         )
     body_parts.append("</div>")
@@ -576,7 +580,7 @@ def render_history_email_html(prompt_text: str, results: List[Dict[str, Any]], i
     header_html = (
         f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:8px;'>"
         f"<img src='{LOGO_PATH}' alt='GovGo' style='{header_logo_style}'/>"
-        f"<h4 style='{header_title_style}'>GvG Search</h4>"
+        f"<h4 style='{header_title_style}'>Search</h4>"
         f"</div>"
     )
     parts: List[str] = [header_html]
@@ -672,14 +676,12 @@ def render_history_email_html(prompt_text: str, results: List[Dict[str, Any]], i
         )
         if items_map is not None:
             body_html += (
-                "<hr style='margin:10px 0;border:none;border-top:1px solid #ddd;'>"
-                + "<div style='font-weight:bold;color:#003A70;font-size:13px;'>Itens</div>"
+                "<div style='font-weight:bold;color:#003A70;font-size:13px;margin-top:8px;'>Itens</div>"
                 + _render_itens_inline((items_map or {}).get(pid, []))
             )
         if docs_map is not None:
             body_html += (
-                "<hr style='margin:10px 0;border:none;border-top:1px solid #ddd;'>"
-                + "<div style='font-weight:bold;color:#003A70;font-size:13px;'>Documentos</div>"
+                "<div style='font-weight:bold;color:#003A70;font-size:13px;margin-top:8px;'>Documentos</div>"
                 + _render_docs_inline((docs_map or {}).get(pid, []))
             )
         body_html += "</div>"

@@ -130,12 +130,14 @@ def db_fetch_all(sql: str, params: Optional[Sequence[Any]] = None, *, as_dict: b
         out = _rows_to_dicts(cur, rows) if as_dict else rows
         ms = int((time.perf_counter() - t0) * 1000)
         dbg('DB', f'fetch_all{("="+ctx) if ctx else ""} ms={ms} rows={len(rows)}')
+        from gvg_usage import _get_current_aggregator  # import tardio para evitar ciclos
+        aggr = _get_current_aggregator()
+        if aggr:
+            aggr.add_db_read(len(rows))
+
         return out
     except Exception as e:
-        try:
-            dbg('DB', f'fetch_all{("="+ctx) if ctx else ""} ERRO: {e}')
-        except Exception:
-            pass
+        dbg('DB', f'fetch_all{("="+ctx) if ctx else ""} ERRO: {e}')
         return []
     finally:
         try:
@@ -165,6 +167,13 @@ def db_fetch_one(sql: str, params: Optional[Sequence[Any]] = None, *, as_dict: b
         row = cur.fetchone()
         ms = int((time.perf_counter() - t0) * 1000)
         dbg('DB', f'fetch_one{("="+ctx) if ctx else ""} ms={ms} row={(1 if row else 0)}')
+        try:
+            from gvg_usage import _get_current_aggregator
+            aggr = _get_current_aggregator()
+            if aggr and row is not None:
+                aggr.add_db_read(1)
+        except Exception:
+            pass
         if row is None:
             return None
         if not as_dict:
@@ -205,6 +214,13 @@ def db_execute(sql: str, params: Optional[Sequence[Any]] = None, *, ctx: Optiona
         conn.commit()
         ms = int((time.perf_counter() - t0) * 1000)
         dbg('DB', f'execute{("="+ctx) if ctx else ""} ms={ms} affected={affected}')
+        try:
+            from gvg_usage import _get_current_aggregator
+            aggr = _get_current_aggregator()
+            if aggr and affected:
+                aggr.add_db_written(int(affected))
+        except Exception:
+            pass
         return int(affected)
     except Exception as e:
         try:
@@ -245,6 +261,13 @@ def db_execute_many(sql: str, seq_params: Iterable[Sequence[Any]], *, ctx: Optio
         conn.commit()
         ms = int((time.perf_counter() - t0) * 1000)
         dbg('DB', f'execute_many{("="+ctx) if ctx else ""} ms={ms} affected={affected}')
+        try:
+            from gvg_usage import _get_current_aggregator
+            aggr = _get_current_aggregator()
+            if aggr and affected:
+                aggr.add_db_written(int(affected))
+        except Exception:
+            pass
         return int(affected)
     except Exception as e:
         try:
@@ -286,6 +309,13 @@ def db_execute_returning_one(sql: str, params: Optional[Sequence[Any]] = None, *
         conn.commit()
         ms = int((time.perf_counter() - t0) * 1000)
         dbg('DB', f'execute_returning_one{("="+ctx) if ctx else ""} ms={ms} row={(1 if row else 0)}')
+        try:
+            from gvg_usage import _get_current_aggregator
+            aggr = _get_current_aggregator()
+            if aggr and row is not None:
+                aggr.add_db_written(1)
+        except Exception:
+            pass
         if row is None:
             return None
         if not as_dict:
@@ -347,6 +377,13 @@ def db_read_df(sql: str, params: Optional[Sequence[Any]] = None, *, ctx: Optiona
         except Exception:
             rows = 0
         dbg('DB', f'read_df{("="+ctx) if ctx else ""} ms={ms} rows={rows}')
+        try:
+            from gvg_usage import _get_current_aggregator
+            aggr = _get_current_aggregator()
+            if aggr and rows:
+                aggr.add_db_read(int(rows))
+        except Exception:
+            pass
         return df
     except Exception as e:
         dbg('DB', f'read_df{("="+ctx) if ctx else ""} ERRO: {e}')
@@ -401,7 +438,12 @@ def fetch_documentos(numero_controle: str) -> List[dict]:
                 except Exception:
                     url = None
                 if url:
-                    documentos.append({'url': url, 'nome': 'Link Sistema', 'tipo': 'origem', 'origem': 'db'})
+                    # Usar a própria URL (sem protocolo) como nome em vez de placeholder genérico
+                    try:
+                        display = url.split('://',1)[-1]
+                    except Exception:
+                        display = url
+                    documentos.append({'url': url, 'nome': display, 'tipo': 'origem', 'origem': 'db'})
     except Exception as e:
         try:
             dbg('SQL', f"fetch_documentos DB: {e}")
@@ -435,6 +477,14 @@ def fetch_documentos(numero_controle: str) -> List[dict]:
                         'sequencial': item.get('sequencialDocumento'),
                         'origem': 'api',
                     })
+            # contabilizar bytes baixados
+            try:
+                from gvg_usage import _get_current_aggregator
+                aggr = _get_current_aggregator()
+                if aggr:
+                    aggr.add_file_in(len(resp.content or b''))
+            except Exception:
+                pass
         else:
             dbg('DOCS', f"API documentos status {resp.status_code} ({numero_controle})")
     except Exception as e:

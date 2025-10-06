@@ -528,10 +528,11 @@ def run_once(now: Optional[datetime] = None) -> None:
         run_token = uuid.uuid4().hex
         record_boletim_results(sid, uid, run_token, now, rows)
         log_line(f"Boletim {sid}: resultados gravados = {len(rows)}")
-        # Usage metric boletim_run
+        # Evento de uso boletim_run
         try:
-            from gvg_usage import record_usage  # type: ignore
-            record_usage(str(uid), 'boletim_run', ref_type='boletim', ref_id=str(sid), meta={'results': len(rows)})
+            from gvg_usage import usage_event_start, usage_event_finish  # type: ignore
+            usage_event_start(str(uid), 'boletim_run', ref_type='boletim', ref_id=str(sid))
+            usage_event_finish({'results': len(rows)})
         except Exception:
             pass
 

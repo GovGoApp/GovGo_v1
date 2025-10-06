@@ -277,10 +277,7 @@ def generate_document_summary(markdown_content, max_tokens=None, pncp_data=None)
         )
         out = ai_assistant_run_text(_ASSISTANT_SUMMARY_ID, user_message, context_key='doc_summary', timeout=180)
         out = strip_citations(out or "")
-        if out:
-            _dbg_assistant_output("MD->Assistant", out)
-            return out
-        return "Não foi possível obter o conteúdo do assistente."
+
     except Exception as e:
         return f"Erro ao gerar resumo (Assistants): {str(e)}"
 
@@ -313,10 +310,7 @@ def generate_document_summary_from_files(file_paths: list[str], max_tokens=None,
         )
         out = ai_assistant_run_with_files(_ASSISTANT_SUMMARY_ID, list(file_paths or []), user_message, timeout=180)
         out = strip_citations(out or "")
-        if out:
-            _dbg_assistant_output("Files->Assistant", out)
-            return out
-        return "Não foi possível obter o conteúdo do assistente."
+
     except Exception as e:
         return f"Erro ao gerar resumo (Assistants arquivos): {str(e)}"
 
