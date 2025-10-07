@@ -53,6 +53,10 @@ Este documento resume e explica a arquitetura do módulo `gvg_browser` e, em esp
   - Modal compacto: Enter ou Click enviam e a janela fecha imediatamente; envio assíncrono (UI segue responsiva).
   - Renderização de conteúdo de e-mail consistente com a UI (cards e boletins).
 
+- `gvg_usage.py`
+  - Agregador essencial de métricas de uso: `usage_event_start(ref_type,event_type)`, `usage_event_set_ref(ref_id)` e `usage_event_finish(extra_meta)`.
+  - Métricas capturadas automaticamente (por evento): `tokens_in`, `tokens_out`, `tokens_total`, `db_rows_read`, `db_rows_written`, `file_mb_in`, `file_mb_out`, `elapsed_ms`.
+
 - `gvg_user.py`
   - Usuário atual (mock) e histórico: `user_prompts` / `user_results` no banco (se existirem). Permite salvar consultas, apagar e registrar resultados de uma busca.
 
@@ -275,6 +279,7 @@ Principais Stores e seus formatos:
 - `store-results-sorted`: lista ordenada para UI; o campo `rank` é recalculado após ordenação.
 - `store-sort`: objeto `{ field: 'orgao'|'municipio'|'uf'|'similaridade'|'valor'|'data', direction: 'asc'|'desc' }` refletindo a ordenação ativa.
 - `store-history`: array de strings (consultas anteriores do usuário).
+  - Mantém apenas as últimas 20 consultas (descartando as mais antigas após nova inserção).
 - `store-favorites`: array de objetos (formato descrito na seção Favoritos).
 - `store-panel-active`: mapeia `{ [pncp]: 'itens'|'docs'|'resumo' }` para controlar a janela ativa por cartão.
 - `store-cache-itens` / `store-cache-docs` / `store-cache-resumo`: caches por PNCP; para Resumo, o valor é `{ docs: [...], summary: '...' }`.

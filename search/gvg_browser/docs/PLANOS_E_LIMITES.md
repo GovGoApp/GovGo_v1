@@ -6,21 +6,14 @@ Este documento consolida os planos (tipos de usuário), códigos, preços mensai
 
 ## Planos (nomenclatura e códigos)
 
-| Plano       | Código      | Descrição breve              |
-|-------------|-------------|------------------------------|
-| Free        | FREE        | Uso básico para avaliação    |
-| Premium     | PREMIUM     | Uso individual intensivo     |
-| Pro         | PRO         | Equipes menores              |
-| Enterprise  | ENTERPRISE  | Uso corporativo/alto volume  |
+| Plano        | Código      | Descrição breve              | Preço mensal (BRL) |
+|--------------|-------------|------------------------------|--------------------|
+| Free         | FREE        | Uso básico para avaliação    | R$ 0,00            |
+| Plus         | PLUS        | Uso individual intensivo     | R$ 49,00           |
+| Professional | PRO         | Equipes menores              | R$ 199,00          |
+| Corporation  | CORP        | Uso corporativo/alto volume  | R$ 999,00          |
 
-## Preços mensais (propostos)
 
-| Plano      | Código     | Preço mensal (BRL) |
-|------------|------------|--------------------|
-| Free       | FREE       | R$ 0,00            |
-| Premium    | PREMIUM    | R$ 49,00           |
-| Pro        | PRO        | R$ 199,00          |
-| Enterprise | ENTERPRISE | R$ 1.999,00        |
 
 ## Limites de uso por plano
 
@@ -30,15 +23,15 @@ Unidades e períodos por métrica:
 - Boletim: frequência máxima de agendamentos automáticos por dia/semana (conforme o plano).
 - Resumos: quantidade por dia/semana (conforme o plano).
 
-| Métrica   | Free      | Premium | Pro     | Enterprise |
+| Métrica   | Free      | Plus    | Pro     | Corp       |
 |-----------|-----------|---------|---------|------------|
 | Consultas | 5/dia     | 30/dia  | 100/dia | 1000/dia   |
 | Favoritos | 10        | 200     | 2000    | 20000      |
-| Boletim   | 1x/semana | 4x/dia  | 10x/dia | 100x/dia   |
-| Resumos   | 1x/semana | 40x/dia | 400x/dia| 4000x/dia  |
+| Boletim   | 1x/dia    | 4x/dia  | 10x/dia | 100x/dia   |
+| Resumos   | 1x/dia    | 40x/dia | 400x/dia| 4000x/dia  |
 
 ## Notas
-- “Plano” é o nome sugerido para o “tipo de usuário”. Cada usuário possui um `plano_code` (FREE, PREMIUM, PRO ou ENTERPRISE).
+- “Plano” é o nome sugerido para o “tipo de usuário”. Cada usuário possui um `plano_code` (FREE, PLUS, PRO ou CORP).
 - Os limites de Boletim e Resumos mesclam períodos distintos (dia/semana) conforme a característica do plano Free vs. pagos.
 - Estes limites orientam validações no app (consultas/dia, capacidade de favoritos, agendamento de boletins e geração de resumos).
 

@@ -424,6 +424,53 @@ styles = {
     'auth_row_between': { 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginTop': '6px' },
     'auth_link': { 'color': '#FF5722', 'textDecoration': 'underline', 'cursor': 'pointer', 'backgroundColor': 'transparent', 'border': 'none', 'padding': '0', 'height': 'auto', 'fontSize': '11px' },
     'auth_error': { 'color': '#D32F2F', 'fontSize': '12px', 'marginTop': '6px' },
+    # --- Planos (modal) ---
+    'planos_card': {
+        'backgroundColor': 'white', 'border': '1px solid #D0D7E2', 'borderRadius': '14px',
+        'padding': '14px', 'width': '230px', 'display': 'flex', 'flexDirection': 'column', 'gap': '6px',
+        'boxShadow': '0 1px 3px rgba(0,0,0,0.08)'
+    },
+    'planos_card_current': {
+        'backgroundColor': '#F1F6FC', 'border': '2px solid #003A70', 'borderRadius': '14px',
+        'padding': '14px', 'width': '230px', 'display': 'flex', 'flexDirection': 'column', 'gap': '6px',
+        'boxShadow': '0 2px 6px rgba(0,58,112,0.15)'
+    },
+    'planos_table': {
+        'width': '100%', 'fontSize': '12px', 'borderCollapse': 'collapse', 'marginTop': '12px'
+    },
+    'planos_table_th': {
+        'textAlign': 'left', 'padding': '6px 8px', 'backgroundColor': '#003A70', 'color': 'white', 'fontWeight': '600', 'fontSize': '11px'
+    },
+    'planos_table_td': {
+        'textAlign': 'left', 'padding': '6px 8px', 'borderBottom': '1px solid #E0EAF9', 'fontSize': '11px'
+    },
+    'planos_limits_list': {
+        'display': 'flex', 'flexDirection': 'column', 'gap': '4px', 'marginTop': '2px'
+    },
+    'planos_limit_item': {
+        'fontSize': '13px', 'color': '#222', 'fontStyle': 'italic'
+    },
+    'planos_limit_row': {
+        'display': 'flex', 'alignItems': 'center', 'gap': '6px'
+    },
+    'planos_limit_icon': {
+        'width': '16px', 'height': '16px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+        'color': '#003A70', 'fontSize': '13px'
+    },
+    'planos_desc': {
+        'fontSize': '13px', 'fontWeight': '600', 'color': '#444', 'marginTop': '-2px'
+    },
+    'planos_price': {
+        'fontSize': '14px', 'fontWeight': '600', 'color': '#FF5722', 'marginTop': '6px'
+    },
+    'planos_btn_current': {
+        'backgroundColor': '#ECEFF3', 'color': '#003A70', 'border': '1px solid #CAD4E0', 'borderRadius': '18px',
+        'height': '32px', 'width': '100%', 'cursor': 'default', 'fontSize': '13px', 'fontWeight': '600'
+    },
+    'planos_btn_upgrade': {
+        'backgroundColor': 'white', 'color': '#FF5722', 'border': '1px solid #FF5722', 'borderRadius': '18px',
+        'height': '32px', 'width': '100%', 'cursor': 'not-allowed', 'fontSize': '13px', 'fontWeight': '600'
+    },
 }
 
 # === Bases comuns para botões de listas (Histórico/Favoritos/Boletins) ===
@@ -506,6 +553,29 @@ styles['result_number_email'] = {
     'fontSize': '12px',
     'fontWeight': 'bold',
     'marginBottom': '6px'
+}
+
+# === Billing / Planos ===
+# Badges de plano (cores definidas no documento de billing)
+styles['plan_badge_free'] = {
+    'backgroundColor': '#6C757D', 'color': 'white', 'borderRadius': '16px',
+    'padding': '2px 10px', 'fontSize': '12px', 'fontWeight': '600', 'display': 'inline-flex',
+    'alignItems': 'center', 'justifyContent': 'center', 'height': '24px', 'lineHeight': '1'
+}
+styles['plan_badge_plus'] = {
+    'backgroundColor': '#7B3FE4', 'color': 'white', 'borderRadius': '16px',
+    'padding': '2px 10px', 'fontSize': '12px', 'fontWeight': '600', 'display': 'inline-flex',
+    'alignItems': 'center', 'justifyContent': 'center', 'height': '24px', 'lineHeight': '1'
+}
+styles['plan_badge_pro'] = {
+    'backgroundColor': '#3b00a1ff', 'color': 'white', 'borderRadius': '16px',
+    'padding': '2px 10px', 'fontSize': '12px', 'fontWeight': '600', 'display': 'inline-flex',
+    'alignItems': 'center', 'justifyContent': 'center', 'height': '24px', 'lineHeight': '1'
+}
+styles['plan_badge_corp'] = {
+    'backgroundColor': '#089800ff', 'color': 'white', 'borderRadius': '16px',
+    'padding': '2px 10px', 'fontSize': '12px', 'fontWeight': '600', 'display': 'inline-flex',
+    'alignItems': 'center', 'justifyContent': 'center', 'height': '24px', 'lineHeight': '1'
 }
 
 # --- Boletins ---
@@ -703,6 +773,17 @@ BASE_CSS = """
     border: 1px solid #D0D7E2; outline: none; box-shadow: none; box-sizing: border-box; background-color: white;
 }
 #email-modal-input:focus { border-color: #52ACFF; box-shadow: 0 0 0 2px rgba(82,172,255,0.12); outline: none; }
+
+/* ===== Planos modal responsive ===== */
+.planos-cards-wrapper { width: 100%; }
+@media (max-width: 768px) {
+    .planos-cards-wrapper { flex-wrap: nowrap; flex-direction: column; gap: 16px !important; max-height: 70vh; overflow-y: auto; }
+    .planos-cards-wrapper > div { width: 100% !important; }
+}
+#planos-modal .modal-dialog { max-width: 960px; margin: 1.75rem auto; }
+@media (max-width: 576px) {
+    #planos-modal .modal-dialog { max-width: 95% !important; margin: 0.75rem auto; }
+}
 """
 
 # Classe aplicada em dcc.Markdown(children=..., className='markdown-summary')

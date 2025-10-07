@@ -589,6 +589,13 @@ def add_bookmark(numero_controle_pncp: str, rotulo: Optional[str] = None) -> boo
         return False
     user = get_current_user(); uid = user['uid']
     try:
+        # Limite de favoritos (não gera evento, apenas bloqueio). Silencioso, retorna False.
+        try:
+            from gvg_limits import ensure_capacity, LimitExceeded  # type: ignore
+            ensure_capacity(uid, 'favoritos')
+        except LimitExceeded:
+            dbg('LIMIT', 'add_bookmark bloqueado: limite favoritos atingido')
+            return False
         bm_cols = set(_schema_columns_cached('user_bookmarks'))
         if not bm_cols:
             return False

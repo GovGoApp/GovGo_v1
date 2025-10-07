@@ -104,6 +104,7 @@ from gvg_schema import (
 from gvg_ai_utils import generate_contratacao_label
 from gvg_email import send_html_email, render_boletim_email_html, render_favorito_email_html, render_history_email_html
 from gvg_search_core import fetch_itens_contratacao
+from gvg_billing import get_system_plans, get_user_settings  # Step3 billing (modal planos)
 
 # Autenticação (Supabase)
 try:
@@ -348,6 +349,17 @@ def b64_image(image_path: str) -> str:
 # Cabeçalho fixo no topo
 _USER = get_current_user()
 _USER_INITIALS = get_user_initials(_USER.get('name'))
+
+# Plano do usuário (Step1: placeholder / FREE)
+def _get_user_plan_code(user: dict) -> str:
+    try:
+        # Futuro: SELECT join em user_settings/system_plans
+        return (user.get('plan_code') or 'FREE').upper()
+    except Exception:
+        return 'FREE'
+
+_USER_PLAN_CODE = _get_user_plan_code(_USER)
+_PLAN_BADGE_STYLE = styles.get(f"plan_badge_{_USER_PLAN_CODE.lower()}", styles.get('plan_badge_free'))
 LOGO_PATH = "https://hemztmtbejcbhgfmsvfq.supabase.co/storage/v1/object/public/govgo/LOGO/LOGO_TEXTO_GOvGO_TRIM_v3.png"
 header = html.Div([
     html.Div([
@@ -355,6 +367,11 @@ header = html.Div([
     html.Div("Search", className='gvg-header-title', style=styles['header_title'])
     ], style=styles['header_left']),
     html.Div([
+        html.Div(_USER_PLAN_CODE, id='header-plan-badge', style={**_PLAN_BADGE_STYLE, 'marginRight': '10px'}),
+        html.Button([
+            html.I(className='fas fa-rocket', style={'marginRight': '6px'}),
+            html.Span('Planos')
+        ], id='open-planos-btn', title='Planos e limites', style={**styles['btn_pill_inverted'], 'marginRight': '10px', 'display': 'flex', 'alignItems': 'center'}),
         html.Div(
             _USER_INITIALS,
             id='header-user-badge',
@@ -862,6 +879,19 @@ app.layout = html.Div([
     dcc.Store(id='store-modalidade-options', data=[]),
 
     header,
+    # Modal Planos e Limites
+    dbc.Modal([
+        dbc.ModalHeader(
+            html.Div([
+                html.Span('Planos e Limites', style={'fontWeight': '600', 'fontSize': '18px'}),
+                html.Button('×', id='planos-modal-close', title='Fechar',
+                            style={'background': 'transparent', 'border': 'none', 'fontSize': '22px', 'lineHeight': '1', 'cursor': 'pointer', 'color': '#555', 'padding': '0 8px'})
+            ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'width': '100%'}),
+            close_button=False,
+            style={'borderBottom': '1px solid #E0EAF9'}
+        ),
+        dbc.ModalBody(id='planos-modal-body', children=html.Div('Carregando...', style={'fontSize': '12px'}), style={'paddingTop': '18px', 'paddingBottom': '24px'})
+    ], id='planos-modal', is_open=False, size='xl', backdrop=True, centered=True),
     auth_overlay,
     # Modal de envio de e-mail (boletim/favoritos) – compacto, sem título/X
     dbc.Modal([
@@ -918,6 +948,103 @@ def reflect_header_badge(auth_data):
         initials = 'US'
     title = f"{name} ({email})" if email else name
     return initials, title
+
+# =============================
+# Modal Planos e Limites
+# =============================
+@app.callback(
+    Output('planos-modal', 'is_open'),
+    Input('open-planos-btn', 'n_clicks'),
+    Input('planos-modal-close', 'n_clicks'),
+    State('planos-modal', 'is_open'),
+    prevent_initial_call=True
+)
+def toggle_planos_modal(open_clicks, close_clicks, is_open):
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    return not is_open
+
+
+@app.callback(
+    Output('planos-modal-body', 'children'),
+    Input('planos-modal', 'is_open'),
+    State('store-auth', 'data'),
+    prevent_initial_call=True
+)
+def load_planos_content(is_open, auth_data):
+    if not is_open:
+        raise PreventUpdate
+    user = (auth_data or {}).get('user') or {}
+    uid = user.get('uid') or ''
+    try:
+        plans = get_system_plans()
+    except Exception:
+        plans = []
+    fallback = [
+        {'code': 'FREE', 'name': 'Free', 'desc': 'Uso básico para avaliação', 'price_cents': 0, 'limit_consultas_per_day': 5, 'limit_resumos_per_day': 1, 'limit_boletim_per_day': 1, 'limit_favoritos_capacity': 10},
+        {'code': 'PLUS', 'name': 'Plus', 'desc': 'Uso individual intensivo', 'price_cents': 4900, 'limit_consultas_per_day': 30, 'limit_resumos_per_day': 40, 'limit_boletim_per_day': 4, 'limit_favoritos_capacity': 200},
+        {'code': 'PRO', 'name': 'Professional', 'desc': 'Equipes menores', 'price_cents': 19900, 'limit_consultas_per_day': 100, 'limit_resumos_per_day': 400, 'limit_boletim_per_day': 10, 'limit_favoritos_capacity': 2000},
+        {'code': 'CORP', 'name': 'Corporation', 'desc': 'Uso corporativo/alto volume', 'price_cents': 99900, 'limit_consultas_per_day': 1000, 'limit_resumos_per_day': 4000, 'limit_boletim_per_day': 100, 'limit_favoritos_capacity': 20000},
+    ]
+    if not plans:
+        plans = fallback
+    try:
+        settings = get_user_settings(uid)
+        current_code = (settings.get('plan_code') or 'FREE').upper()
+    except Exception:
+        current_code = 'FREE'
+    desc_map = {p['code']: p.get('desc') for p in fallback}
+    def fmt_num(v):
+        try:
+            iv = int(v)
+            return f"{iv:,}".replace(',', '.')
+        except Exception:
+            try:
+                fv = float(v)
+                return ("{:.0f}".format(fv)).replace(',', '.')
+            except Exception:
+                return str(v)
+    cards = []
+    icon_map = [
+        ('fa-search', 'Consultas', 'limit_consultas_per_day', True),
+        ('fa-file-alt', 'Resumos', 'limit_resumos_per_day', True),
+        ('fa-calendar', 'Boletins', 'limit_boletim_per_day', True),
+        ('fa-bookmark', 'Favoritos', 'limit_favoritos_capacity', False),
+    ]
+    for p in plans:
+        code = (p.get('code') or '').upper()
+        price = (p.get('price_cents') or 0)/100
+        is_current = code == current_code
+        card_style = styles['planos_card_current'] if is_current else styles['planos_card']
+        desc = p.get('desc') or desc_map.get(code) or ''
+        limit_rows = []
+        for icon, label, field, per_day in icon_map:
+            raw = p.get(field, '-')
+            display = '-' if raw in (None, '', '-') else fmt_num(raw)
+            txt = f"{label}: {display}{' por dia' if per_day else ''}"
+            limit_rows.append(html.Div([
+                html.I(className=f"fas {icon}"),
+                html.Span(txt, style=styles['planos_limit_item'])
+            ], style=styles['planos_limit_row']))
+        limits_nodes = html.Div(limit_rows, style=styles['planos_limits_list'])
+        price_label = html.Div(
+            f"R$ {price:,.2f}".replace(',', 'X').replace('.', ',').replace('X','.'),
+            style=styles['planos_price']
+        )
+        btn = html.Button('Seu plano' if is_current else 'Upgrade',
+                          disabled=True,
+                          title=('Plano atual' if is_current else 'Em breve'),
+                          style=(styles['planos_btn_current'] if is_current else styles['planos_btn_upgrade']))
+        cards.append(html.Div([
+            html.Div(code, style=styles.get(f'plan_badge_{code.lower()}', styles['plan_badge_free'])),
+            html.Div(p.get('name') or code, style={'fontWeight': '600', 'fontSize': '14px'}),
+            html.Div(desc, style=styles['planos_desc']),
+            limits_nodes,
+            price_label,
+            btn
+        ], style=card_style))
+    return html.Div(cards, className='planos-cards-wrapper', style={'display': 'flex', 'flexWrap': 'nowrap', 'gap': '12px', 'justifyContent': 'space-between'})
 
 
 # =========================
@@ -2851,9 +2978,16 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
     # Início do evento de uso (query). Ref será ajustado após persistir prompt.
     try:
         from gvg_usage import usage_event_start
+        from gvg_limits import ensure_capacity, LimitExceeded
         user = get_current_user() if 'get_current_user' in globals() else {'uid': ''}
         uid = (user or {}).get('uid') or ''
         if uid:
+            try:
+                ensure_capacity(uid, 'consultas')
+            except LimitExceeded:
+                from dash.exceptions import PreventUpdate
+                dbg('LIMIT', 'bloqueando busca: limite consultas atingido')
+                raise PreventUpdate
             usage_event_start(uid, 'query', ref_type='prompt', ref_id=None)
     except Exception:
         pass
@@ -3080,7 +3214,8 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
     # Finalizar evento de uso
     try:
         from gvg_usage import usage_event_finish
-        usage_event_finish({'results': len(results or [])})
+        meta_end = {'results': len(results or [])}
+        usage_event_finish(meta_end)
     except Exception:
         pass
     return dash.no_update, dash.no_update, dash.no_update, dash.no_update, session_event, False
@@ -5041,7 +5176,7 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
             # Finalizar evento summary_request -> summary_success (se iniciado)
             try:
                 if event_started and uid and pid:
-                    from gvg_usage import usage_event_finish  # type: ignore
+                    from gvg_usage import usage_event_finish, record_success_event  # type: ignore
                     extra = {}
                     if isinstance(summary_text, str) and summary_text.strip():
                         extra['chars'] = len(summary_text)
@@ -5049,6 +5184,11 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                     else:
                         extra['status'] = 'empty'
                     usage_event_finish(extra)
+                    # Registrar summary_success para contagem de limite
+                    try:
+                        record_success_event(uid, extra, 'summary_success', ref_type='sumário', ref_id=str(pid))
+                    except Exception:
+                        pass
             except Exception:
                 pass
             # Substitui o spinner pelo conteúdo final (resumo)

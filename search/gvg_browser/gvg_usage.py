@@ -206,4 +206,14 @@ def usage_event_set_ref(ref_type: Optional[str], ref_id: Optional[str]):
     except Exception:
         pass
 
-__all__ = ['record_usage','record_usage_bulk','usage_event_start','usage_event_finish','usage_event_set_ref','_get_current_aggregator']
+def record_success_event(user_id: str, base_meta: Optional[Dict[str, Any]], success_type: str, ref_type: Optional[str]=None, ref_id: Optional[str]=None):
+    """Registra um evento de sucesso (ex: query_success) reutilizando parte da meta original.
+    success_type deve estar permitido no CHECK da tabela.
+    """
+    try:
+        meta = dict(base_meta or {})
+    except Exception:
+        meta = {}
+    record_usage(user_id, success_type, ref_type, ref_id, meta)
+
+__all__ = ['record_usage','record_usage_bulk','usage_event_start','usage_event_finish','usage_event_set_ref','_get_current_aggregator','record_success_event']

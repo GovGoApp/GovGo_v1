@@ -26,6 +26,7 @@ Leia e entenda integralmente todos os arquivos sugeridos e também o arquivo `do
 - `gvg_exporters.py`, (exportação de arquivos)
 - `gvg_schema.py`, (esquema de nomes)
 - `gvg_database.py`, (banco de dados)
+- `gvg_usage.py` (agregador de métricas de uso: start/set_ref/finish e contadores de tokens/db/arquivos/elapsed)
 
 ## Banco de Dados e esquema (BDS1)
 - Arquivo: `search/gvg_browser/db/BDS1.txt`
@@ -52,10 +53,12 @@ Leia e entenda integralmente todos os arquivos sugeridos e também o arquivo `do
 - Stores:
   - `store-results`, `store-results-sorted`, `store-sort`.
   - `store-history` (array de strings).
+    - Mantém somente as últimas 20 (descarta excedente ao inserir nova).
   - `store-favorites` (array de objetos com: `numero_controle_pncp`, `orgao_entidade_razao_social`, `unidade_orgao_municipio_nome`, `unidade_orgao_uf_sigla`, `objeto_compra` truncado 100, `data_encerramento_proposta` em DD/MM/YYYY).
   - `store-panel-active` por PNCP: `'itens' | 'docs' | 'resumo'`.
   - `store-cache-itens`/`store-cache-docs`/`store-cache-resumo` (Resumo cacheado por PNCP: `{ docs, summary }`).
   - `processing-state` e `progress-store`/`progress-interval` (spinner + barra).
+    - Métricas de Uso: sempre que envolver busca, resumo, boletim ou outros fluxos instrumentados use `usage_event_start(ref_type, event_type)` no início, opcional `usage_event_set_ref(ref_id)` após persistir referência, e finalize com `usage_event_finish(extra_meta)` para registrar métricas: `tokens_in`, `tokens_out`, `tokens_total`, `db_rows_read`, `db_rows_written`, `file_mb_in`, `file_mb_out`, `elapsed_ms`.
 - Favoritos:
   - Init carrega do BD (JOIN com `contratacao`).
   - Ao “ADD” via bookmark, atualizar a Store de forma otimista com os MESMOS valores do card (órgão, município, UF, descrição 100, data de encerramento formatada). Persistência no BD continua só com `(user_id, numero_controle_pncp)`.
@@ -102,6 +105,7 @@ Leia e entenda integralmente todos os arquivos sugeridos e também o arquivo `do
 - Antes de editar: liste mudanças e impacto. Peça confirmação.
 - Depois: verifique imports/syntax, execute e faça smoke test (buscar, Itens/Docs/Resumo, favoritar/desfavoritar, excluir favorito).
 - Escopo mínimo; preserve padrões e estilos.
+ - Atualizações futuras deste prompt e do README DEVEM ser minimalistas, incluindo apenas partes estritamente essenciais ao funcionamento (sem narrativas ou mudanças não críticas).
 
 ## Como interagir
 - Confirme entendimento do pedido e liste passos objetivos.
