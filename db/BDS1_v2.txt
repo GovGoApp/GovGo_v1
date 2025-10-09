@@ -296,15 +296,19 @@ CREATE TABLE public.user_schedule (
   CONSTRAINT user_schedule_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.user_settings (
-  user_id uuid PRIMARY KEY,
-  created_at timestamptz NOT NULL DEFAULT now(),
+  user_id uuid NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
   name text,
   plan_id smallint NOT NULL DEFAULT 1,
-  plan_started_at timestamptz,
-  plan_renews_at timestamptz,
-  plan_status text NOT NULL DEFAULT 'active',
-  trial_ends_at timestamptz,
-  next_plan_id smallint
+  plan_started_at timestamp with time zone,
+  plan_renews_at timestamp with time zone,
+  plan_status text NOT NULL DEFAULT 'active'::text,
+  trial_ends_at timestamp with time zone,
+  next_plan_id smallint,
+  CONSTRAINT user_settings_pkey PRIMARY KEY (user_id),
+  CONSTRAINT user_settings_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT user_settings_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES public.system_plans(id),
+  CONSTRAINT user_settings_next_plan_id_fkey FOREIGN KEY (next_plan_id) REFERENCES public.system_plans(id)
 );
 CREATE TABLE public.user_usage_counters (
   user_id uuid NOT NULL,
@@ -325,5 +329,6 @@ CREATE TABLE public.user_usage_events (
   plan_id_at_event smallint,
   created_at_date date,
   CONSTRAINT user_usage_events_pkey PRIMARY KEY (id),
-  CONSTRAINT user_usage_events_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+  CONSTRAINT user_usage_events_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT user_usage_events_plan_id_at_event_fkey FOREIGN KEY (plan_id_at_event) REFERENCES public.system_plans(id)
 );

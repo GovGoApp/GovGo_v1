@@ -48,10 +48,11 @@ _AREA_STYLE_MAP: Dict[str, Dict[str, Any]] = {
     'BOLETIM':   {'style': 'turquoise2',        'on': 1},
     'BMK':       {'style': 'plum1',             'on': 1},
     'FAV':       {'style': 'medium_purple',     'on': 1},
-    'PRE':   {'style': 'dodger_blue1',      'on': 1},
-    'RESUMO':    {'style': 'yellow',     'on': 0},
-    'EVENT':     {'style': 'magenta',      'on': 1},
+    'PRE':       {'style': 'dodger_blue1',      'on': 1},
+    'RESUMO':    {'style': 'blue',              'on': 1},
+    'EVENT':     {'style': 'magenta',           'on': 1},
     'USAGE':     {'style': 'cyan1',             'on': 1},
+    'LIMIT':     {'style': 'red3',              'on': 1},
     'ERROR':     {'style': 'bold red',          'on': 1},
 }
 

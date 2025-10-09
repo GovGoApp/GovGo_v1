@@ -101,10 +101,11 @@ from gvg_schema import (
     project_result_for_output,
     PRIMARY_KEY,
 )
+
 from gvg_ai_utils import generate_contratacao_label
 from gvg_email import send_html_email, render_boletim_email_html, render_favorito_email_html, render_history_email_html
 from gvg_search_core import fetch_itens_contratacao
-from gvg_billing import get_system_plans, get_user_settings  # Step3 billing (modal planos)
+from gvg_billing import get_system_plans, get_user_settings, upgrade_plan, schedule_downgrade, cancel_scheduled_downgrade, apply_scheduled_plan_changes
 
 # Autenticação (Supabase)
 try:
@@ -840,6 +841,7 @@ app.layout = html.Div([
     dcc.Store(id='store-auth-error', data=''),
     dcc.Store(id='store-auth-pending-email', data=''),
     dcc.Store(id='store-auth-remember', data={'email': '', 'password': '', 'remember': False}, storage_type='local'),
+    dcc.Store(id='store-plan-action', data=None),
     dcc.Store(id='store-app-init', data={'initializing': False}),
     dcc.Store(id='store-results', data=[]),
     dcc.Store(id='store-results-sorted', data=[]),
@@ -1032,10 +1034,21 @@ def load_planos_content(is_open, auth_data):
             f"R$ {price:,.2f}".replace(',', 'X').replace('.', ',').replace('X','.'),
             style=styles['planos_price']
         )
-        btn = html.Button('Seu plano' if is_current else 'Upgrade',
-                          disabled=True,
-                          title=('Plano atual' if is_current else 'Em breve'),
-                          style=(styles['planos_btn_current'] if is_current else styles['planos_btn_upgrade']))
+        if is_current:
+            btn = html.Button('Seu plano', disabled=True, title='Plano atual', style=styles['planos_btn_current'])
+        else:
+            # Só permite upgrade para planos com price maior; downgrade para menores
+            try:
+                current_plan = [cp for cp in plans if (cp.get('code') or '').upper()==current_code][0]
+                current_price = (current_plan.get('price_cents') or 0)
+            except Exception:
+                current_price = 0
+            action_type = 'upgrade' if ((p.get('price_cents') or 0) > current_price) else 'downgrade'
+            btn = html.Button('Upgrade' if action_type=='upgrade' else 'Downgrade',
+                              id={'type': 'plan-action-btn', 'code': code, 'action': action_type},
+                              disabled=False,
+                              title=('Mudar plano'),
+                              style=styles['planos_btn_upgrade'])
         cards.append(html.Div([
             html.Div(code, style=styles.get(f'plan_badge_{code.lower()}', styles['plan_badge_free'])),
             html.Div(p.get('name') or code, style={'fontWeight': '600', 'fontSize': '14px'}),
@@ -1045,6 +1058,41 @@ def load_planos_content(is_open, auth_data):
             btn
         ], style=card_style))
     return html.Div(cards, className='planos-cards-wrapper', style={'display': 'flex', 'flexWrap': 'nowrap', 'gap': '12px', 'justifyContent': 'space-between'})
+
+
+@app.callback(
+    Output('planos-modal-body', 'children', allow_duplicate=True),
+    Output('store-plan-action', 'data'),
+    Input({'type': 'plan-action-btn', 'code': ALL, 'action': ALL}, 'n_clicks'),
+    State('store-auth', 'data'),
+    State('planos-modal-body', 'children'),
+    prevent_initial_call=True
+)
+def handle_plan_action(n_clicks_list, auth_data, current_children):
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    trig = ctx.triggered[0]['prop_id'].split('.')[0]
+    try:
+        comp = json.loads(trig)
+    except Exception:
+        raise PreventUpdate
+    code = comp.get('code'); action = comp.get('action')
+    user = (auth_data or {}).get('user') or {}
+    uid = user.get('uid') or ''
+    if not uid or not code or not action:
+        raise PreventUpdate
+    result = None
+    if action == 'upgrade':
+        result = upgrade_plan(uid, code)
+    elif action == 'downgrade':
+        # Agendar downgrade (não aplica imediato se for realmente para plano menor); aqui aplicamos imediatamente para simplificação
+        result = upgrade_plan(uid, code)
+    else:
+        raise PreventUpdate
+    # Re-render conteúdo (reabrir modal body) chamando novamente load_planos_content logicamente seria melhor; reutilizamos trigger abrindo/fechando manualmente
+    # Simplesmente retornar dash.no_update para children para evitar loop; poderia também reconstruir
+    return dash.no_update, {'action': action, 'code': code, 'status': 'ok', 'plan': result.get('plan_code') if isinstance(result, dict) else None}
 
 
 # =========================
@@ -2976,21 +3024,30 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
     import time
     t0 = time.time()
     # Início do evento de uso (query). Ref será ajustado após persistir prompt.
-    try:
-        from gvg_usage import usage_event_start
-        from gvg_limits import ensure_capacity, LimitExceeded
-        user = get_current_user() if 'get_current_user' in globals() else {'uid': ''}
-        uid = (user or {}).get('uid') or ''
-        if uid:
-            try:
-                ensure_capacity(uid, 'consultas')
-            except LimitExceeded:
-                from dash.exceptions import PreventUpdate
-                dbg('LIMIT', 'bloqueando busca: limite consultas atingido')
-                raise PreventUpdate
+    from gvg_usage import usage_event_start  # type: ignore
+    from gvg_limits import ensure_capacity, LimitExceeded  # type: ignore
+    user = get_current_user() if 'get_current_user' in globals() else {'uid': ''}
+    uid = (user or {}).get('uid') or ''
+    usage_started = False
+    if uid:
+        # Checar limites separadamente para capturar erros
+        try:
+            ensure_capacity(uid, 'consultas')
+        except LimitExceeded:
+            from dash.exceptions import PreventUpdate
+            dbg('LIMIT', 'bloqueando busca: limite consultas atingido')
+            raise PreventUpdate
+        except Exception as e:
+            # Não aborta a busca; continua e ainda registra evento
+            dbg('LIMIT', f"erro ensure_capacity: {e}")
+        # Tentar iniciar evento
+        try:
             usage_event_start(uid, 'query', ref_type='prompt', ref_id=None)
-    except Exception:
-        pass
+            usage_started = True
+        except Exception as e:
+            dbg('USAGE', f"erro start query: {e}")
+    else:
+        dbg('USAGE', 'uid vazio: busca seguirá sem tracking')
 
     # Sanitizar limites vindos da UI ANTES de usar
     safe_limit = _sanitize_limit(max_results, default=DEFAULT_MAX_RESULTS, min_v=5, max_v=1000)
@@ -3213,11 +3270,18 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
     # para não competir com sync_active_session. Apenas emitir o evento de sessão e encerrar o processamento.
     # Finalizar evento de uso
     try:
-        from gvg_usage import usage_event_finish
+        from gvg_usage import usage_event_finish, record_usage  # type: ignore
         meta_end = {'results': len(results or [])}
-        usage_event_finish(meta_end)
-    except Exception:
-        pass
+        if usage_started:
+            ok = usage_event_finish(meta_end)
+            if not ok and uid:
+                # fallback
+                record_usage(uid, 'query', ref_type='prompt', ref_id=None, meta={**meta_end, 'fallback': 'finish_failed'})
+        else:
+            if uid:
+                record_usage(uid, 'query', ref_type='prompt', ref_id=None, meta={**meta_end, 'fallback': 'no_start'})
+    except Exception as e:
+        dbg('USAGE', f"erro finish/fallback query: {e}")
     return dash.no_update, dash.no_update, dash.no_update, dash.no_update, session_event, False
 
 
@@ -5130,15 +5194,15 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                 )
             ])
 
-            # Iniciar evento de uso summary_request (se não há cache nem BD)
-            event_started = False
+            # Iniciar tracking somente para geração real (sem cache) e só gravar se sucesso
+            summary_event_started = False
             try:
-                if uid and pid and (str(pid) not in updated_cache or not updated_cache.get(str(pid), {}).get('summary')):
+                if uid and pid and not (isinstance(cache_resumo, dict) and str(pid) in cache_resumo and isinstance(cache_resumo[str(pid)], dict) and 'summary' in cache_resumo[str(pid)]):
                     from gvg_usage import usage_event_start  # type: ignore
-                    usage_event_start(uid, 'summary_request', ref_type='sumário', ref_id=str(pid))
-                    event_started = True
+                    usage_event_start(uid, 'summary_success', ref_type='sumário', ref_id=str(pid))
+                    summary_event_started = True
             except Exception:
-                event_started = False
+                summary_event_started = False
 
             if DOCUMENTS_AVAILABLE:
                 try:
@@ -5173,22 +5237,20 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                     upsert_user_resumo(uid, pid, summary_text)
                 except Exception:
                     pass
-            # Finalizar evento summary_request -> summary_success (se iniciado)
+            # Finalizar ou descartar evento summary_success conforme resultado
             try:
-                if event_started and uid and pid:
-                    from gvg_usage import usage_event_finish, record_success_event  # type: ignore
+                if summary_event_started and uid and pid:
                     extra = {}
-                    if isinstance(summary_text, str) and summary_text.strip():
+                    ok = bool(isinstance(summary_text, str) and summary_text.strip())
+                    if ok:
                         extra['chars'] = len(summary_text)
                         extra['status'] = 'success'
+                        from gvg_usage import usage_event_finish  # type: ignore
+                        usage_event_finish(extra)
                     else:
                         extra['status'] = 'empty'
-                    usage_event_finish(extra)
-                    # Registrar summary_success para contagem de limite
-                    try:
-                        record_success_event(uid, extra, 'summary_success', ref_type='sumário', ref_id=str(pid))
-                    except Exception:
-                        pass
+                        from gvg_usage import usage_event_discard  # type: ignore
+                        usage_event_discard()
             except Exception:
                 pass
             # Substitui o spinner pelo conteúdo final (resumo)
@@ -6470,6 +6532,15 @@ def toggle_bookmark(n_clicks_list, results, favs):
                     add_bookmark(clicked_pid)
                 except Exception:
                     pass
+            # Registrar evento de uso para adição de favorito (compatibilidade histórica)
+            try:
+                from gvg_usage import record_usage
+                user = get_current_user() if 'get_current_user' in globals() else {'uid': ''}
+                uid = (user or {}).get('uid') or ''
+                if uid:
+                    record_usage(uid, 'favorite_add', ref_type='favorito', ref_id=clicked_pid, meta={'rotulo': fav_item.get('rotulo')})
+            except Exception:
+                pass
             updated_favs = ([fav_item] + [x for x in updated_favs if str(x.get('numero_controle_pncp')) != clicked_pid])
             try:
                 from gvg_search_core import SQL_DEBUG

@@ -159,7 +159,7 @@ def finalize_upgrade_mock(user_id: str, plan_code: str) -> Dict[str, Any]:
 		return {'error': 'Plano inválido'}
 	plan_id = row[0] if not isinstance(row, dict) else row['id']
 	# Atualiza user_settings (precisa existir registro)
-	affected = db_execute("UPDATE public.user_settings SET plan_id = %s, updated_at = now() WHERE user_id = %s", (plan_id, user_id), ctx="BILLING.upd_plan")
+	affected = db_execute("UPDATE public.user_settings SET plan_id = %s WHERE user_id = %s", (plan_id, user_id), ctx="BILLING.upd_plan")
 	if affected == 0:
 		# tentativa de insert se não existir
 		db_execute("INSERT INTO public.user_settings (user_id, plan_id) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET plan_id = EXCLUDED.plan_id", (user_id, plan_id), ctx="BILLING.ins_plan")
@@ -213,4 +213,60 @@ def get_usage_snapshot(user_id: str) -> Dict[str, Any]:
 __all__ = [
 	'get_system_plans', 'get_user_settings', 'start_checkout', 'finalize_upgrade_mock', 'get_usage_snapshot', 'get_gateway'
 ]
+
+# =============================
+# Gerenciamento interno de plano (sem cobrança)
+# =============================
+def _plan_code_to_id(plan_code: str) -> Optional[int]:
+	if not plan_code:
+		return None
+	row = db_fetch_one("SELECT id FROM public.system_plans WHERE code = %s AND active = true", (plan_code,), ctx="BILLING.plan_code_to_id")
+	if not row:
+		return None
+	return row[0] if not isinstance(row, dict) else row.get('id')
+
+def upgrade_plan(user_id: str, target_plan_code: str) -> Dict[str, Any]:
+	pid = _plan_code_to_id(target_plan_code)
+	if not user_id or pid is None:
+		return {'error': 'Plano inválido'}
+	# Aplica imediato (sem cobrança) e limpa next_plan_id
+	# Removido updated_at (coluna não existe no schema atual user_settings)
+	db_execute("UPDATE public.user_settings SET plan_id = %s, next_plan_id = NULL, plan_status='active', plan_started_at = COALESCE(plan_started_at, now()) WHERE user_id = %s", (pid, user_id), ctx="BILLING.upgrade_plan")
+	return get_user_settings(user_id)
+
+def schedule_downgrade(user_id: str, target_plan_code: str) -> Dict[str, Any]:
+	pid = _plan_code_to_id(target_plan_code)
+	if not user_id or pid is None:
+		return {'error': 'Plano inválido'}
+	db_execute("UPDATE public.user_settings SET next_plan_id = %s WHERE user_id = %s", (pid, user_id), ctx="BILLING.schedule_downgrade")
+	return get_user_settings(user_id)
+
+def cancel_scheduled_downgrade(user_id: str) -> Dict[str, Any]:
+	if not user_id:
+		return {'error': 'Usuário inválido'}
+	db_execute("UPDATE public.user_settings SET next_plan_id = NULL WHERE user_id = %s", (user_id,), ctx="BILLING.cancel_sched")
+	return get_user_settings(user_id)
+
+def apply_scheduled_plan_changes(user_id: str) -> Dict[str, Any]:
+	# Aplica next_plan_id se existir (simula renovação)
+	row = db_fetch_one("SELECT next_plan_id FROM public.user_settings WHERE user_id = %s", (user_id,), ctx="BILLING.apply_sched")
+	if not row:
+		return {'error': 'Usuário sem settings'}
+	next_pid = row[0] if not isinstance(row, dict) else row.get('next_plan_id')
+	if not next_pid:
+		return {'status': 'nothing_to_apply'}
+	db_execute("UPDATE public.user_settings SET plan_id = next_plan_id, next_plan_id = NULL WHERE user_id = %s", (user_id,), ctx="BILLING.apply_sched_upd")
+	return get_user_settings(user_id)
+
+def get_plan_map() -> Dict[str, int]:
+	rows = db_fetch_all("SELECT code, id FROM public.system_plans WHERE active = true", ctx="BILLING.plan_map")
+	out = {}
+	for r in rows:
+		code = r[0] if not isinstance(r, dict) else r.get('code')
+		pid = r[1] if not isinstance(r, dict) else r.get('id')
+		if code and pid:
+			out[str(code).upper()] = int(pid)
+	return out
+
+__all__ += ['upgrade_plan', 'schedule_downgrade', 'cancel_scheduled_downgrade', 'apply_scheduled_plan_changes', 'get_plan_map']
 

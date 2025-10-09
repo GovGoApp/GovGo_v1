@@ -79,9 +79,12 @@ class UsageAggregator:
     # ---- finalize ----
     def as_meta(self) -> Dict[str, Any]:
         elapsed_ms = int((time.perf_counter() - self.start_ts) * 1000)
-        mb_in = round(self.file_bytes_in / (1024*1024), 3) if self.file_bytes_in else 0
-        mb_out = round(self.file_bytes_out / (1024*1024), 3) if self.file_bytes_out else 0
-        meta = {
+        if elapsed_ms <= 0:
+            elapsed_ms = 1  # garante pelo menos 1ms para aparecer
+        mb_in = round(self.file_bytes_in / (1024*1024), 3)
+        mb_out = round(self.file_bytes_out / (1024*1024), 3)
+        # Retorna todas as métricas mesmo que zero (comportamento legado esperado pelo usuário)
+        return {
             'tokens_in': self.tokens_in,
             'tokens_out': self.tokens_out,
             'tokens_total': self.tokens_total,
@@ -91,8 +94,6 @@ class UsageAggregator:
             'file_mb_out': mb_out,
             'elapsed_ms': elapsed_ms,
         }
-        # Remove zeros para compactar
-        return {k:v for k,v in meta.items() if v}
 
 _TL = threading.local()
 
@@ -101,6 +102,16 @@ def _get_current_aggregator() -> Optional[UsageAggregator]:  # usado por outros 
 
 def usage_event_start(user_id: str, event_type: str, ref_type: Optional[str] = None, ref_id: Optional[str] = None):
     if not user_id or not event_type or not _usage_enabled():
+        # Fallback debug silencioso: indicar motivo de não iniciar
+        try:
+            if not user_id:
+                dbg('USAGE', 'skip start: missing user_id')
+            elif not event_type:
+                dbg('USAGE', 'skip start: missing event_type')
+            elif not _usage_enabled():
+                dbg('USAGE', 'skip start: usage disabled by env')
+        except Exception:
+            pass
         return
     # Se já existe, fecha antes sem gravar (prevenção de vazamento)
     if getattr(_TL, 'usage_aggr', None) is not None:
@@ -114,10 +125,14 @@ def usage_event_start(user_id: str, event_type: str, ref_type: Optional[str] = N
         dbg('USAGE', f"start event='{event_type}' user={user_id} ref={ref_type}:{ref_id}")
     except Exception: pass
 
-def usage_event_finish(extra_meta: Optional[Dict[str, Any]] = None):
+def usage_event_finish(extra_meta: Optional[Dict[str, Any]] = None) -> bool:
     aggr = getattr(_TL, 'usage_aggr', None)
     if aggr is None:
-        return
+        try:
+            dbg('USAGE', 'finish called but no active aggregator')
+        except Exception:
+            pass
+        return False
     setattr(_TL, 'usage_aggr', None)  # limpar antes de gravar
     meta = aggr.as_meta()
     if extra_meta:
@@ -132,7 +147,8 @@ def usage_event_finish(extra_meta: Optional[Dict[str, Any]] = None):
     try:
         record_usage(aggr.user_id, aggr.event_type, aggr.ref_type, aggr.ref_id, meta)
     except Exception:
-        pass
+        return False
+    return True
 
 # Flag de ambiente: se definida e falsa, não grava eventos/contadores
 def _usage_enabled() -> bool:
@@ -144,6 +160,10 @@ def _usage_enabled() -> bool:
 
 def record_usage(user_id: str, event_type: str, ref_type: Optional[str]=None, ref_id: Optional[str]=None, meta: Optional[Dict[str, Any]]=None) -> None:
     if not user_id or not event_type or not _usage_enabled():
+        try:
+            dbg('USAGE', f'skip record_usage user_id={user_id!r} event_type={event_type!r} enabled={_usage_enabled()}')
+        except Exception:
+            pass
         return
     dbg('USAGE', f"→ event '{event_type}' user={user_id} ref={ref_type}:{ref_id} meta_keys={list((meta or {}).keys())}")
     try:
@@ -153,7 +173,7 @@ def record_usage(user_id: str, event_type: str, ref_type: Optional[str]=None, re
             ctx="USAGE.record_usage:event"
         )
     except Exception as e:
-        try: dbg('USAGE', f"warn insert event {event_type}: {e}")
+        try: dbg('USAGE', 'ERROR inserting event {event_type}: {e}')
         except Exception: pass
     metric = event_type  # usar o próprio nome
     try:
@@ -164,9 +184,9 @@ def record_usage(user_id: str, event_type: str, ref_type: Optional[str]=None, re
         )
         dbg('USAGE', f"✓ counter '{metric}' incremented for user={user_id}")
     except Exception as e:
-        dbg('USAGE', f"warn upsert counter {metric}: {e}")
-        
+        dbg('USAGE', f"ERROR upsert counter {metric}: {e}")
 
+        
 def record_usage_bulk(user_id: str, events: List[Tuple[str,str,str,Dict[str,Any]]]) -> None:
     if not _usage_enabled():
         return
@@ -207,7 +227,7 @@ def usage_event_set_ref(ref_type: Optional[str], ref_id: Optional[str]):
         pass
 
 def record_success_event(user_id: str, base_meta: Optional[Dict[str, Any]], success_type: str, ref_type: Optional[str]=None, ref_id: Optional[str]=None):
-    """Registra um evento de sucesso (ex: query_success) reutilizando parte da meta original.
+    """Registra um evento de sucesso reutilizando parte da meta original.
     success_type deve estar permitido no CHECK da tabela.
     """
     try:
@@ -217,3 +237,19 @@ def record_success_event(user_id: str, base_meta: Optional[Dict[str, Any]], succ
     record_usage(user_id, success_type, ref_type, ref_id, meta)
 
 __all__ = ['record_usage','record_usage_bulk','usage_event_start','usage_event_finish','usage_event_set_ref','_get_current_aggregator','record_success_event']
+def usage_event_discard():
+    """Descarta (cancela) o evento corrente sem gravar nada (usar em falha)."""
+    aggr = getattr(_TL, 'usage_aggr', None)
+    if aggr is None:
+        return
+    try:
+        dbg('USAGE', f"discard event='{aggr.event_type}' user={aggr.user_id}")
+    except Exception:
+        pass
+    try:
+        setattr(_TL, 'usage_aggr', None)
+    except Exception:
+        pass
+
+# Atualizar __all__ incluindo discard
+__all__.append('usage_event_discard')
