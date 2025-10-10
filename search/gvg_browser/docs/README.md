@@ -1,17 +1,44 @@
 # GovGo Search Browser (GSB) — Arquitetura e Guia Rápido
 
-Este documento resume e explica a arquitetura do módulo `gvg_browser` e, em especial, o app principal `GvG_Search_Browser.py` (Dash). Foquei no que existe no código e no que é necessário para rodar e manter.
+Este documento resume a arquitetura do módulo `gvg_browser` e, em especial, o app principal `GvG_Search_Browser.py` (Dash), com foco no funcionamento atual, execução, módulos e boas práticas de manutenção.
 
 ## Visão geral
 
-- Objetivo: Interface web (Dash) para buscar processos PNCP com 3 tipos de busca (Semântica, Palavras‑chave, Híbrida) e 3 abordagens (Direta, Correspondência de categoria, Filtro por categoria).
+- Objetivo: Interface web (Dash) para buscar processos PNCP com 3 tipos de busca (Semântica, Palavras‑chav## Atualizações recentes (2025-10-09)
+- **Sistema de Notificações Toast**: notificações temporárias (3s auto-dismiss) para feedback ao usuário.
+  - 4 tipos: success (verde), error (vermelho), warning (amarelo), info (azul).
+  - Posicionamento: canto inferior direito (desktop); centro inferior (mobile).
+  - Módulo: `gvg_notifications.py` com função `add_note(tipo, texto)`.
+  - Estilos centralizados em `gvg_styles.py` (toast_container, toast_item, toast_icon, toast_text).
+  - Animações CSS (slideInRight, fadeOut).
+  - Integrado em toggle de favoritos (teste inicial).
+- Planos e Limites (UI completa): modal responsivo (90vw) com cards flexíveis, barras de consumo em linha, badge no cabeçalho, upgrade/downgrade instantâneo.
+- Enforcement: limites aplicados em consultas/resumos/favoritos; bloqueio com `LimitExceeded`.
+- Fallback CSV (`docs/system_plans_fallback.csv`) para limites quando banco indisponível.
+- Correções: plano reconhecido na inicialização, badge atualiza ao abrir modal e após upgrade, modal centralizado horizontalmente.
+
+## Atualizações recentes (2025-09-10)
+- Logging unificado por categorias (`gvg_debug`):
+  - `dbg` auto‑gaitado por `DEBUG` + `GVG_<AREA>_DEBUG` (sem `isdbg` nem try/except ao redor de logs).
+  - Prefixo `[AREA]` em todas as mensagens; `dbg_sql` imprime `[SQL]` em todas as linhas (header, SQL e params).
+  - Novas flags por área adicionadas ao `.env` do browser.
+- `GVG_BROWSER_DEV` separa DEV/PROD de `DEBUG` (host/porta independentes do nível de log).
+
+## Atualizações recentes (2025-09-09)
+- Mobile (≤ 992px): swipe zero‑JS entre "Controles" e "Resultados" via CSS scroll‑snap; desktop preservado (30/70).
+- Estrutura: painéis envolvidos em `#gvg-main-panels > .gvg-slide`; larguras controladas por variáveis CSS (desktop 30/70; mobile 100vw por slide).
+- Estilos centralizados em `gvg_styles.py`; nenhuma nova dependência.
+- Header: título "GvG Search" oculto no mobile.
+
+Última atualização: 2025-10-09.3 abordagens (Direta, Correspondência de categoria, Filtro por categoria).
 - Diferenciais:
   - “Processamento inteligente” da consulta (pré‑processamento com OpenAI Assistant) que separa termos e restrições SQL.
   - Filtro de relevância com 3 níveis (desligado, flexível, restritivo) via Assistant opcional.
   - Painéis de resultados com tabelas e cards de detalhes (ordenação, cores por proximidade da data de encerramento, botões de Itens/Documentos/Resumo).
   - Exportação: JSON, XLSX, CSV, PDF e HTML.
   - Integração de documentos PNCP com conversão para Markdown (Docling) e resumo (OpenAI), com cache mínimo local em pastas `files/` e `reports/`.
-   - UX aprimorada para janelas de Itens/Documentos/Resumo: padding e fonte uniformes, spinner laranja centralizado no Resumo e toggle com ícones nos botões.
+  - UX aprimorada para janelas de Itens/Documentos/Resumo: padding e fonte uniformes, spinner laranja centralizado no Resumo e toggle com ícones nos botões.
+  - Planos e Limites: aplicação de capacidades por plano para consultas, resumos e favoritos com exibição do plano atual e consumo do dia.
 
 ## Módulos e responsabilidades
 
@@ -57,15 +84,31 @@ Este documento resume e explica a arquitetura do módulo `gvg_browser` e, em esp
   - Agregador essencial de métricas de uso: `usage_event_start(ref_type,event_type)`, `usage_event_set_ref(ref_id)` e `usage_event_finish(extra_meta)`.
   - Métricas capturadas automaticamente (por evento): `tokens_in`, `tokens_out`, `tokens_total`, `db_rows_read`, `db_rows_written`, `file_mb_in`, `file_mb_out`, `elapsed_ms`.
 
+- `gvg_limits.py`
+  - Regras de limites por plano e contagem de uso por dia. Oferece `ensure_capacity(tipo)` para consultas, resumos e boletins, e verifica capacidade de favoritos.
+
+- `gvg_billing.py`
+  - Operações de plano (upgrade, downgrade agendado, cancelamento) e interfaces para integração com gateway.
+
+- `gvg_debug.py`
+  - Sistema de logs por categorias com gating por variáveis de ambiente.
+
 - `gvg_user.py`
   - Usuário atual (mock) e histórico: `user_prompts` / `user_results` no banco (se existirem). Permite salvar consultas, apagar e registrar resultados de uma busca.
 
+- `gvg_notifications.py`
+  - Sistema de notificações Toast temporárias (3s auto-dismiss).
+  - Função principal: `add_note(tipo, texto)` onde tipo é um dos 4 tipos (success, error, warning, info).
+  - Retorna dict com id único, timestamp, ícone e cor por tipo.
+  - Integrado via Store `store-notifications` e callbacks de renderização/auto-remoção.
+
 - `gvg_styles.py` e `gvg_css.py`
-  - Dicionário `styles` usado no layout e CSS adicional (inclui CSS para Markdown do resumo). OBS: `gvg_css.py` está vazio; o projeto usa `gvg_styles.py`.
+  - Dicionário `styles` usado no layout e CSS adicional (inclui CSS para Markdown do resumo e notificações Toast). OBS: `gvg_css.py` está vazio; o projeto usa `gvg_styles.py`.
   - Destaques recentes:
     - `details_content_base`: wrapper absoluto (posiciona/oculta as janelas).
     - `details_content_inner`: padding/fonte uniformes do conteúdo das janelas (padding 4px; fonte base 12px).
     - `details_spinner_center`: centraliza spinner (flex, alinhado no centro H/V).
+    - `toast_container`, `toast_item`, `toast_icon`, `toast_text`: estilos de notificações Toast.
 
 ## Fluxos principais
 
@@ -81,12 +124,17 @@ Este documento resume e explica a arquitetura do módulo `gvg_browser` e, em esp
 - (Opcional) Aplica Filtro de Relevância (níveis 2/3) com Assistant.
 - Persiste histórico: salva prompt (com embedding do prompt) e resultados em `user_results` (se as tabelas existirem).
 
+Limites e métricas de uso:
+- Antes da execução, verifica capacidade por plano com `ensure_capacity('consultas')`.
+- Eventos de uso são registrados com agregador ao final: `query` para buscas; contagem diária considera `created_at_date`.
+
 2) Renderização (UI)
 - Status da busca (metadados) + tabela de categorias (se houver) + tabela de resultados (resumo) + cards detalhados.
 - Cada card tem botões “Itens”, “Documentos” e “Resumo”. Abrir um painel dispara callbacks que:
   - Itens: lê itens do processo via `fetch_itens_contratacao` (em `gvg_search_core`, vindo do DB) e gera tabela (com bagulho de totalização).
   - Documentos: lista documentos do processo via `fetch_documentos` (DB ou API) e cria DataTable com links.
   - Resumo: escolhe “documento principal” (heurísticas por nome/URL) e chama `summarize_document`/`process_pncp_document` para baixar, converter e sumarizar. Resultado é exibido em Markdown.
+  - Limites de resumo: verificação de capacidade com `ensure_capacity('resumos')`; evento persistido como `summary_success` apenas quando há geração bem‑sucedida.
   - Toggle entre janelas: o estado por PNCP é guardado em `store-panel-active`; somente a janela ativa fica com `display: 'block'` (as outras ficam `display: 'none'`). O wrapper (`panel-wrapper`) só aparece se houver uma janela ativa para aquele PNCP.
   - Ícones nos botões: os três botões exibem chevron para cima (ativo) ou para baixo (inativo), atualizados por callback conforme o toggle.
   - Spinner no Resumo: ao ativar “Resumo”, mostra um spinner laranja centralizado (usando `details_spinner_center`) enquanto o sumário é gerado; ao terminar, o spinner é substituído pelo texto.
@@ -153,6 +201,8 @@ Impacto visual:
   - `contratacao_emb`: vetor de embeddings (`pgvector`) e listas `top_categories`/`top_similarities`.
   - `categoria`: embeddings de categorias e metadados por níveis.
   - (Opcional) `public.user_prompts` e `public.user_results` para histórico/salvamento de saídas da busca.
+  - `public.user_usage_events` e `public.user_usage_counters` para registro/contagem de uso por usuário e dia.
+  - `public.system_plans` e `public.user_settings` para plano atual e limites aplicáveis.
 
 - Conexão: variáveis `SUPABASE_HOST/PORT/USER/PASSWORD/DBNAME` via `.env` (ou `supabase_v1.env`).
 
@@ -332,6 +382,7 @@ Atenção:
   - Flags de ambiente (booleanos: 1/true/yes/on):
     - `DEBUG`: master. Se `false`, nada loga. Se `true`, apenas áreas com `GVG_<AREA>_DEBUG=true` logam.
     - `GVG_<AREA>_DEBUG`: por categoria, ex.: `GVG_SQL_DEBUG`, `GVG_AUTH_DEBUG`, `GVG_SEARCH_DEBUG`, `GVG_DOCS_DEBUG`, `GVG_ASSISTANT_DEBUG`, `GVG_UI_DEBUG`, `GVG_BROWSER_DEBUG`, `GVG_BOLETIM_DEBUG`, `GVG_BMK_DEBUG`, `GVG_FAV_DEBUG`, `GVG_PREPROC_DEBUG`, `GVG_RESUMO_DEBUG`.
+  - `GVG_LIMIT_DEBUG`: para mensagens de limites/contagem de uso.
   - Exemplos: `dbg('AUTH', 'Login ok')` → `[AUTH] Login ok`; `dbg_sql('fetch', sql, params)` → linhas com `[SQL]`.
 
 Outros:
@@ -352,6 +403,9 @@ Outros:
 - `gvg_exporters.py` — exportação (JSON/XLSX/CSV/PDF/HTML)
 - `gvg_user.py` — usuário/histórico/armazenamento de resultados
 - `gvg_styles.py` — estilos e CSS utilitário
+- `gvg_limits.py` — enforcement de limites por plano
+- `gvg_billing.py` — operações de plano
+- `gvg_debug.py` — utilitário de logs por áreas
 - `docs/` — documentação (este arquivo)
 - `files/`, `reports/`, `temp/` — saídas e temporários
 
@@ -364,9 +418,8 @@ Outros:
 
 - O GSB entrega uma busca moderna sobre PNCP com UX de painel, combinando embeddings (pgvector) e FTS.
 - O código está modularizado: schema centralizado, SQL builders, e UI separada dos serviços de busca/IA.
-- Funcionalidades premium (relevância, sumários) degradam graciosamente quando não configuradas.
-- Para rodar sem atritos: configure `.env`, garanta `dash`/`dash-bootstrap-components`/`openai`/DB e, se quiser resumo de documentos, instale `docling`.
-- Nova funcionalidade de Boletins adiciona camada de agendamento (primeira etapa: CRUD básico e UI). Próximas etapas incluem executor e reativação.
+- Planos e Limites aplicam capacidades em tempo real e exibem consumo ao usuário, enquanto o agregador registra métricas detalhadas por evento.
+
 
 ---
 

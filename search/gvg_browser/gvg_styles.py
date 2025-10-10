@@ -427,12 +427,12 @@ styles = {
     # --- Planos (modal) ---
     'planos_card': {
         'backgroundColor': 'white', 'border': '1px solid #D0D7E2', 'borderRadius': '14px',
-        'padding': '14px', 'width': '230px', 'display': 'flex', 'flexDirection': 'column', 'gap': '6px',
+        'padding': '14px', 'flex': '1', 'minWidth': '0', 'display': 'flex', 'flexDirection': 'column', 'gap': '6px',
         'boxShadow': '0 1px 3px rgba(0,0,0,0.08)'
     },
     'planos_card_current': {
         'backgroundColor': '#F1F6FC', 'border': '2px solid #003A70', 'borderRadius': '14px',
-        'padding': '14px', 'width': '230px', 'display': 'flex', 'flexDirection': 'column', 'gap': '6px',
+        'padding': '14px', 'flex': '1', 'minWidth': '0', 'display': 'flex', 'flexDirection': 'column', 'gap': '6px',
         'boxShadow': '0 2px 6px rgba(0,58,112,0.15)'
     },
     'planos_table': {
@@ -469,7 +469,7 @@ styles = {
     },
     'planos_btn_upgrade': {
         'backgroundColor': 'white', 'color': '#FF5722', 'border': '1px solid #FF5722', 'borderRadius': '18px',
-        'height': '32px', 'width': '100%', 'cursor': 'not-allowed', 'fontSize': '13px', 'fontWeight': '600'
+        'height': '32px', 'width': '100%', 'cursor': 'pointer', 'fontSize': '13px', 'fontWeight': '600'
     },
 }
 
@@ -657,6 +657,54 @@ styles['fav_email_btn'] = { **styles['btn_icon_sm'], 'textDecoration': 'none' }
 # Boletins: reduzir apenas tamanho dos botões de ação
 styles['boletim_delete_btn'] = { **styles['btn_icon_sm'] }
 
+# === Notificações Toast ===
+# Container fixo de notificações (canto inferior direito desktop; centro inferior mobile)
+styles['toast_container'] = {
+    'position': 'fixed',
+    'bottom': '20px',
+    'right': '20px',
+    'zIndex': 9999,
+    'display': 'flex',
+    'flexDirection': 'column',
+    'gap': '10px',
+    'maxWidth': '350px',
+    'pointerEvents': 'none',  # não bloquear cliques abaixo
+}
+
+# Toast individual
+styles['toast_item'] = {
+    'backgroundColor': '#f8f9fa',  # cinza claro
+    'border': '3px solid',  # cor dinâmica por tipo
+    'borderRadius': '12px',
+    'padding': '12px 16px',
+    'display': 'flex',
+    'alignItems': 'center',
+    'gap': '10px',
+    'boxShadow': '0 4px 12px rgba(0,0,0,0.15)',
+    'pointerEvents': 'auto',
+    'minWidth': '280px',
+    'maxWidth': '350px',
+    'animation': 'slideInRight 0.3s ease-out',
+}
+
+# Ícone da notificação
+styles['toast_icon'] = {
+    'fontSize': '20px',
+    'minWidth': '20px',
+    'display': 'flex',
+    'alignItems': 'center',
+    'justifyContent': 'center',
+}
+
+# Texto da notificação
+styles['toast_text'] = {
+    'flex': '1',
+    'fontSize': '13px',
+    'color': '#222',
+    'lineHeight': '1.4',
+    'wordBreak': 'break-word',
+}
+
 
 # CSS base (antes inline no app.index_string do GSB)
 BASE_CSS = """
@@ -780,9 +828,68 @@ BASE_CSS = """
     .planos-cards-wrapper { flex-wrap: nowrap; flex-direction: column; gap: 16px !important; max-height: 70vh; overflow-y: auto; }
     .planos-cards-wrapper > div { width: 100% !important; }
 }
-#planos-modal .modal-dialog { max-width: 960px; margin: 1.75rem auto; }
+/* Centraliza o modal e define largura de 90vw */
+#planos-modal .modal-dialog {
+    max-width: 90vw;
+    width: 90vw;
+    margin-left: auto;
+    margin-right: auto;
+}
 @media (max-width: 576px) {
-    #planos-modal .modal-dialog { max-width: 95% !important; margin: 0.75rem auto; }
+    #planos-modal .modal-dialog { max-width: 95vw !important; width: 95vw !important; }
+}
+
+/* ===== Notificações Toast ===== */
+/* Animação de entrada (desliza da direita) */
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Animação de saída (desvanece) */
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}
+
+/* Container de notificações: desktop (canto inferior direito) */
+#toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 350px;
+    pointer-events: none;
+}
+
+/* Mobile: centro inferior */
+@media (max-width: 992px) {
+    #toast-container {
+        left: 50%;
+        right: auto;
+        transform: translateX(-50%);
+        bottom: 60px;
+        max-width: 90vw;
+        align-items: center;
+    }
+}
+
+/* Toast individual com animação de saída */
+.toast-item-exiting {
+    animation: fadeOut 0.3s ease-out forwards;
 }
 """
 

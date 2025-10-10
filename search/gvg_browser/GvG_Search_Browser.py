@@ -106,6 +106,7 @@ from gvg_ai_utils import generate_contratacao_label
 from gvg_email import send_html_email, render_boletim_email_html, render_favorito_email_html, render_history_email_html
 from gvg_search_core import fetch_itens_contratacao
 from gvg_billing import get_system_plans, get_user_settings, upgrade_plan, schedule_downgrade, cancel_scheduled_downgrade, apply_scheduled_plan_changes
+from gvg_notifications import add_note, NOTIF_SUCCESS, NOTIF_ERROR, NOTIF_WARNING, NOTIF_INFO
 
 # Autenticação (Supabase)
 try:
@@ -351,11 +352,15 @@ def b64_image(image_path: str) -> str:
 _USER = get_current_user()
 _USER_INITIALS = get_user_initials(_USER.get('name'))
 
-# Plano do usuário (Step1: placeholder / FREE)
+# Plano do usuário - busca do banco na inicialização
 def _get_user_plan_code(user: dict) -> str:
     try:
-        # Futuro: SELECT join em user_settings/system_plans
-        return (user.get('plan_code') or 'FREE').upper()
+        uid = user.get('uid')
+        if not uid:
+            return 'FREE'
+        from gvg_billing import get_user_settings
+        settings = get_user_settings(uid)
+        return (settings.get('plan_code') or 'FREE').upper()
     except Exception:
         return 'FREE'
 
@@ -875,10 +880,16 @@ app.layout = html.Div([
     dcc.Store(id='store-email-send-request', data=None),
     # Token da consulta corrente (para vincular aba pendente ao resultado final)
     dcc.Store(id='store-current-query-token', data=None),
+    # Notificações Toast (lista de notificações ativas)
+    dcc.Store(id='store-notifications', data=[]),
+    dcc.Interval(id='notifications-interval', interval=500, n_intervals=0, disabled=False),
     dcc.Interval(id='progress-interval', interval=400, n_intervals=0, disabled=True),
     dcc.Download(id='download-out'),
     # Options dinâmicas de Modalidade
     dcc.Store(id='store-modalidade-options', data=[]),
+
+    # Container de notificações Toast (fixo no canto/centro da tela)
+    html.Div(id='toast-container', style=styles['toast_container']),
 
     header,
     # Modal Planos e Limites
@@ -921,6 +932,66 @@ app.layout = html.Div([
         ], className='gvg-slide')
     ], id='gvg-main-panels', style=styles['container'])
 ])
+
+
+# =====================================================================================
+# Helper: renderizar barras de uso (consumo vs limites)
+# =====================================================================================
+def _render_usage_bars(usage: Dict[str, Any]) -> html.Div:
+    """Renderiza barras de progresso para o consumo atual do usuário.
+    
+    Args:
+        usage: dict retornado por get_usage_status(user_id) com formato:
+               {'consultas': {'used': X, 'limit': Y, 'pct': P}, ...}
+    
+    Returns:
+        html.Div com barras de progresso coloridas por tipo de uso
+    """
+    bars = []
+    labels = {
+        'consultas': ('Consultas', 'fa-search'),
+        'resumos': ('Resumos', 'fa-file-alt'),
+        'boletim_run': ('Boletins', 'fa-calendar'),
+        'favoritos': ('Favoritos', 'fa-bookmark'),
+    }
+    
+    for key, (label, icon) in labels.items():
+        data = usage.get(key, {})
+        used = data.get('used', 0)
+        limit = data.get('limit', 1)
+        pct = data.get('pct', 0.0)
+        
+        # Cor da barra baseada no percentual de uso
+        if pct >= 100:
+            color = '#D32F2F'  # vermelho (limite atingido)
+        elif pct >= 80:
+            color = '#FF9800'  # laranja (aviso)
+        else:
+            color = '#4CAF50'  # verde (ok)
+        
+        bars.append(html.Div([
+            html.Div([
+                html.I(className=f'fas {icon}', style={'marginRight': '6px', 'fontSize': '11px', 'width': '14px', 'flexShrink': '0'}),
+                html.Span(f'{label}: {used}/{limit} ({pct:.0f}%)', style={'fontSize': '12px', 'color': '#424242', 'whiteSpace': 'nowrap', 'marginRight': '5px', 'flexShrink': '0'})
+            ], style={'display': 'flex', 'alignItems': 'center', 'marginRight': '5px', 'minWidth': 'fit-content'}),
+            html.Div([
+                html.Div(style={
+                    'width': f'{min(pct, 100)}%',
+                    'height': '6px',
+                    'backgroundColor': color,
+                    'borderRadius': '3px',
+                    'transition': 'width 0.3s ease'
+                })
+            ], style={
+                'flex': '1',
+                'height': '6px',
+                'backgroundColor': '#e0e0e0',
+                'borderRadius': '3px',
+                'overflow': 'hidden'
+            })
+        ], style={'marginBottom': '10px', 'display': 'flex', 'alignItems': 'center'}))
+    
+    return html.Div(bars, style={'padding': '0 4px'})
 
 
 # =====================================================================================
@@ -970,6 +1041,8 @@ def toggle_planos_modal(open_clicks, close_clicks, is_open):
 
 @app.callback(
     Output('planos-modal-body', 'children'),
+    Output('header-plan-badge', 'children', allow_duplicate=True),
+    Output('header-plan-badge', 'style', allow_duplicate=True),
     Input('planos-modal', 'is_open'),
     State('store-auth', 'data'),
     prevent_initial_call=True
@@ -994,7 +1067,7 @@ def load_planos_content(is_open, auth_data):
     try:
         settings = get_user_settings(uid)
         current_code = (settings.get('plan_code') or 'FREE').upper()
-    except Exception:
+    except Exception as e:
         current_code = 'FREE'
     desc_map = {p['code']: p.get('desc') for p in fallback}
     def fmt_num(v):
@@ -1057,10 +1130,38 @@ def load_planos_content(is_open, auth_data):
             price_label,
             btn
         ], style=card_style))
-    return html.Div(cards, className='planos-cards-wrapper', style={'display': 'flex', 'flexWrap': 'nowrap', 'gap': '12px', 'justifyContent': 'space-between'})
+    
+    # Obter consumo atual do usuário
+    usage_section = None
+    if uid:
+        try:
+            from gvg_limits import get_usage_status  # type: ignore
+            usage = get_usage_status(uid)
+            if usage:
+                usage_section = html.Div([
+                    html.H6('Seu Uso Hoje:', style={'margin': '0 0 12px 0', 'fontSize': '13px', 'fontWeight': '600', 'color': '#424242'}),
+                    _render_usage_bars(usage)
+                ], style={'marginBottom': '24px', 'padding': '16px', 'backgroundColor': '#f5f5f5', 'borderRadius': '8px'})
+        except Exception as e:
+            dbg('BILLING', f"erro ao obter consumo: {e}")
+            usage_section = None
+    
+    # Preparar atualização do badge com plano real
+    badge_style = styles.get(f'plan_badge_{current_code.lower()}', styles.get('plan_badge_free'))
+    badge_style_with_margin = {**badge_style, 'marginRight': '10px'}
+    
+    # Montar retorno: seção de consumo + cards de planos + badge atualizado
+    modal_content = html.Div([
+        usage_section,
+        html.Div(cards, className='planos-cards-wrapper', style={'display': 'flex', 'flexWrap': 'nowrap', 'gap': '16px'})
+    ]) if usage_section else html.Div(cards, className='planos-cards-wrapper', style={'display': 'flex', 'flexWrap': 'nowrap', 'gap': '16px'})
+    
+    return modal_content, current_code, badge_style_with_margin
 
 
 @app.callback(
+    Output('header-plan-badge', 'children', allow_duplicate=True),
+    Output('header-plan-badge', 'style', allow_duplicate=True),
     Output('planos-modal-body', 'children', allow_duplicate=True),
     Output('store-plan-action', 'data'),
     Input({'type': 'plan-action-btn', 'code': ALL, 'action': ALL}, 'n_clicks'),
@@ -1072,6 +1173,11 @@ def handle_plan_action(n_clicks_list, auth_data, current_children):
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
+    
+    # Verificar se algum botão foi realmente clicado (n_clicks > 0)
+    if not n_clicks_list or not any(n_clicks_list):
+        raise PreventUpdate
+    
     trig = ctx.triggered[0]['prop_id'].split('.')[0]
     try:
         comp = json.loads(trig)
@@ -1090,9 +1196,108 @@ def handle_plan_action(n_clicks_list, auth_data, current_children):
         result = upgrade_plan(uid, code)
     else:
         raise PreventUpdate
-    # Re-render conteúdo (reabrir modal body) chamando novamente load_planos_content logicamente seria melhor; reutilizamos trigger abrindo/fechando manualmente
-    # Simplesmente retornar dash.no_update para children para evitar loop; poderia também reconstruir
-    return dash.no_update, {'action': action, 'code': code, 'status': 'ok', 'plan': result.get('plan_code') if isinstance(result, dict) else None}
+    
+    # Obter novo código do plano e atualizar badge
+    new_code = (result.get('plan_code') if isinstance(result, dict) else None) or code
+    new_code = new_code.upper()
+    new_badge_style = styles.get(f'plan_badge_{new_code.lower()}', styles.get('plan_badge_free'))
+    new_badge_style_with_margin = {**new_badge_style, 'marginRight': '10px'}
+    
+    # Reconstruir conteúdo do modal para atualizar o card ativo instantaneamente
+    # Reutilizar a lógica de load_planos_content
+    try:
+        plans = get_system_plans()
+    except Exception:
+        plans = []
+    fallback = [
+        {'code': 'FREE', 'name': 'Free', 'desc': 'Uso básico para avaliação', 'price_cents': 0, 'limit_consultas_per_day': 5, 'limit_resumos_per_day': 1, 'limit_boletim_per_day': 1, 'limit_favoritos_capacity': 10},
+        {'code': 'PLUS', 'name': 'Plus', 'desc': 'Uso individual intensivo', 'price_cents': 4900, 'limit_consultas_per_day': 30, 'limit_resumos_per_day': 40, 'limit_boletim_per_day': 4, 'limit_favoritos_capacity': 200},
+        {'code': 'PRO', 'name': 'Professional', 'desc': 'Equipes menores', 'price_cents': 19900, 'limit_consultas_per_day': 100, 'limit_resumos_per_day': 400, 'limit_boletim_per_day': 10, 'limit_favoritos_capacity': 2000},
+        {'code': 'CORP', 'name': 'Corporation', 'desc': 'Uso corporativo/alto volume', 'price_cents': 99900, 'limit_consultas_per_day': 1000, 'limit_resumos_per_day': 4000, 'limit_boletim_per_day': 100, 'limit_favoritos_capacity': 20000},
+    ]
+    if not plans:
+        plans = fallback
+    desc_map = {p['code']: p.get('desc') for p in fallback}
+    def fmt_num(v):
+        try:
+            iv = int(v)
+            return f"{iv:,}".replace(',', '.')
+        except Exception:
+            try:
+                fv = float(v)
+                return ("{:.0f}".format(fv)).replace(',', '.')
+            except Exception:
+                return str(v)
+    cards = []
+    icon_map = [
+        ('fa-search', 'Consultas', 'limit_consultas_per_day', True),
+        ('fa-file-alt', 'Resumos', 'limit_resumos_per_day', True),
+        ('fa-calendar', 'Boletins', 'limit_boletim_per_day', True),
+        ('fa-bookmark', 'Favoritos', 'limit_favoritos_capacity', False),
+    ]
+    for p in plans:
+        p_code = (p.get('code') or '').upper()
+        price = (p.get('price_cents') or 0)/100
+        is_current = p_code == new_code
+        card_style = styles['planos_card_current'] if is_current else styles['planos_card']
+        desc = p.get('desc') or desc_map.get(p_code) or ''
+        limit_rows = []
+        for icon, label, field, per_day in icon_map:
+            raw = p.get(field, '-')
+            display = '-' if raw in (None, '', '-') else fmt_num(raw)
+            txt = f"{label}: {display}{' por dia' if per_day else ''}"
+            limit_rows.append(html.Div([
+                html.I(className=f"fas {icon}"),
+                html.Span(txt, style=styles['planos_limit_item'])
+            ], style=styles['planos_limit_row']))
+        limits_nodes = html.Div(limit_rows, style=styles['planos_limits_list'])
+        price_label = html.Div(
+            f"R$ {price:,.2f}".replace(',', 'X').replace('.', ',').replace('X','.'),
+            style=styles['planos_price']
+        )
+        if is_current:
+            btn = html.Button('Seu plano', disabled=True, title='Plano atual', style=styles['planos_btn_current'])
+        else:
+            try:
+                current_plan = [cp for cp in plans if (cp.get('code') or '').upper()==new_code][0]
+                current_price = (current_plan.get('price_cents') or 0)
+            except Exception:
+                current_price = 0
+            action_type = 'upgrade' if ((p.get('price_cents') or 0) > current_price) else 'downgrade'
+            btn = html.Button('Upgrade' if action_type=='upgrade' else 'Downgrade',
+                              id={'type': 'plan-action-btn', 'code': p_code, 'action': action_type},
+                              disabled=False,
+                              title=('Mudar plano'),
+                              style=styles['planos_btn_upgrade'])
+        cards.append(html.Div([
+            html.Div(p_code, style=styles.get(f'plan_badge_{p_code.lower()}', styles['plan_badge_free'])),
+            html.Div(p.get('name') or p_code, style={'fontWeight': '600', 'fontSize': '14px'}),
+            html.Div(desc, style=styles['planos_desc']),
+            limits_nodes,
+            price_label,
+            btn
+        ], style=card_style))
+    
+    # Obter consumo atualizado
+    usage_section = None
+    if uid:
+        try:
+            from gvg_limits import get_usage_status
+            usage = get_usage_status(uid)
+            if usage:
+                usage_section = html.Div([
+                    html.H6('Seu Uso Hoje:', style={'margin': '0 0 12px 0', 'fontSize': '13px', 'fontWeight': '600', 'color': '#424242'}),
+                    _render_usage_bars(usage)
+                ], style={'marginBottom': '24px', 'padding': '16px', 'backgroundColor': '#f5f5f5', 'borderRadius': '8px'})
+        except Exception:
+            pass
+    
+    new_modal_content = html.Div([
+        usage_section,
+        html.Div(cards, className='planos-cards-wrapper', style={'display': 'flex', 'flexWrap': 'nowrap', 'gap': '16px'})
+    ]) if usage_section else html.Div(cards, className='planos-cards-wrapper', style={'display': 'flex', 'flexWrap': 'nowrap', 'gap': '16px'})
+    
+    return new_code, new_badge_style_with_margin, new_modal_content, {'action': action, 'code': code, 'status': 'ok', 'plan': new_code}
 
 
 # =========================
@@ -1423,6 +1628,7 @@ def refresh_boletim_save_visuals(freq, dias, query_text, boletins):
 @app.callback(
     Output('store-boletins', 'data', allow_duplicate=True),
     Output('boletim-save-btn', 'children', allow_duplicate=True),
+    Output('store-notifications', 'data', allow_duplicate=True),
     Input('boletim-save-btn', 'n_clicks'),
     State('query-input', 'value'),
     State('boletim-freq', 'value'),
@@ -1438,9 +1644,10 @@ def refresh_boletim_save_visuals(freq, dias, query_text, boletins):
     State('toggles', 'value'),
     State('store-search-filters', 'data'),
     State('store-boletins', 'data'),
+    State('store-notifications', 'data'),
     prevent_initial_call=True
 )
-def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, sort_mode, max_res, top_cat, toggles, ui_filters, current):
+def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, sort_mode, max_res, top_cat, toggles, ui_filters, current, notifications):
     if not n:
         raise PreventUpdate
     if not query or len(query.strip()) < 3:
@@ -1448,12 +1655,16 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
     # Campos ocultos: manter defaults
     channels = channels or ['email']
     # Evita duplicados por texto de consulta (case-insensitive, trim)
+    updated_notifs = list(notifications or [])
     try:
         qn = (query or '').strip().lower()
         for b in (current or []):
             bt = ((b.get('query_text') or '').strip()).lower()
             if bt == qn:
-                return dash.no_update, html.I(className='fas fa-plus')
+                # Notificação de boletim duplicado
+                notif = add_note(NOTIF_WARNING, "Boletim já existe para esta consulta.")
+                updated_notifs.append(notif)
+                return dash.no_update, html.I(className='fas fa-plus'), updated_notifs
     except Exception:
         pass
     schedule_detail = {}
@@ -1489,8 +1700,11 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
             dbg('BOLETIM', "save: falha (id vazio)")
         except Exception:
             pass
+        # Notificação de erro ao salvar
+        notif = add_note(NOTIF_ERROR, "Erro ao salvar boletim. Tente novamente.")
+        updated_notifs.append(notif)
         # Mantém ícone '+'
-        return dash.no_update, html.I(className='fas fa-plus')
+        return dash.no_update, html.I(className='fas fa-plus'), updated_notifs
     item = {
         'id': boletim_id,
         'query_text': query.strip(),
@@ -1510,7 +1724,10 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
         dbg('BOLETIM', f"save: ok id={boletim_id} total={len(data)}")
     except Exception:
         pass
-    return data[:200], html.I(className='fas fa-plus')
+    # Notificação de sucesso
+    notif = add_note(NOTIF_SUCCESS, "Boletim criado com sucesso!")
+    updated_notifs.append(notif)
+    return data[:200], html.I(className='fas fa-plus'), updated_notifs
 
 def _dedupe_boletins(items):
     """Remove duplicados por id; loga quantos removeu."""
@@ -1557,11 +1774,13 @@ def load_boletins_on_auth(auth_data):
 
 @app.callback(
     Output('store-boletins', 'data', allow_duplicate=True),
+    Output('store-notifications', 'data', allow_duplicate=True),
     Input({'type': 'boletim-delete', 'id': ALL}, 'n_clicks'),
     State('store-boletins', 'data'),
+    State('store-notifications', 'data'),
     prevent_initial_call=True
 )
-def delete_boletim(n_list, boletins):
+def delete_boletim(n_list, boletins, notifications):
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -1584,15 +1803,26 @@ def delete_boletim(n_list, boletins):
         dbg('BOLETIM', f"delete: id={bid} before={len(boletins or [])}")
     except Exception:
         pass
-    deactivate_user_boletim(int(bid))
-    #print(f"Boletim deletado id={bid} n_clicks={clicked_value}")
-    new_list = [b for b in (boletins or []) if b.get('id') != bid]
-    new_list = _dedupe_boletins(new_list) if '_dedupe_boletins' in globals() else new_list
+    
+    updated_notifs = list(notifications or [])
     try:
-        dbg('BOLETIM', f"delete: ok id={bid} after={len(new_list)}")
+        deactivate_user_boletim(int(bid))
+        #print(f"Boletim deletado id={bid} n_clicks={clicked_value}")
+        new_list = [b for b in (boletins or []) if b.get('id') != bid]
+        new_list = _dedupe_boletins(new_list) if '_dedupe_boletins' in globals() else new_list
+        try:
+            dbg('BOLETIM', f"delete: ok id={bid} after={len(new_list)}")
+        except Exception:
+            pass
+        # Notificação de sucesso
+        notif = add_note(NOTIF_INFO, "Boletim removido com sucesso.")
+        updated_notifs.append(notif)
+        return new_list, updated_notifs
     except Exception:
-        pass
-    return new_list
+        # Notificação de erro
+        notif = add_note(NOTIF_ERROR, "Erro ao remover boletim. Tente novamente.")
+        updated_notifs.append(notif)
+        return dash.no_update, updated_notifs
 
 @app.callback(
     Output('boletins-list', 'children'),
@@ -2010,19 +2240,22 @@ def switch_auth_view(n_signup, n_login1, n_login2):
     Output('store-auth-view', 'data', allow_duplicate=True),
     Output('store-auth-remember', 'data', allow_duplicate=True),
     Output('store-auth-pending-email', 'data', allow_duplicate=True),
+    Output('store-notifications', 'data', allow_duplicate=True),
     Input('auth-login', 'n_clicks'),
     State('auth-email', 'value'),
     State('auth-password', 'value'),
     State('auth-remember', 'value'),
+    State('store-notifications', 'data'),
     prevent_initial_call=True,
 )
-def do_login(n_clicks, email, password, remember_values):
+def do_login(n_clicks, email, password, remember_values, notifications):
     if not n_clicks:
         raise PreventUpdate
     email = (email or '').strip()
     password = password or ''
+    updated_notifs = list(notifications or [])
     if not email or not password:
-        return dash.no_update, 'Informe e-mail e senha.', dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, 'Informe e-mail e senha.', dash.no_update, dash.no_update, dash.no_update, dash.no_update
     ok, session, err = False, None, None
     try:
         ok, session, err = sign_in(email, password)
@@ -2038,10 +2271,16 @@ def do_login(n_clicks, email, password, remember_values):
         if isinstance(raw, str) and ('Email not confirmed' in raw or 'email not confirmed' in raw.lower()):
             pending = (email or '').strip()
             msg = f"Seu e-mail não foi confirmado. Informe o código enviado ou clique em 'Reenviar código'."
-            return dash.no_update, msg, 'confirm', dash.no_update, pending
+            # Notificação de aviso
+            notif = add_note(NOTIF_WARNING, "E-mail não confirmado. Verifique o código enviado.")
+            updated_notifs.append(notif)
+            return dash.no_update, msg, 'confirm', dash.no_update, pending, updated_notifs
         # Caso geral: mensagem amigável
         msg = err or 'Falha no login.'
-        return dash.no_update, msg, dash.no_update, dash.no_update, dash.no_update
+        # Notificação de erro
+        notif = add_note(NOTIF_ERROR, "Falha no login. Verifique suas credenciais.")
+        updated_notifs.append(notif)
+        return dash.no_update, msg, dash.no_update, dash.no_update, dash.no_update, updated_notifs
     # Usuário autenticado
     try:
         set_current_user(session.get('user'))
@@ -2055,24 +2294,35 @@ def do_login(n_clicks, email, password, remember_values):
     }
     remember_on = isinstance(remember_values, (list, tuple)) and ('yes' in (remember_values or []))
     remember_payload = {'email': email if remember_on else '', 'password': password if remember_on else '', 'remember': bool(remember_on)}
-    return auth_state, '', 'login', remember_payload, dash.no_update
+    
+    # Notificação de sucesso no login
+    u = session.get('user', {})
+    username = u.get('username', 'Usuário')
+    notif = add_note(NOTIF_SUCCESS, f"Bem-vindo, {username}!")
+    updated_notifs.append(notif)
+    
+    return auth_state, '', 'login', remember_payload, dash.no_update, updated_notifs
 
 
 @app.callback(
     Output('store-auth-view', 'data', allow_duplicate=True),
     Output('store-auth-error', 'data', allow_duplicate=True),
     Output('store-auth-pending-email', 'data', allow_duplicate=True),
+    Output('store-notifications', 'data', allow_duplicate=True),
     Input('auth-signup', 'n_clicks'),
     State('auth-fullname', 'value'),
     State('auth-phone', 'value'),
     State('auth-email-sign', 'value'),
     State('auth-password-sign', 'value'),
     State('auth-terms', 'value'),
+    State('store-notifications', 'data'),
     prevent_initial_call=True,
 )
-def do_signup(n_clicks, fullname, phone, email, password, terms):
+def do_signup(n_clicks, fullname, phone, email, password, terms, notifications):
     if not n_clicks:
         raise PreventUpdate
+    
+    updated_notifs = list(notifications or [])
     email = (email or '').strip()
     password = password or ''
     if 'ok' not in (terms or []):
@@ -2080,13 +2330,19 @@ def do_signup(n_clicks, fullname, phone, email, password, terms):
             dbg('AUTH', f"[GvG_Browser.do_signup] terms not accepted | email={email}")
         except Exception:
             pass
-        return dash.no_update, 'Você precisa aceitar os Termos de Contratação.', dash.no_update
+        # Notificação de aviso: termos não aceitos
+        notif = add_note(NOTIF_WARNING, "Aceite os Termos de Contratação para continuar.")
+        updated_notifs.append(notif)
+        return dash.no_update, 'Você precisa aceitar os Termos de Contratação.', dash.no_update, updated_notifs
     if not email or not password or not (fullname or '').strip():
         try:
             dbg('AUTH', f"[GvG_Browser.do_signup] missing fields | email_set={bool(email)} name_set={bool((fullname or '').strip())} phone_set={bool((phone or '').strip())}")
         except Exception:
             pass
-        return dash.no_update, 'Preencha nome, e-mail e senha.', dash.no_update
+        # Notificação de erro: campos obrigatórios
+        notif = add_note(NOTIF_ERROR, "Preencha nome, e-mail e senha.")
+        updated_notifs.append(notif)
+        return dash.no_update, 'Preencha nome, e-mail e senha.', dash.no_update, updated_notifs
     ok, msg = False, 'Erro ao cadastrar.'
     try:
         try:
@@ -2101,12 +2357,18 @@ def do_signup(n_clicks, fullname, phone, email, password, terms):
     except Exception:
         pass
     if not ok:
-        return dash.no_update, (msg or 'Falha ao cadastrar.'), dash.no_update
+        # Notificação de erro no cadastro
+        notif = add_note(NOTIF_ERROR, "Erro ao cadastrar. Verifique os dados.")
+        updated_notifs.append(notif)
+        return dash.no_update, (msg or 'Falha ao cadastrar.'), dash.no_update, updated_notifs
     try:
         dbg('AUTH', f"[GvG_Browser.do_signup] moving to confirm | pending_email={email}")
     except Exception:
         pass
-    return 'confirm', '', email
+    # Notificação de sucesso no cadastro
+    notif = add_note(NOTIF_SUCCESS, "Cadastro realizado! Verifique seu e-mail.")
+    updated_notifs.append(notif)
+    return 'confirm', '', email, updated_notifs
 
 
 @app.callback(
@@ -2928,6 +3190,7 @@ def save_history(history: list, max_items: int = 50):
     Output('store-last-query', 'data'),
     Output('store-session-event', 'data', allow_duplicate=True),
     Output('processing-state', 'data', allow_duplicate=True),
+    Output('store-notifications', 'data', allow_duplicate=True),
     Input('processing-state', 'data'),
     State('query-input', 'value'),
     State('search-type', 'value'),
@@ -2939,9 +3202,10 @@ def save_history(history: list, max_items: int = 50):
     State('toggles', 'value'),
     State('store-current-query-token', 'data'),
     State('store-search-filters', 'data'),
+    State('store-notifications', 'data'),
     prevent_initial_call=True,
 )
-def run_search(is_processing, query, s_type, approach, relevance, order, max_results, top_cat, toggles, current_token, ui_filters):
+def run_search(is_processing, query, s_type, approach, relevance, order, max_results, top_cat, toggles, current_token, ui_filters, notifications):
     if not is_processing:
         raise PreventUpdate
     # Permitir também buscas somente por filtros (quando V2 ativo)
@@ -3036,7 +3300,21 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
         except LimitExceeded:
             from dash.exceptions import PreventUpdate
             dbg('LIMIT', 'bloqueando busca: limite consultas atingido')
-            raise PreventUpdate
+            # Notificação de limite atingido (CRÍTICO)
+            updated_notifs = list(notifications or [])
+            try:
+                notif = add_note(NOTIF_ERROR, "Limite diário de consultas atingido. Faça upgrade do seu plano.")
+                updated_notifs.append(notif)
+            except Exception:
+                pass
+            # Reset do progresso para fechar spinner
+            try:
+                progress_reset()
+            except Exception:
+                pass
+            # Retorna: results=no_update, categories=no_update, meta=no_update, query=no_update, 
+            # session_event=no_update, processing=FALSE (para fechar spinner), notifications=updated
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, False, updated_notifs
         except Exception as e:
             # Não aborta a busca; continua e ainda registra evento
             dbg('LIMIT', f"erro ensure_capacity: {e}")
@@ -3169,9 +3447,22 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
                 results = _sql_only_search(info.get('sql_conditions') or filter_list, safe_limit, filter_expired)
                 confidence = 1.0 if results else 0.0
                 filter_route = 'sql-only'
-    except Exception:
+    except Exception as search_error:
         results = []
         confidence = 0.0
+        # Notificação de erro na busca
+        updated_notifs = list(notifications or [])
+        try:
+            notif = add_note(NOTIF_ERROR, "Erro ao executar busca. Tente novamente.")
+            updated_notifs.append(notif)
+        except Exception:
+            pass
+        # Retornar imediatamente com erro
+        try:
+            progress_reset()
+        except Exception:
+            pass
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, False, updated_notifs
 
     try:
         progress_set(78, 'Ordenando resultados')
@@ -3282,7 +3573,28 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
                 record_usage(uid, 'query', ref_type='prompt', ref_id=None, meta={**meta_end, 'fallback': 'no_start'})
     except Exception as e:
         dbg('USAGE', f"erro finish/fallback query: {e}")
-    return dash.no_update, dash.no_update, dash.no_update, dash.no_update, session_event, False
+    
+    # Notificações de resultado da busca
+    updated_notifs = list(notifications or [])
+    try:
+        count = len(results or [])
+        if count > 0:
+            # Sucesso: resultados encontrados
+            notif = add_note(NOTIF_SUCCESS, f"Busca concluída: {count} resultado{'s' if count != 1 else ''} encontrado{'s' if count != 1 else ''}")
+            updated_notifs.append(notif)
+        else:
+            # Aviso: nenhum resultado
+            notif = add_note(NOTIF_WARNING, "Nenhum resultado encontrado. Tente termos diferentes.")
+            updated_notifs.append(notif)
+        
+        # Aviso adicional se usando rota SQL-only
+        if filter_route == 'sql-only':
+            notif = add_note(NOTIF_INFO, "Busca realizada apenas com filtros SQL")
+            updated_notifs.append(notif)
+    except Exception:
+        pass
+    
+    return dash.no_update, dash.no_update, dash.no_update, dash.no_update, session_event, False, updated_notifs
 
 
 # ========================= Abas de resultados (sessões) =========================
@@ -5015,13 +5327,15 @@ def load_docs_for_cards(n_clicks_list, active_map, results, cache_docs):
     Output({'type': 'resumo-card', 'pncp': ALL}, 'style', allow_duplicate=True),
     Output({'type': 'resumo-btn', 'pncp': ALL}, 'style', allow_duplicate=True),
     Output('store-cache-resumo', 'data', allow_duplicate=True),
+    Output('store-notifications', 'data', allow_duplicate=True),
     Input({'type': 'resumo-btn', 'pncp': ALL}, 'n_clicks'),
     Input('store-panel-active', 'data'),
     State('store-results-sorted', 'data'),
     State('store-cache-resumo', 'data'),
+    State('store-notifications', 'data'),
     prevent_initial_call=True,
 )
-def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
+def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo, notifications):
     """Generate and display a summary for the main document of each process.
 
     Heuristic: prefer PDFs matching common names (edital, termo de referencia/TR, projeto basico,
@@ -5194,6 +5508,35 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                 )
             ])
 
+            # Verificar limite de resumos ANTES de processar (se não estiver em cache)
+            if uid and pid and not (isinstance(cache_resumo, dict) and str(pid) in cache_resumo and isinstance(cache_resumo[str(pid)], dict) and 'summary' in cache_resumo[str(pid)]):
+                try:
+                    from gvg_limits import ensure_capacity, LimitExceeded  # type: ignore
+                    ensure_capacity(uid, 'resumos')
+                except LimitExceeded:
+                    # Limite atingido: retornar mensagem e não processar
+                    summary_text = "⚠️ **Limite diário de resumos atingido.**\n\nFaça upgrade do seu plano para gerar mais resumos hoje."
+                    try:
+                        updated_cache[str(pid)] = {'docs': docs, 'summary': summary_text}
+                    except Exception:
+                        pass
+                    children_out.append([
+                        html.Div(
+                            dcc.Markdown(summary_text, style={'fontSize': '12px', 'lineHeight': '1.6'}),
+                            style=styles['details_content_inner']
+                        )
+                    ])
+                    # Notificação de limite atingido (CRÍTICO)
+                    updated_notifs = list(notifications or [])
+                    try:
+                        notif = add_note(NOTIF_ERROR, "Limite diário de resumos atingido. Faça upgrade do plano.")
+                        updated_notifs.append(notif)
+                    except Exception:
+                        pass
+                    continue
+                except Exception as e:
+                    dbg('LIMIT', f"erro ao verificar limite de resumos: {e}")
+
             # Iniciar tracking somente para geração real (sem cache) e só gravar se sucesso
             summary_event_started = False
             try:
@@ -5253,11 +5596,26 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo):
                         usage_event_discard()
             except Exception:
                 pass
+            
+            # Notificações de resultado do resumo
+            updated_notifs = list(notifications or [])
+            try:
+                if isinstance(summary_text, str) and summary_text.strip() and not summary_text.startswith('Erro'):
+                    # Sucesso
+                    notif = add_note(NOTIF_SUCCESS, "Resumo gerado com sucesso!")
+                    updated_notifs.append(notif)
+                elif summary_text and summary_text.startswith('Erro'):
+                    # Erro ao gerar
+                    notif = add_note(NOTIF_ERROR, "Erro ao gerar resumo. Tente novamente.")
+                    updated_notifs.append(notif)
+            except Exception:
+                pass
+            
             # Substitui o spinner pelo conteúdo final (resumo)
             children_out[-1] = [html.Div(dcc.Markdown(children=summary_text, className='markdown-summary'), style=styles['details_content_inner'])]
         else:
             children_out.append([])
-    return children_out, style_out, btn_styles, updated_cache
+    return children_out, style_out, btn_styles, updated_cache, updated_notifs
 
 # Callback rápido para exibir spinner imediatamente ao ativar o painel de Resumo
 @app.callback(
@@ -5515,13 +5873,17 @@ def run_from_history(n_clicks_list, history):
 # Excluir item do histórico
 @app.callback(
     Output('store-history', 'data', allow_duplicate=True),
+    Output('store-notifications', 'data', allow_duplicate=True),
     Input({'type': 'history-delete', 'index': ALL}, 'n_clicks'),
     State('store-history', 'data'),
+    State('store-notifications', 'data'),
     prevent_initial_call=True,
 )
-def delete_history_item(n_clicks_list, history):
+def delete_history_item(n_clicks_list, history, notifications):
     if not n_clicks_list or not any(n_clicks_list):
         raise PreventUpdate
+    
+    updated_notifs = list(notifications or [])
     idx = None
     for i, n in enumerate(n_clicks_list):
         if n:
@@ -5546,19 +5908,28 @@ def delete_history_item(n_clicks_list, history):
     if 0 <= idx < len(items):
         del items[idx]
     save_history(items)
-    return items
+    
+    # Notificação de sucesso
+    notif = add_note(NOTIF_INFO, "Item removido do histórico.")
+    updated_notifs.append(notif)
+    
+    return items, updated_notifs
 
 
 # Rever item do histórico: abre aba HISTÓRICO com resultados salvos
 @app.callback(
     Output('store-session-event', 'data', allow_duplicate=True),
+    Output('store-notifications', 'data', allow_duplicate=True),
     Input({'type': 'history-replay', 'index': ALL}, 'n_clicks'),
     State('store-history', 'data'),
+    State('store-notifications', 'data'),
     prevent_initial_call=True,
 )
-def replay_from_history(n_clicks_list, history):
+def replay_from_history(n_clicks_list, history, notifications):
     if not n_clicks_list or not any(n_clicks_list):
         raise PreventUpdate
+    
+    updated_notifs = list(notifications or [])
     # Qual índice foi clicado
     idx = None
     for i, n in enumerate(n_clicks_list):
@@ -5577,6 +5948,15 @@ def replay_from_history(n_clicks_list, history):
         rows = fetch_user_results_for_prompt_text(prompt_text, limit=500)
     except Exception:
         rows = []
+    
+    # Notificação conforme resultado
+    if rows:
+        notif = add_note(NOTIF_INFO, f"Consulta reaberta: {len(rows)} resultado(s) carregado(s).")
+        updated_notifs.append(notif)
+    else:
+        notif = add_note(NOTIF_WARNING, "Nenhum resultado encontrado para esta consulta.")
+        updated_notifs.append(notif)
+    
     # Meta mínima para cards
     meta = {'order': 1, 'count': len(rows), 'source': 'history'}
     session_event = {
@@ -5590,18 +5970,20 @@ def replay_from_history(n_clicks_list, history):
             'meta': meta
         }
     }
-    return session_event
+    return session_event, updated_notifs
 
 
 # Rever item de boletim: abre aba BOLETIM com resultados do último run
 @app.callback(
     Output('store-session-event', 'data', allow_duplicate=True),
     Output('store-search-filters', 'data', allow_duplicate=True),
+    Output('store-notifications', 'data', allow_duplicate=True),
     Input({'type': 'boletim-replay', 'id': ALL}, 'n_clicks'),
     State('store-boletins', 'data'),
+    State('store-notifications', 'data'),
     prevent_initial_call=True,
 )
-def replay_from_boletim(n_clicks_list, boletins):
+def replay_from_boletim(n_clicks_list, boletins, notifications):
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -5683,7 +6065,11 @@ def replay_from_boletim(n_clicks_list, boletins):
                 dbg('BOLETIM', f"[replay_from_boletim] boletim_id={boletim_id} sem run_token")
             except Exception:
                 pass
-            raise PreventUpdate
+            # Notificação de erro quando não há execuções (retornar dash.no_update em vez de PreventUpdate)
+            updated_notifs = list(notifications or [])
+            notif = add_note(NOTIF_WARNING, "Este boletim ainda não foi executado.")
+            updated_notifs.append(notif)
+            return dash.no_update, dash.no_update, updated_notifs
         # Carregar resultados deste run com join na contratacao
         cols = get_contratacao_core_columns('c')
         sql = (
@@ -5803,7 +6189,17 @@ def replay_from_boletim(n_clicks_list, boletins):
         dbg('BOLETIM', f"[replay_from_boletim] emitindo sessão com {len(results)} resultados run_token={run_token}")
     except Exception:
         pass
-    return session_event, (filters_cfg if filters_cfg else dash.no_update)
+    
+    # Notificação de resultado
+    updated_notifs = list(notifications or [])
+    if results:
+        notif = add_note(NOTIF_INFO, f"Boletim reaberto: {len(results)} resultado(s) carregado(s).")
+        updated_notifs.append(notif)
+    else:
+        notif = add_note(NOTIF_WARNING, "Nenhum resultado encontrado para este boletim.")
+        updated_notifs.append(notif)
+    
+    return session_event, (filters_cfg if filters_cfg else dash.no_update), updated_notifs
 
 
 # Aplicar item do histórico na UI (configs + filtros), sem executar busca
@@ -6243,12 +6639,16 @@ def queue_email_send(n, n_submit, ctx_data, raw_recipients, self_opts, auth_stat
 # Processamento em segundo plano: quando há um pedido na Store, envia e limpa
 @app.callback(
     Output('store-email-send-request', 'data', allow_duplicate=True),
+    Output('store-notifications', 'data', allow_duplicate=True),
     Input('store-email-send-request', 'data'),
+    State('store-notifications', 'data'),
     prevent_initial_call=True
 )
-def process_email_send(req):
+def process_email_send(req, notifications):
     if not req:
         raise PreventUpdate
+    
+    updated_notifs = list(notifications or [])
     ctxd = (req or {}).get('context') or {}
     recips = (req or {}).get('recipients') or []
     kind = ctxd.get('kind')
@@ -6391,27 +6791,42 @@ def process_email_send(req):
         else:
             return None
 
+        email_sent_count = 0
+        email_failed_count = 0
         for to in recips:
             try:
                 send_html_email(to, subject, html)
+                email_sent_count += 1
             except Exception:
-                pass
-    except Exception:
-        pass
+                email_failed_count += 1
+        
+        # Notificações de resultado
+        if email_sent_count > 0:
+            notif = add_note(NOTIF_SUCCESS, f"E-mail enviado com sucesso para {email_sent_count} destinatário(s)!")
+            updated_notifs.append(notif)
+        if email_failed_count > 0:
+            notif = add_note(NOTIF_WARNING, f"Falha ao enviar para {email_failed_count} destinatário(s).")
+            updated_notifs.append(notif)
+    except Exception as e:
+        # Notificação de erro geral
+        notif = add_note(NOTIF_ERROR, "Erro ao processar envio de e-mail. Tente novamente.")
+        updated_notifs.append(notif)
     # Limpa a fila ao final (fecha ciclo)
-    return None
+    return None, updated_notifs
 
 
 # Clique em bookmark no card: alterna estado e persiste
 @app.callback(
     Output({'type': 'bookmark-btn', 'pncp': ALL}, 'children', allow_duplicate=True),
     Output('store-favorites', 'data', allow_duplicate=True),
+    Output('store-notifications', 'data', allow_duplicate=True),
     Input({'type': 'bookmark-btn', 'pncp': ALL}, 'n_clicks'),
     State('store-results-sorted', 'data'),
     State('store-favorites', 'data'),
+    State('store-notifications', 'data'),
     prevent_initial_call=True,
 )
-def toggle_bookmark(n_clicks_list, results, favs):
+def toggle_bookmark(n_clicks_list, results, favs, notifications):
     # Conjunto de favoritos atual
     fav_set = {str(x.get('numero_controle_pncp')) for x in (favs or [])}
 
@@ -6459,6 +6874,7 @@ def toggle_bookmark(n_clicks_list, results, favs):
 
     # Persist toggle somente em clique real (n_clicks > 0)
     updated_favs = list(favs or [])
+    updated_notifs = list(notifications or [])
     # Se foi disparado pela criação dos componentes (n_clicks None/0), não faz nada
     if clicked_pid and clicked_pid != 'N/A' and clicked_idx is not None and (n_clicks_list[clicked_idx] or 0) > 0:
         if clicked_pid in fav_set:
@@ -6468,6 +6884,12 @@ def toggle_bookmark(n_clicks_list, results, favs):
                 pass
             # Otimista local
             updated_favs = [x for x in updated_favs if str(x.get('numero_controle_pncp')) != clicked_pid]
+            # Adicionar notificação de remoção
+            try:
+                notif = add_note(NOTIF_INFO, f"Favorito removido: {clicked_pid}")
+                updated_notifs.append(notif)
+            except Exception:
+                pass
             try:
                 from gvg_search_core import SQL_DEBUG
                 if SQL_DEBUG:
@@ -6542,6 +6964,13 @@ def toggle_bookmark(n_clicks_list, results, favs):
             except Exception:
                 pass
             updated_favs = ([fav_item] + [x for x in updated_favs if str(x.get('numero_controle_pncp')) != clicked_pid])
+            # Adicionar notificação de sucesso
+            try:
+                rotulo_text = fav_item.get('rotulo') or clicked_pid
+                notif = add_note(NOTIF_SUCCESS, f"Favorito adicionado: {rotulo_text}")
+                updated_notifs.append(notif)
+            except Exception:
+                pass
             try:
                 from gvg_search_core import SQL_DEBUG
                 if SQL_DEBUG:
@@ -6555,13 +6984,13 @@ def toggle_bookmark(n_clicks_list, results, favs):
     fav_set_after = {str(x.get('numero_controle_pncp')) for x in (updated_favs or [])}
     # Se não há componentes correspondidos no layout no momento, retornar lista vazia
     if not layout_pncp_ids:
-        return [], updated_favs
+        return [], updated_favs, updated_notifs
     children_out = []
     for pid in layout_pncp_ids:
         icon_class = 'fas fa-bookmark' if pid in fav_set_after else 'far fa-bookmark'
         children_out.append(html.I(className=icon_class))
 
-    return children_out, updated_favs
+    return children_out, updated_favs, updated_notifs
 
 
 @app.callback(
@@ -6637,13 +7066,17 @@ def select_favorite(n_clicks_list, favs):
 # Remover um favorito via lista
 @app.callback(
     Output('store-favorites', 'data', allow_duplicate=True),
+    Output('store-notifications', 'data', allow_duplicate=True),
     Input({'type': 'favorite-delete', 'index': ALL}, 'n_clicks'),
     State('store-favorites', 'data'),
+    State('store-notifications', 'data'),
     prevent_initial_call=True,
 )
-def delete_favorite(n_clicks_list, favs):
+def delete_favorite(n_clicks_list, favs, notifications):
     if not n_clicks_list or not any(n_clicks_list):
         raise PreventUpdate
+    
+    updated_notifs = list(notifications or [])
     # Localiza o primeiro índice clicado (mesma lógica do histórico)
     idx = None
     for i, n in enumerate(n_clicks_list):
@@ -6663,15 +7096,25 @@ def delete_favorite(n_clicks_list, favs):
     # Diagnóstico mínimo sempre visível
     dbg('FAV', f"delete_favorite fired idx={idx} pid={pid}")
     # Remove no BD (best-effort)
+    success = False
     try:
         remove_bookmark(pid)
+        success = True
     except Exception:
         pass
     # Remove da Store localmente
     updated = [x for x in (favs or []) if str(x.get('numero_controle_pncp')) != pid]
     updated = _sort_favorites_list(updated)
 
-    return updated
+    # Notificação
+    if success:
+        notif = add_note(NOTIF_INFO, "Favorito removido com sucesso.")
+        updated_notifs.append(notif)
+    else:
+        notif = add_note(NOTIF_ERROR, "Erro ao remover favorito. Tente novamente.")
+        updated_notifs.append(notif)
+    
+    return updated, updated_notifs
 
 
 # Exportações
@@ -6682,6 +7125,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 @app.callback(
     Output('download-out', 'data'),
+    Output('store-notifications', 'data', allow_duplicate=True),
     Input('export-json', 'n_clicks'),
     Input('export-xlsx', 'n_clicks'),
     Input('export-csv', 'n_clicks'),
@@ -6690,9 +7134,10 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
     State('store-results', 'data'),
     State('store-last-query', 'data'),
     State('store-meta', 'data'),
+    State('store-notifications', 'data'),
     prevent_initial_call=True,
 )
-def export_files(n_json, n_xlsx, n_csv, n_pdf, n_html, results, query, meta):
+def export_files(n_json, n_xlsx, n_csv, n_pdf, n_html, results, query, meta, notifications):
     if not results:
         raise PreventUpdate
     # Qual botão foi clicado
@@ -6705,7 +7150,18 @@ def export_files(n_json, n_xlsx, n_csv, n_pdf, n_html, results, query, meta):
         relevance=meta.get('relevance', 2),
         order=meta.get('order', 1),
     )
+    
+    updated_notifs = list(notifications or [])
+    export_type = {
+        'export-json': 'JSON',
+        'export-xlsx': 'Excel',
+        'export-csv': 'CSV',
+        'export-pdf': 'PDF',
+        'export-html': 'HTML'
+    }.get(btn_id, 'arquivo')
+    
     try:
+        path = None
         if btn_id == 'export-json':
             path = export_results_json(results, query or '', params, OUTPUT_DIR)
         elif btn_id == 'export-xlsx':
@@ -6716,16 +7172,94 @@ def export_files(n_json, n_xlsx, n_csv, n_pdf, n_html, results, query, meta):
             path = export_results_pdf(results, query or '', params, OUTPUT_DIR)
             if not path:
                 # ReportLab ausente
-                raise PreventUpdate
+                notif = add_note(NOTIF_ERROR, "Erro ao exportar PDF. Biblioteca ausente.")
+                updated_notifs.append(notif)
+                return dash.no_update, updated_notifs
         elif btn_id == 'export-html':
             path = export_results_html(results, query or '', params, OUTPUT_DIR)
         else:
             raise PreventUpdate
+        
         if path and os.path.exists(path):
-            return dcc.send_file(path)
-    except Exception:
-        pass
-    raise PreventUpdate
+            # Sucesso na exportação
+            notif = add_note(NOTIF_SUCCESS, f"Arquivo {export_type} exportado com sucesso!")
+            updated_notifs.append(notif)
+            return dcc.send_file(path), updated_notifs
+        else:
+            # Arquivo não foi criado
+            notif = add_note(NOTIF_ERROR, f"Erro ao exportar {export_type}. Tente novamente.")
+            updated_notifs.append(notif)
+            return dash.no_update, updated_notifs
+            
+    except Exception as e:
+        # Erro genérico na exportação
+        notif = add_note(NOTIF_ERROR, f"Erro ao exportar {export_type}. Verifique os dados.")
+        updated_notifs.append(notif)
+        return dash.no_update, updated_notifs
+
+
+# =====================================================================================
+# CALLBACKS: Notificações Toast
+# =====================================================================================
+
+# Renderiza as notificações ativas
+@app.callback(
+    Output('toast-container', 'children'),
+    Input('store-notifications', 'data'),
+    prevent_initial_call=False,
+)
+def render_notifications(notifications):
+    """Renderiza lista de notificações Toast ativas."""
+    if not notifications:
+        return []
+    
+    toasts = []
+    for notif in notifications:
+        notif_id = notif.get('id')
+        tipo = notif.get('tipo', 'info')
+        texto = notif.get('texto', '')
+        icon = notif.get('icon', 'fas fa-info-circle')
+        color = notif.get('color', '#17a2b8')
+        
+        toast = html.Div([
+            html.Div(
+                html.I(className=icon, style={'color': color}),
+                style=styles['toast_icon']
+            ),
+            html.Div(texto, style=styles['toast_text']),
+        ], id={'type': 'toast-item', 'id': notif_id}, style={**styles['toast_item'], 'borderColor': color})
+        
+        toasts.append(toast)
+    
+    return toasts
+
+
+# Auto-remove notificações após 3 segundos (triggered por Interval)
+@app.callback(
+    Output('store-notifications', 'data', allow_duplicate=True),
+    Input('notifications-interval', 'n_intervals'),
+    State('store-notifications', 'data'),
+    prevent_initial_call=True,
+)
+def auto_remove_notifications(n_intervals, notifications):
+    """Remove notificações após 3 segundos (3000ms)."""
+    import time
+    
+    if not notifications:
+        raise PreventUpdate
+    
+    current_time = time.time()
+    # Filtra notificações com mais de 3 segundos
+    updated_notifs = [
+        n for n in notifications
+        if (current_time - n.get('timestamp', 0)) < 3.0
+    ]
+    
+    # Se nada mudou, não atualizar
+    if len(updated_notifs) == len(notifications):
+        raise PreventUpdate
+    
+    return updated_notifs
 
 
 # Adicionar FontAwesome para ícones (igual Reports)

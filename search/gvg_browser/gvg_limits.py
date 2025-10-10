@@ -16,9 +16,45 @@ Obs: apenas bloqueio; geração de toasts será implementada depois.
 from __future__ import annotations
 from typing import Dict, Any
 from datetime import date
+import os
+import csv
 
 from gvg_database import db_fetch_all
 from gvg_debug import debug_log as dbg
+
+# Cache de planos do CSV (carregado uma vez)
+_PLANS_FALLBACK_CACHE = None
+
+def _load_plans_fallback() -> Dict[str, Dict[str, int]]:
+    """Carrega planos do CSV de fallback e retorna dict indexado por code."""
+    global _PLANS_FALLBACK_CACHE
+    if _PLANS_FALLBACK_CACHE is not None:
+        return _PLANS_FALLBACK_CACHE
+    
+    plans = {}
+    try:
+        csv_path = os.path.join(os.path.dirname(__file__), 'docs', 'system_plans_fallback.csv')
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                code = row['code'].upper()
+                plans[code] = {
+                    'limit_consultas_per_day': int(row['limit_consultas_per_day']),
+                    'limit_resumos_per_day': int(row['limit_resumos_per_day']),
+                    'limit_boletim_per_day': int(row['limit_boletim_per_day']),
+                    'limit_favoritos_capacity': int(row['limit_favoritos_capacity']),
+                }
+        _PLANS_FALLBACK_CACHE = plans
+        return plans
+    except Exception as e:
+        dbg('LIMIT', f"Erro ao carregar plans fallback CSV: {e}")
+        # Fallback hardcoded se CSV falhar
+        return {
+            'FREE': {'limit_consultas_per_day': 5, 'limit_resumos_per_day': 1, 'limit_boletim_per_day': 1, 'limit_favoritos_capacity': 10},
+            'PLUS': {'limit_consultas_per_day': 20, 'limit_resumos_per_day': 20, 'limit_boletim_per_day': 5, 'limit_favoritos_capacity': 200},
+            'PRO': {'limit_consultas_per_day': 100, 'limit_resumos_per_day': 100, 'limit_boletim_per_day': 10, 'limit_favoritos_capacity': 2000},
+            'CORP': {'limit_consultas_per_day': 1000, 'limit_resumos_per_day': 1000, 'limit_boletim_per_day': 100, 'limit_favoritos_capacity': 20000},
+        }
 
 class LimitExceeded(Exception):
     def __init__(self, tipo: str, limit: int):
@@ -51,13 +87,14 @@ def get_user_plan_limits(user_id: str) -> Dict[str, int]:
     """
     rows = db_fetch_all(sql, (user_id,), ctx="LIMITS.get_user_plan_limits")
     if not rows:
-        # fallback: FREE defaults (hardcode simples, pode sincronizar com tabela futuramente)
-        return {
-            'limit_consultas_per_day': 30,
-            'limit_resumos_per_day': 10,
-            'limit_boletim_per_day': 5,
-            'limit_favoritos_capacity': 50,
-        }
+        # Fallback: buscar do CSV plan FREE
+        plans_fallback = _load_plans_fallback()
+        return plans_fallback.get('FREE', {
+            'limit_consultas_per_day': 5,
+            'limit_resumos_per_day': 1,
+            'limit_boletim_per_day': 1,
+            'limit_favoritos_capacity': 10,
+        })
     r = rows[0]
     # Suporta cursor que retorna tuplas ou dicionários
     if isinstance(r, dict):
@@ -73,11 +110,14 @@ def get_user_plan_limits(user_id: str) -> Dict[str, int]:
             c, s, b, f = r[0], r[1], r[2], r[3]
         except Exception:
             c = s = b = f = None
+    # Se algum valor vier NULL, usar fallback FREE do CSV
+    plans_fallback = _load_plans_fallback()
+    free_limits = plans_fallback.get('FREE', {})
     return {
-        'limit_consultas_per_day': int(c) if c is not None else 30,
-        'limit_resumos_per_day': int(s) if s is not None else 10,
-        'limit_boletim_per_day': int(b) if b is not None else 5,
-        'limit_favoritos_capacity': int(f) if f is not None else 50,
+        'limit_consultas_per_day': int(c) if c is not None else free_limits.get('limit_consultas_per_day', 5),
+        'limit_resumos_per_day': int(s) if s is not None else free_limits.get('limit_resumos_per_day', 1),
+        'limit_boletim_per_day': int(b) if b is not None else free_limits.get('limit_boletim_per_day', 1),
+        'limit_favoritos_capacity': int(f) if f is not None else free_limits.get('limit_favoritos_capacity', 10),
     }
 
 def count_usage_today(user_id: str, event_type: str) -> int:

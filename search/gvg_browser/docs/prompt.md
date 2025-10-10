@@ -6,8 +6,12 @@ Leia e entenda integralmente todos os arquivos sugeridos e também o arquivo `do
 - App web em Dash (Python) que busca processos PNCP com 3 tipos (Semântica/Palavras‑chave/Híbrida) e 3 abordagens (Direta/Correspondência/Filtro).
 - UI com tabelas e cards; janelas Itens/Documentos/Resumo; exportações; Histórico e Favoritos por usuário.
 - Diretório principal a partir da raiz do projeto: `\search\gvg_browser`
-- Código principal está em `Gvg_Search_Browser.py` (GSB). Todos os outros códigos da pasta são auxiliares desse código. Leia-o integralmente, e não somente algumas linhas.
-- Estilos centralizados em `gvg_styles.py`. Documentação principal: `search/gvg_browser/docs/README.md`.
+- Código principal está em `Gvg_Search_Browser.py` (GSB).  ATENÇÃO, IMPORTANTE: Leia-o integralmente!!
+- Todos os outros códigos da pasta são auxiliares do código principal `Gvg_Search_Browser.py` (GSB).
+- Estilos centralizados em `gvg_styles.py`. 
+- Documentação principal: `search/gvg_browser/docs/README.md`.
+
+
 
 
 - Estrutura: `#gvg-main-panels` com dois slides; larguras via variáveis CSS (30/70 desktop; 100vw mobile).
@@ -27,6 +31,10 @@ Leia e entenda integralmente todos os arquivos sugeridos e também o arquivo `do
 - `gvg_schema.py`, (esquema de nomes)
 - `gvg_database.py`, (banco de dados)
 - `gvg_usage.py` (agregador de métricas de uso: start/set_ref/finish e contadores de tokens/db/arquivos/elapsed)
+- `gvg_limits.py` (regras de limites por plano e contagem de uso do dia)
+- `gvg_billing.py` (operações de plano: upgrade/downgrade/cancelar; integração posterior com gateway)
+- `gvg_debug.py` (sistema de logs por categorias)
+- `search/gvg_browser/docs/BILLING_PLANO_IMPLANTACAO.md` (plano de implementação de planos/limites/billing)
 
 ## Banco de Dados e esquema (BDS1)
 - Arquivo: `search/gvg_browser/db/BDS1.txt`
@@ -87,6 +95,13 @@ Leia e entenda integralmente todos os arquivos sugeridos e também o arquivo `do
     - Exclusão: valida `n_clicks > 0` antes de soft delete.
     - Limitações: sem editar/reativar/scheduler interno ainda.
     - Renderização imediata: após salvar, o boletim aparece completo na lista sem precisar recarregar.
+
+- Planos e Limites:
+  - Enforcement aplicado em consultas/resumos/favoritos via `ensure_capacity()`; bloqueio com exceção `LimitExceeded`.
+  - Modal responsivo (90vw, cards flex 25% cada) com badge no cabeçalho, barras de consumo em linha (texto+barra), upgrade/downgrade instantâneo.
+  - Fallback CSV (`docs/system_plans_fallback.csv`) com limites corretos por plano (FREE: 5 consultas, PLUS: 20, PRO: 100, CORP: 1000).
+  - Plano reconhecido na inicialização via `get_user_settings(uid)`; badge atualiza ao abrir modal e após mudança de plano.
+  - Eventos de uso registrados: `query` para buscas, `summary_success` para resumos; métricas consolidadas (tokens, DB, arquivos, tempo).
 
 ## Execução local
 - Requisitos: Python 3.12+, `dash` e `dash-bootstrap-components`; DB V1 configurado.

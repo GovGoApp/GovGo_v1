@@ -9,7 +9,21 @@ Este documento descreve o desenho completo para introdução de planos pagos no 
 - Mostrar plano atual e consumo ao usuário.
 - Base: tabela `system_plans`.
 
-### 1.1 Plataforma de Pagamento (Decisão)
+### 1.1 Ordem de Implantação (Atualizada)
+Primeiro entregaremos Limites e Planos (sem cobrança real). Em seguida, integramos Pagamentos.
+
+Fase A: Limites e Planos (sem pagamentos)
+- Migrar DB base (plans/user_settings, índices usage, created_at_date)
+- Implementar `gvg_limits.py` (enforcement em tempo real)
+- UI: badge do plano, consumo do dia, ações internas de upgrade/downgrade (mock)
+
+Fase B: Pagamentos (gateway) e faturas
+- Integrar gateway (webhooks, invoices) e ligar aos planos já existentes
+- UI checkout/retorno e painel de faturas
+
+Nota: As decisões e detalhes de integração de gateway permanecem abaixo para a Fase B.
+
+### 1.2 Plataforma de Pagamento (Decisão)
 Requisitos: recorrência mensal, boleto + pix + cartão (BRL), webhooks estáveis, antifraude básico, suporte fiscal Brasil.
 
 Opções avaliadas (resumo):
@@ -52,13 +66,13 @@ Tabelas/alterações principais:
 ## 3. Enforcement de Limites
 Criar `gvg_limits.py`:
 - `get_plan_limits(user)`
-- `count_usage_today(user, event_type)` → SELECT COUNT(*) em `user_usage_events` filtrando por `created_at::date = current_date`.
+- `count_usage_today(user, event_type)` → SELECT COUNT(*) em `user_usage_events` filtrando por `created_at_date = current_date`.
 - `ensure_capacity(user, tipo)` (internamente chama count_usage_today ou cache in-memory).
 - `increment_usage` NÃO precisa explicitamente (evento já inserido pelo aggregator); apenas usado para favoritos se quiser log.
 - `LimitExceeded` (exceção).
-Tipos mapeados a `event_type`:
-  * consultas → `search`
-  * resumos → `summary`
+Tipos mapeados a `event_type` (atual):
+  * consultas → `query`
+  * resumos → `summary_success` (registrado apenas em sucesso)
   * boletim_run → `boletim_run` (definir ao instrumentar)
   * favoritos_capacity → COUNT(*) em `user_bookmarks` (não há evento)
 Hooks: run_search, summarize_document, execução boletim, adicionar favorito.
@@ -189,8 +203,8 @@ Não há upsert manual de uso; a própria inserção em `user_usage_events` pelo
 
 ## 9. Integração com Aggregator
 No `usage_event_finish` os eventos já ficam persistidos para contagem:
-- `event_type='search'` → consultas do dia.
-- `event_type='summary'` → resumos do dia.
+- `event_type='query'` → consultas do dia.
+- `event_type='summary_success'` → resumos do dia (salvo apenas em sucesso; em falha o evento é descartado).
 - `event_type='boletim_run'` (ao instrumentar execução de boletim).
 Nenhuma tabela auxiliar; apenas SELECT COUNT.
 
@@ -206,9 +220,9 @@ Nenhuma tabela auxiliar; apenas SELECT COUNT.
 
 ## 12. Roadmap (Sprints)
 1. Migração base: colunas plano + `plan_id_at_event` + índices usage + badge plano.
-2. `gvg_limits.py` usando `user_usage_events` (consultas counts) + instrumentar boletim_run.
-3. Adapters gateway (pagarme_adapter stub + interface), endpoints `/billing/checkout` & `/billing/webhook`, página planos (mock checkout).
-4. Painel conta (consumo, faturas stub), downgrade/cancelar/reativar.
+2. `gvg_limits.py` usando `user_usage_events` (consultas/resumos) + instrumentar boletim_run.
+3. UI de planos/consumo e ações internas (upgrade/downgrade agendado) sem cobrança real. [ATUAL]
+4. Adapters gateway (pagarme_adapter stub + interface), endpoints `/billing/checkout` & `/billing/webhook`, página checkout/retorno.
 5. Gateway produção + webhooks reais + invoice sync job.
 6. Trial, alertas (80%/100%), refinamentos e cache de uso.
 
@@ -235,19 +249,19 @@ Consultas do dia:
 ```
 SELECT COUNT(*)
 FROM user_usage_events
-WHERE user_id=$1 AND event_type='search' AND created_at::date=current_date;
+WHERE user_id=$1 AND event_type='query' AND created_at_date=current_date;
 ```
 Resumos do dia:
 ```
 SELECT COUNT(*)
 FROM user_usage_events
-WHERE user_id=$1 AND event_type='summary' AND created_at::date=current_date;
+WHERE user_id=$1 AND event_type='summary_success' AND created_at_date=current_date;
 ```
 Execuções boletim do dia:
 ```
 SELECT COUNT(*)
 FROM user_usage_events
-WHERE user_id=$1 AND event_type='boletim_run' AND created_at::date=current_date;
+WHERE user_id=$1 AND event_type='boletim_run' AND created_at_date=current_date;
 ```
 Capacidade favoritos:
 ```
@@ -272,7 +286,7 @@ WHERE u.id=$1;
 ```
 run_search(user,...):
   ensure_capacity(user,'consultas')
-  usage_event_start('consulta','search')
+  usage_event_start(user,'query')
   ...
   usage_event_finish(...)
   increment_usage(user,'consultas')
