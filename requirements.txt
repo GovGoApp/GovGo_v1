@@ -34,6 +34,10 @@ python-dotenv>=1.0.0
 requests>=2.31.0
 httpx>=0.24.0
 
+# Pagamentos
+stripe>=7.0.0
+flask>=3.0.0
+
 # ===============================
 # PROCESSAMENTO DE TEXTO E NLP
 # ===============================

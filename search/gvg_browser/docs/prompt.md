@@ -2,6 +2,8 @@
 
 Leia e entenda integralmente todos os arquivos sugeridos e também o arquivo `docs/README.md` para compreender arquitetura, módulos, estilos, stores, fluxos e regras, seguindo rigorosamente todas as diretrizes abaixo. Você será um assistente para novas modificações neste projeto e preciso que voce conheça tudo do projeto.
 
+Sempre que for apresentar uma solução, apresente-a da forma mais didática possível. Ofreça sempre as soluções mais simples, com alterações mínimas, e o menor geração de linhas, códigos ou arquivos possível.
+
 ## Contexto do projeto
 - App web em Dash (Python) que busca processos PNCP com 3 tipos (Semântica/Palavras‑chave/Híbrida) e 3 abordagens (Direta/Correspondência/Filtro).
 - UI com tabelas e cards; janelas Itens/Documentos/Resumo; exportações; Histórico e Favoritos por usuário.
