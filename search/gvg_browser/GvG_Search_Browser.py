@@ -311,6 +311,44 @@ def webhook_health():
     from flask import jsonify
     return jsonify({'status': 'healthy', 'service': 'gvg_billing_webhook'}), 200
 
+# Rota simples para validar logs após o start
+@app.server.route('/debug/ping', methods=['GET'])
+def debug_ping():
+    from flask import jsonify
+    try:
+        dbg('UI', 'PING')
+    except Exception:
+        pass
+    return jsonify({'status': 'ok', 'ts': _dt.utcnow().isoformat()}), 200
+
+# Rota que emite logs em todas as áreas ativas e retorna estado do DEBUG
+@app.server.route('/debug/info', methods=['GET'])
+def debug_info():
+    from flask import jsonify
+    try:
+        areas = ['SQL','DB','AUTH','SEARCH','DOCS','ASSISTANT','IA','UI','BROWSER','BOLETIM','BMK','FAV','PRE','RESUMO','EVENT','USAGE','LIMIT','ERROR','BILL','WEBHOOK']
+        for a in areas:
+            try:
+                dbg(a, f"TEST {a}")
+            except Exception:
+                pass
+        return jsonify({'DEBUG': os.getenv('DEBUG'), 'DEV': os.getenv('GVG_BROWSER_DEV'), 'areas': areas, 'ts': _dt.utcnow().isoformat()}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Log básico de cada request quando DEBUG estiver ligado
+try:
+    from flask import request
+    if (os.getenv('DEBUG') or '').strip().lower() in ('1','true','yes','on'):
+        @app.server.before_request
+        def _log_request_path():
+            try:
+                dbg('UI', f"REQ {request.method} {request.path}")
+            except Exception:
+                pass
+except Exception:
+    pass
+
 # =============================
 # API auxiliar: status rápido de plano (usado pós-pagamento)
 # =============================
@@ -429,6 +467,10 @@ try:
             os.environ['DEBUG'] = '1'
             # Forçar modo dev para evitar conflito com GVG_BROWSER_DEV
             os.environ['GVG_BROWSER_DEV'] = '1'
+        except Exception:
+            pass
+        try:
+            dbg('UI', f"DEBUG={os.getenv('DEBUG')} DEV={os.getenv('GVG_BROWSER_DEV')}")
         except Exception:
             pass
     if _known and getattr(_known, 'markdown', False):
