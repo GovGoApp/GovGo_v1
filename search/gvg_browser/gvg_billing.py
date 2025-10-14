@@ -30,15 +30,11 @@ from gvg_debug import debug_log as dbg  # type: ignore
 # =============================
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
-# Mapa de planos internos → Price IDs do Stripe
-PLAN_PRICE_MAP = {
-    'PLUS': os.getenv('STRIPE_PRICE_PLUS'),
-    'PRO': os.getenv('STRIPE_PRICE_PRO'),
-    'CORP': os.getenv('STRIPE_PRICE_CORP'),
-}
-
 # Cache de planos do CSV (carregado uma vez)
 _PLANS_FALLBACK_CACHE = None
+
+# Cache de planos do banco (carregado uma vez no início)
+_SYSTEM_PLANS_CACHE = None
 
 def _load_plans_fallback() -> Dict[str, Dict[str, Any]]:
 	"""Carrega planos do CSV de fallback e retorna dict indexado por code."""
@@ -84,20 +80,73 @@ PLAN_COLUMNS = (
 
 
 def get_system_plans() -> List[Dict[str, Any]]:
-	# ORDER BY no valor original para preservar precisão
-	sql = f"SELECT {PLAN_COLUMNS} FROM public.system_plans WHERE active = true ORDER BY price_month_brl ASC, id ASC"
-	rows = db_fetch_all(sql, ctx="BILLING.get_system_plans")
+	"""
+	Retorna todos os planos ativos com TODOS os campos (incluindo Stripe IDs).
+	Usa cache para evitar SQL repetido.
+	"""
+	global _SYSTEM_PLANS_CACHE
+	
+	# Se já carregou, retorna cache
+	if _SYSTEM_PLANS_CACHE is not None:
+		return _SYSTEM_PLANS_CACHE
+	
+	# Buscar TODOS os campos do banco
+	sql = """
+		SELECT 
+			id, code, name, price_month_brl, 
+			limit_consultas_per_day, limit_resumos_per_day, 
+			limit_boletim_per_day, limit_favoritos_capacity,
+			stripe_product_id, stripe_price_id,
+			active, created_at
+		FROM public.system_plans 
+		WHERE active = true 
+		ORDER BY price_month_brl ASC, id ASC
+	"""
+	rows = db_fetch_all(sql, as_dict=True, ctx="BILLING.get_system_plans")
+	
 	out: List[Dict[str, Any]] = []
 	for r in rows:
-		# rows pode ser list[tuple]; converter se necessário
 		if isinstance(r, dict):
-			out.append(r)  # já dict
+			plan = r.copy()
 		else:
-			out.append({
-				'id': r[0], 'code': r[1], 'name': r[2], 'price_cents': r[3], 'billing_period': r[4],
-				'limit_consultas_per_day': r[5], 'limit_resumos_per_day': r[6], 'limit_boletim_per_day': r[7], 'limit_favoritos_capacity': r[8]
-			})
+			# Fallback se não retornar dict
+			plan = {
+				'id': r[0], 'code': r[1], 'name': r[2], 'price_month_brl': r[3],
+				'limit_consultas_per_day': r[4], 'limit_resumos_per_day': r[5],
+				'limit_boletim_per_day': r[6], 'limit_favoritos_capacity': r[7],
+				'stripe_product_id': r[8], 'stripe_price_id': r[9],
+				'active': r[10], 'created_at': r[11]
+			}
+		
+		# Adicionar price_cents (calculado a partir de price_month_brl)
+		# Para compatibilidade com código existente do GSB
+		price_brl = plan.get('price_month_brl', 0)
+		if price_brl is not None:
+			try:
+				plan['price_cents'] = int(float(price_brl) * 100)
+			except (ValueError, TypeError):
+				plan['price_cents'] = 0
+		else:
+			plan['price_cents'] = 0
+		
+		out.append(plan)
+	
+	# Guardar em cache
+	_SYSTEM_PLANS_CACHE = out
+	dbg('BILLING', f"Planos carregados e cacheados: {len(out)} planos")
 	return out
+
+
+def _get_plan_by_code(plan_code: str) -> Dict[str, Any] | None:
+	"""
+	Busca plano no cache por código.
+	Retorna dict completo com todos os campos ou None.
+	"""
+	plans = get_system_plans()  # Usa cache
+	for plan in plans:
+		if plan.get('code') == plan_code:
+			return plan
+	return None
 
 
 def get_user_settings(user_id: str) -> Dict[str, Any]:
@@ -179,14 +228,13 @@ def create_checkout_session(user_id: str, plan_code: str, email: str, name: str 
 	if not all([user_id, plan_code, email]):
 		return {'error': 'Parâmetros obrigatórios faltando'}
 	
-	# Validar plano existe
-	sql = "SELECT id FROM public.system_plans WHERE code = %s AND active = true"
-	row = db_fetch_one(sql, (plan_code,), ctx="BILLING.create_checkout")
-	if not row:
+	# Buscar plano do cache (não faz SQL)
+	plan = _get_plan_by_code(plan_code)
+	if not plan:
 		return {'error': 'Plano inexistente ou inativo'}
 	
-	# Buscar Price ID do Stripe
-	price_id = PLAN_PRICE_MAP.get(plan_code)
+	# Verificar se tem Price ID configurado
+	price_id = plan.get('stripe_price_id')
 	if not price_id:
 		return {'error': f'Price ID não configurado para plano {plan_code}'}
 	
