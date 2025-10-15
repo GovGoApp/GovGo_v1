@@ -105,16 +105,7 @@ from gvg_schema import (
 from gvg_ai_utils import generate_contratacao_label
 from gvg_email import send_html_email, render_boletim_email_html, render_favorito_email_html, render_history_email_html
 from gvg_search_core import fetch_itens_contratacao
-from gvg_billing import (
-    get_system_plans, 
-    get_user_settings, 
-    upgrade_plan, 
-    schedule_downgrade, 
-    cancel_scheduled_downgrade, 
-    apply_scheduled_plan_changes,
-    create_checkout_session,  # Stripe integration (legacy)
-    create_checkout_embedded_session
-)
+from gvg_billing import get_system_plans, get_user_settings, upgrade_plan, schedule_downgrade, cancel_scheduled_downgrade, apply_scheduled_plan_changes
 from gvg_notifications import add_note, NOTIF_SUCCESS, NOTIF_ERROR, NOTIF_WARNING, NOTIF_INFO
 
 # Autenticação (Supabase)
@@ -249,170 +240,8 @@ COLOR_ENC_GT30 = "#0099FF"     # azul  ( > 30 dias)
 # =====================================================================================
 # App Dash (com Bootstrap para fontes e ícones FontAwesome)
 # =====================================================================================
-app = dash.Dash(
-    __name__,
-    external_stylesheets=[dbc.themes.BOOTSTRAP],
-    external_scripts=[
-        "https://js.stripe.com/v3",
-        "https://js.stripe.com/v3/embedded"
-    ]
-)
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 app.title = 'GovGo Search'
-
-# =====================================================================================
-# STRIPE WEBHOOK (Flask Route - embutido no Dash)
-# =====================================================================================
-# Carregar .env cedo para garantir STRIPE_PUBLISHABLE_KEY disponível
-try:
-    load_dotenv()
-except Exception:
-    pass
-@app.server.route('/billing/webhook', methods=['POST'])
-def stripe_webhook():
-    """
-    Endpoint POST para receber webhooks do Stripe.
-    O Dash usa Flask internamente (app.server é o Flask app).
-    """
-    from flask import request, jsonify
-    from gvg_billing import verify_webhook, handle_webhook_event
-    
-    payload = request.data
-    signature = request.headers.get('Stripe-Signature')
-    
-    if not signature:
-        dbg('WEBHOOK', 'Requisição sem Stripe-Signature header')
-        return jsonify({'error': 'Missing signature'}), 400
-    
-    # Validar webhook
-    event = verify_webhook(payload, signature)
-    
-    if 'error' in event:
-        dbg('WEBHOOK', f"Erro ao verificar webhook: {event['error']}")
-        return jsonify({'error': event['error']}), 400
-    
-    # Processar evento
-    result = handle_webhook_event(event)
-    
-    if result.get('status') == 'error':
-        dbg('WEBHOOK', f"Erro ao processar evento: {result.get('message')}")
-        return jsonify({'error': result.get('message')}), 500
-    
-    dbg('WEBHOOK', f"Evento processado: {event.get('event_type')} [{event.get('event_id')}]")
-    try:
-        dbg('BILL', f"[webhook.route] processed type={event.get('event_type')} id={event.get('event_id')}")
-    except Exception:
-        pass
-    return jsonify({'status': 'success'}), 200
-
-
-@app.server.route('/billing/health', methods=['GET'])
-def webhook_health():
-    """Health check para verificar se webhook está online."""
-    from flask import jsonify
-    return jsonify({'status': 'healthy', 'service': 'gvg_billing_webhook'}), 200
-
-# =============================
-# API auxiliar: status rápido de plano (usado pós-pagamento)
-# =============================
-@app.server.route('/api/plan_status', methods=['GET'])
-def api_plan_status():
-    from flask import request, jsonify
-    uid = (request.args.get('uid') or '').strip()
-    if not uid:
-        return jsonify({'error': 'uid requerido'}), 400
-    try:
-        from gvg_billing import get_user_settings, get_usage_snapshot  # type: ignore
-        settings = get_user_settings(uid)
-        usage = get_usage_snapshot(uid)
-        return jsonify({
-            'plan_code': settings.get('plan_code'),
-            'limits': settings.get('limits', {}),
-            'usage': usage.get('usage', {}),
-            'generated_at': usage.get('generated_at')
-        }), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-# =============================
-# Stripe Elements: criar assinatura e aplicar resultado
-# =============================
-@app.server.route('/billing/create_subscription', methods=['POST'])
-def api_create_subscription():
-    from flask import request, jsonify
-    try:
-        data = request.get_json(force=True) or {}
-        user_id = (data.get('user_id') or '').strip()
-        plan_code = (data.get('plan_code') or '').strip().upper()
-        email = (data.get('email') or '').strip()
-        name = data.get('name')
-        if not all([user_id, plan_code, email]):
-            return jsonify({'error': 'Parâmetros obrigatórios faltando'}), 400
-        from gvg_billing import create_subscription_elements  # type: ignore
-        result = create_subscription_elements(user_id, plan_code, email, name)
-        if result.get('error'):
-            return jsonify(result), 400
-        return jsonify(result), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.server.route('/billing/apply_subscription', methods=['POST'])
-def api_apply_subscription():
-    from flask import request, jsonify
-    try:
-        data = request.get_json(force=True) or {}
-        user_id = (data.get('user_id') or '').strip()
-        plan_code = (data.get('plan_code') or '').strip().upper()
-        customer_id = (data.get('customer_id') or '').strip()
-        subscription_id = (data.get('subscription_id') or '').strip()
-        payment_intent_id = (data.get('payment_intent_id') or '').strip() or None
-        amount_paid = data.get('amount_paid')
-        currency = (data.get('currency') or 'BRL').upper()
-        if not all([user_id, plan_code, customer_id, subscription_id]):
-            return jsonify({'error': 'Dados insuficientes'}), 400
-        from gvg_billing import apply_subscription_result  # type: ignore
-        result = apply_subscription_result(user_id, plan_code, customer_id, subscription_id, payment_intent_id, amount_paid, currency)
-        if result.get('error'):
-            return jsonify(result), 400
-        return jsonify({'status': 'success'}), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-# Embedded Checkout: endpoint para criar sessão embutida
-@app.server.route('/billing/create_checkout_embedded', methods=['POST'])
-def api_create_checkout_embedded():
-    from flask import request, jsonify
-    try:
-        data = request.get_json(force=True) or {}
-        user_id = (data.get('user_id') or '').strip()
-        plan_code = (data.get('plan_code') or '').strip().upper()
-        email = (data.get('email') or '').strip()
-        name = data.get('name')
-        try:
-            dbg('BILL', f"[/billing/create_checkout_embedded] in uid={user_id} plan={plan_code}")
-        except Exception:
-            pass
-        if not all([user_id, plan_code, email]):
-            return jsonify({'error': 'Parâmetros obrigatórios faltando'}), 400
-        from gvg_billing import create_checkout_embedded_session  # type: ignore
-        result = create_checkout_embedded_session(user_id, plan_code, email, name)
-        if result.get('error'):
-            try:
-                dbg('BILL', f"[/billing/create_checkout_embedded] error: {result.get('error')}")
-            except Exception:
-                pass
-            return jsonify(result), 400
-        try:
-            dbg('BILL', f"[/billing/create_checkout_embedded] ok session_id={result.get('checkout_session_id')} has_secret={bool(result.get('client_secret'))}")
-        except Exception:
-            pass
-        return jsonify(result), 200
-    except Exception as e:
-        try:
-            dbg('BILL', f"[/billing/create_checkout_embedded] exception: {e}")
-        except Exception:
-            pass
-        return jsonify({'error': str(e)}), 500
 
 # Parse argumentos --debug e --markdown (ex: python GvG_Search_Browser.py --debug --markdown)
 AUTH_INIT = {'status': 'unauth', 'user': None}
@@ -425,12 +254,6 @@ try:
     _known, _ = _parser.parse_known_args()
     if _known and getattr(_known, 'debug', False):
         set_sql_debug(True)
-        try:
-            os.environ['DEBUG'] = '1'
-            # Forçar modo dev para evitar conflito com GVG_BROWSER_DEV
-            os.environ['GVG_BROWSER_DEV'] = '1'
-        except Exception:
-            pass
     if _known and getattr(_known, 'markdown', False):
         try:
             set_markdown_enabled(True)
@@ -474,12 +297,6 @@ try:
             set_sql_debug(True)
         except Exception:
             pass
-        # Se DEBUG estiver ativo por env, default também ativar dev quando não especificado
-        if not _truthy(os.getenv('GVG_BROWSER_DEV')):
-            try:
-                os.environ['GVG_BROWSER_DEV'] = '1'
-            except Exception:
-                pass
 
     # PASS via ambiente => mesmo efeito de --pass (bypass de autenticação)
     if _truthy(os.getenv("PASS")):
@@ -1030,7 +847,6 @@ app.layout = html.Div([
     dcc.Store(id='store-auth-pending-email', data=''),
     dcc.Store(id='store-auth-remember', data={'email': '', 'password': '', 'remember': False}, storage_type='local'),
     dcc.Store(id='store-plan-action', data=None),
-    dcc.Store(id='store-stripe-checkout-url', data=None),
     dcc.Store(id='store-app-init', data={'initializing': False}),
     dcc.Store(id='store-results', data=[]),
     dcc.Store(id='store-results-sorted', data=[]),
@@ -1048,15 +864,6 @@ app.layout = html.Div([
     dcc.Store(id='store-favorites', data=[]),
     dcc.Store(id='store-favorites-open', data=True),
     dcc.Store(id='store-planos-data', data=None),
-    # Stripe Elements: publishable key e sessão do Elements
-    dcc.Store(id='store-stripe-pk', data=os.getenv('STRIPE_PUBLISHABLE_KEY')),
-    dcc.Store(id='store-elements-session', data=None),
-    # Evento de pagamento Stripe (session_id e timestamp)
-    dcc.Store(id='store-payment-event', data=None),
-    # Campo oculto para capturar session_id vindo do postMessage sem reload
-    dcc.Input(id='stripe-success-input', type='text', value='', style={'display': 'none'}),
-    # Campo oculto para resultado do Stripe Elements (JSON)
-    dcc.Input(id='stripe-elements-result', type='text', value='', style={'display': 'none'}),
     dcc.Store(id='processing-state', data=False),
     dcc.Store(id='store-config-open', data=False),
     dcc.Store(id='store-items', data={}),
@@ -1084,28 +891,6 @@ app.layout = html.Div([
 
     # Container de notificações Toast (fixo no canto/centro da tela)
     html.Div(id='toast-container', style=styles['toast_container']),
-    
-    # Listener para mensagens do popup Stripe (atualização dinâmica sem reload)
-    html.Script("""
-        window.addEventListener('message', function(event) {
-            if (event.data && event.data.type === 'stripe_success') {
-                try {
-                    const sid = event.data.session_id || '';
-                    console.log('[Stripe] Sucesso recebendo session_id:', sid);
-                    const hidden = document.getElementById('stripe-success-input');
-                    if (hidden) {
-                        hidden.value = sid;
-                        // Disparar evento input para Dash reagir
-                        const ev = new Event('input', { bubbles: true });
-                        hidden.dispatchEvent(ev);
-                    }
-                } catch(e) {
-                    console.error('Erro ao processar stripe_success:', e);
-                }
-            }
-        });
-    """),
-    # Scripts de assets são carregados automaticamente (assets/stripe-elements.js)
 
     header,
     # Modal Planos e Limites
@@ -1121,23 +906,6 @@ app.layout = html.Div([
         ),
         dbc.ModalBody(id='planos-modal-body', children=html.Div('Carregando...', style={'fontSize': '12px'}), style={'paddingTop': '18px', 'paddingBottom': '24px'})
     ], id='planos-modal', is_open=False, size='xl', backdrop=True, centered=True),
-    # Modal do Stripe Embedded Checkout (padrão Stripe, embutido)
-    dbc.Modal([
-        dbc.ModalHeader(
-            html.Div([
-                html.Span('Pagamento', style={'fontWeight': '600', 'fontSize': '16px'}),
-                html.Button('×', id='stripe-payment-close', title='Fechar',
-                            style={'background': 'transparent', 'border': 'none', 'fontSize': '20px', 'lineHeight': '1', 'cursor': 'pointer', 'color': '#555', 'padding': '0 8px'})
-            ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'width': '100%'})
-        , close_button=False),
-        dbc.ModalBody([
-            html.Div(id='stripe-embedded-checkout', style={'minHeight': '480px'}),
-            html.Div(id='stripe-payment-error', style={'color': '#b00020', 'fontSize': '12px', 'marginTop': '8px'}),
-            html.Div([
-                html.Button('Cancelar', id='stripe-payment-cancel', style=styles['auth_btn_secondary'])
-            ], style={'display': 'flex', 'justifyContent': 'flex-end', 'marginTop': '8px'})
-        ], style={'paddingTop': '12px', 'paddingBottom': '16px'})
-    ], id='stripe-payment-modal', is_open=False, size='md', backdrop=True, centered=True),
     auth_overlay,
     # Modal de envio de e-mail (boletim/favoritos) – compacto, sem título/X
     dbc.Modal([
@@ -1226,142 +994,6 @@ def _render_usage_bars(usage: Dict[str, Any]) -> html.Div:
     
     return html.Div(bars, style={'padding': '0 4px'})
 
-
-# =====================================================================================
-# Stripe: Clientside callback para abrir popup do checkout
-# =====================================================================================
-app.clientside_callback(
-    """
-    function(action_data) {
-    if (!action_data || !action_data.action) {
-            return window.dash_clientside.no_update;
-        }
-    // Legado (popup Checkout)
-    if (action_data.action === 'open_popup' && action_data.url) {
-            // Abrir popup centralizado
-            const width = 600;
-            const height = 800;
-            const left = (window.screen.width - width) / 2;
-            const top = (window.screen.height - height) / 2;
-            
-            const popup = window.open(
-                action_data.url,
-                'stripe-checkout',
-                `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
-            );
-            
-            // Opcional: detectar quando popup fecha e recarregar planos
-            if (popup) {
-                const checkClosed = setInterval(function() {
-                    if (popup.closed) {
-                        clearInterval(checkClosed);
-                        console.log('Popup fechado, recarregando dados...');
-                        // Você pode adicionar lógica aqui para atualizar planos
-                    }
-                }, 1000);
-            }
-        }
-        // Novo fluxo: abrir modal Elements
-    if (action_data.action === 'open_embedded' && action_data.session) {
-            try {
-                // Apenas sinaliza abertura; a montagem ocorrerá no callback que observa o modal aberto
-                const hidden = document.getElementById('stripe-payment-error');
-                if (hidden) hidden.textContent = '';
-            } catch(e) { console.error(e); }
-        }
-        return window.dash_clientside.no_update;
-    }
-    """,
-    Output('store-stripe-checkout-url', 'data'),
-    Input('store-plan-action', 'data'),
-)
-
-# Abre/fecha o modal de pagamento quando a store receber sessão (Embedded)
-@app.callback(
-    Output('stripe-payment-modal', 'is_open'),
-    Output('store-elements-session', 'data'),
-    Input('store-plan-action', 'data'),
-    Input('stripe-payment-close', 'n_clicks'),
-    Input('stripe-payment-cancel', 'n_clicks'),
-    State('stripe-payment-modal', 'is_open'),
-    prevent_initial_call=True
-)
-def open_close_elements_modal(action_data, close_clicks, cancel_clicks, is_open):
-    from dash.exceptions import PreventUpdate
-    ctx = callback_context
-    if not ctx.triggered:
-        raise PreventUpdate
-    trig = ctx.triggered[0]['prop_id'].split('.')[0]
-    if trig in ('stripe-payment-close', 'stripe-payment-cancel'):
-        try:
-            dbg('BILL', f"[modal] close clicked by={trig}")
-        except Exception:
-            pass
-        return False, None
-    # Ação de abrir
-    if action_data and action_data.get('action') == 'open_embedded':
-        session = action_data.get('session')
-        try:
-            has_secret = bool((session or {}).get('client_secret'))
-            dbg('BILL', f"[modal] open request has_client_secret={has_secret}")
-        except Exception:
-            pass
-        return True, session
-    raise PreventUpdate
-
-# Clientside para montar o Payment Element quando o modal abre
-app.clientside_callback(
-    """
-    async function(is_open, session, publishableKey) {
-        if (!is_open || !session) {
-            return window.dash_clientside.no_update;
-        }
-        if (!publishableKey) {
-            return 'Chave pública do Stripe ausente';
-        }
-        if (!window.Stripe || !window.Stripe.initEmbeddedCheckout) {
-            return 'Stripe.js indisponível';
-        }
-        try {
-            const stripe = window.Stripe(publishableKey);
-            const checkout = await stripe.initEmbeddedCheckout({ clientSecret: session.client_secret });
-            const mountNode = document.getElementById('stripe-embedded-checkout');
-            if (mountNode) {
-                mountNode.innerHTML = '';
-                checkout.mount('#stripe-embedded-checkout');
-            }
-            return '';
-        } catch(e) {
-            return (e && e.message) || 'Erro ao montar Embedded Checkout';
-        }
-    }
-    """,
-    Output('stripe-payment-error', 'children'),
-    Input('stripe-payment-modal', 'is_open'),
-    State('store-elements-session', 'data'),
-    State('store-stripe-pk', 'data')
-)
-
-# Removido callback legado de confirmação Elements (stripe-payment-confirm),
-# pois o fluxo atual usa apenas o Embedded Checkout. Isso evita Input inexistente no layout.
-
-@app.callback(
-    Output('stripe-payment-modal', 'is_open', allow_duplicate=True),
-    Output('store-payment-event', 'data', allow_duplicate=True),
-    Input('store-plan-action', 'data'),
-    State('store-auth', 'data'),
-    prevent_initial_call=True
-)
-def handle_embedded_result(action_data, auth_data):
-    from dash.exceptions import PreventUpdate
-    if not action_data or action_data.get('action') != 'open_embedded':
-        raise PreventUpdate
-    user = (auth_data or {}).get('user') or {}
-    uid = user.get('uid') or ''
-    if not uid:
-        raise PreventUpdate
-    # Embedded Checkout usa webhooks para aplicar o plano; aqui apenas fechamos quando a ação for processada por outro callback.
-    raise PreventUpdate
 
 # =====================================================================================
 # Autenticação: callbacks de overlay, views e ações
@@ -1520,7 +1152,6 @@ def load_planos_content(is_open, planos_data):
 
 
 @app.callback(
-    Output('url', 'href', allow_duplicate=True),
     Output('header-plan-badge', 'children', allow_duplicate=True),
     Output('header-plan-badge', 'style', allow_duplicate=True),
     Output('planos-modal-body', 'children', allow_duplicate=True),
@@ -1546,58 +1177,16 @@ def handle_plan_action(n_clicks_list, auth_data, current_children, planos_data):
         comp = json.loads(trig)
     except Exception:
         raise PreventUpdate
-    
-    code = comp.get('code')
-    action = comp.get('action')
+    code = comp.get('code'); action = comp.get('action')
     user = (auth_data or {}).get('user') or {}
     uid = user.get('uid') or ''
-    email = user.get('email') or ''
-    name = user.get('name') or user.get('email', '').split('@')[0]
-    
     if not uid or not code or not action:
         raise PreventUpdate
-    try:
-        dbg('BILL', f"[handle_plan_action] click uid={uid} code={code} action={action}")
-    except Exception:
-        pass
-    
-    # Se for UPGRADE para plano pago (PLUS, PRO, CORP) → abrir Stripe Embedded Checkout no modal
-    if action == 'upgrade' and code in ('PLUS', 'PRO', 'CORP'):
-        try:
-            from gvg_billing import create_checkout_embedded_session  # type: ignore
-            try:
-                dbg('BILL', f"[handle_plan_action] creating embedded session uid={uid} plan={code}")
-            except Exception:
-                pass
-            res = create_checkout_embedded_session(uid, code, email, name)
-            if res.get('error') or not res.get('client_secret'):
-                try:
-                    dbg('BILL', f"[handle_plan_action] embedded error: {res.get('error')}")
-                except Exception:
-                    pass
-                raise PreventUpdate
-            emb = {
-                'client_secret': res.get('client_secret'),
-                'checkout_session_id': res.get('checkout_session_id'),
-                'plan_code': code
-            }
-            try:
-                dbg('BILL', f"[handle_plan_action] store-plan-action <- open_embedded sid={emb['checkout_session_id']} has_secret={bool(emb['client_secret'])}")
-            except Exception:
-                pass
-            return dash.no_update, dash.no_update, dash.no_update, dash.no_update, {'action': 'open_embedded', 'session': emb}, {**(planos_data or {}), 'pending_embedded': emb}
-        except Exception as e:
-            try:
-                dbg('BILL', f"[handle_plan_action] exception creating embedded: {e}")
-            except Exception:
-                pass
-            raise PreventUpdate
-    
-    # Se for downgrade ou upgrade para FREE → aplicar direto
     result = None
-    if action == 'downgrade':
+    if action == 'upgrade':
         result = upgrade_plan(uid, code)
-    elif action == 'upgrade' and code == 'FREE':
+    elif action == 'downgrade':
+        # Agendar downgrade (não aplica imediato se for realmente para plano menor); aqui aplicamos imediatamente para simplificação
         result = upgrade_plan(uid, code)
     else:
         raise PreventUpdate
@@ -1707,159 +1296,7 @@ def handle_plan_action(n_clicks_list, auth_data, current_children, planos_data):
     if uid and usage:
         updated_planos_data['usage'] = usage
     
-    # Retornar com dash.no_update para url.href (não redirecionar)
-    return dash.no_update, new_code, new_badge_style_with_margin, new_modal_content, {'action': action, 'code': code, 'status': 'ok', 'plan': new_code}, updated_planos_data
-
-# =============================
-# Pós-pagamento Stripe: hidratar stores sem reload
-# =============================
-@app.callback(
-    Output('store-payment-event', 'data'),
-    Input('stripe-success-input', 'value'),
-    State('store-auth', 'data'),
-    prevent_initial_call=True
-)
-def capture_payment_success(session_id, auth_data):
-    if not session_id:
-        raise PreventUpdate
-    user = (auth_data or {}).get('user') or {}
-    uid = user.get('uid') or ''
-    if not uid:
-        raise PreventUpdate
-    try:
-        dbg('BILL', f"[postpay] capture success sid={session_id} uid={uid}")
-    except Exception:
-        pass
-    # Hidratar settings direto (evita request externo por enquanto)
-    try:
-        from gvg_billing import get_user_settings, get_usage_snapshot  # type: ignore
-        settings = get_user_settings(uid)
-        usage = get_usage_snapshot(uid)
-        return {
-            'session_id': session_id,
-            'uid': uid,
-            'plan_code': settings.get('plan_code'),
-            'limits': settings.get('limits'),
-            'usage': usage.get('usage'),
-            'ts': _dt.datetime.utcnow().isoformat()
-        }
-    except Exception as e:
-        try:
-            dbg('BILL', f"[postpay] erro hidratar plano: {e}")
-        except Exception:
-            pass
-        raise PreventUpdate
-
-
-@app.callback(
-    Output('header-plan-badge', 'children', allow_duplicate=True),
-    Output('header-plan-badge', 'style', allow_duplicate=True),
-    Output('store-planos-data', 'data', allow_duplicate=True),
-    Output('planos-modal-body', 'children', allow_duplicate=True),
-    Input('store-payment-event', 'data'),
-    State('store-planos-data', 'data'),
-    State('planos-modal', 'is_open'),
-    prevent_initial_call=True
-)
-def refresh_plan_after_payment(event_data, planos_data, modal_open):
-    if not event_data:
-        raise PreventUpdate
-    try:
-        dbg('BILL', f"[postpay] refresh badge plan={event_data.get('plan_code')} modal_open={modal_open}")
-    except Exception:
-        pass
-    plan_code = (event_data.get('plan_code') or 'FREE').upper()
-    # Atualizar badge
-    badge_style = styles.get(f'plan_badge_{plan_code.lower()}', styles.get('plan_badge_free'))
-    badge_style_with_margin = {**badge_style, 'marginRight': '10px'}
-    # Atualizar store-planos-data
-    updated = dict(planos_data or {})
-    updated['current_code'] = plan_code
-    if event_data.get('usage'):
-        updated['usage'] = event_data.get('usage')
-    # Se modal não está aberto, não re-renderizar body
-    if not modal_open:
-        return plan_code, badge_style_with_margin, updated, dash.no_update
-    # Re-renderizar cards (reutilizar lógica simplificada)
-    try:
-        from gvg_billing import get_system_plans  # type: ignore
-        plans = get_system_plans()
-    except Exception:
-        plans = []
-    fallback = [
-        {'code': 'FREE', 'name': 'Free', 'price_cents': 0, 'limit_consultas_per_day': 5, 'limit_resumos_per_day': 1, 'limit_boletim_per_day': 1, 'limit_favoritos_capacity': 10},
-        {'code': 'PLUS', 'name': 'Plus', 'price_cents': 4900, 'limit_consultas_per_day': 30, 'limit_resumos_per_day': 40, 'limit_boletim_per_day': 4, 'limit_favoritos_capacity': 200},
-        {'code': 'PRO', 'name': 'Professional', 'price_cents': 19900, 'limit_consultas_per_day': 100, 'limit_resumos_per_day': 400, 'limit_boletim_per_day': 10, 'limit_favoritos_capacity': 2000},
-        {'code': 'CORP', 'name': 'Corporation', 'price_cents': 99900, 'limit_consultas_per_day': 1000, 'limit_resumos_per_day': 4000, 'limit_boletim_per_day': 100, 'limit_favoritos_capacity': 20000},
-    ]
-    if not plans:
-        plans = fallback
-    def fmt_num(v):
-        try:
-            iv = int(v); return f"{iv:,}".replace(',', '.')
-        except Exception:
-            try:
-                fv = float(v); return ("{:.0f}".format(fv)).replace(',', '.')
-            except Exception:
-                return str(v)
-    icon_map = [
-        ('fa-search', 'Consultas', 'limit_consultas_per_day', True),
-        ('fa-file-alt', 'Resumos', 'limit_resumos_per_day', True),
-        ('fa-calendar', 'Boletins', 'limit_boletim_per_day', True),
-        ('fa-bookmark', 'Favoritos', 'limit_favoritos_capacity', False),
-    ]
-    cards = []
-    for p in plans:
-        code = (p.get('code') or '').upper()
-        price = (p.get('price_cents') or 0)/100
-        is_current = code == plan_code
-        card_style = styles['planos_card_current'] if is_current else styles['planos_card']
-        limit_rows = []
-        for icon, label, field, per_day in icon_map:
-            raw = p.get(field, '-')
-            display = '-' if raw in (None, '', '-') else fmt_num(raw)
-            txt = f"{label}: {display}{' por dia' if per_day else ''}"
-            limit_rows.append(html.Div([
-                html.I(className=f"fas {icon}"),
-                html.Span(txt, style=styles['planos_limit_item'])
-            ], style=styles['planos_limit_row']))
-        limits_nodes = html.Div(limit_rows, style=styles['planos_limits_list'])
-        price_label = html.Div(
-            f"R$ {price:,.2f}".replace(',', 'X').replace('.', ',').replace('X','.'),
-            style=styles['planos_price']
-        )
-        if is_current:
-            btn = html.Button('Seu plano', disabled=True, title='Plano atual', style=styles['planos_btn_current'])
-        else:
-            try:
-                current_plan = [cp for cp in plans if (cp.get('code') or '').upper()==plan_code][0]
-                current_price = (current_plan.get('price_cents') or 0)
-            except Exception:
-                current_price = 0
-            action_type = 'upgrade' if ((p.get('price_cents') or 0) > current_price) else 'downgrade'
-            btn = html.Button('Upgrade' if action_type=='upgrade' else 'Downgrade',
-                              id={'type': 'plan-action-btn', 'code': code, 'action': action_type},
-                              disabled=False,
-                              title=('Mudar plano'),
-                              style=styles['planos_btn_upgrade'])
-        cards.append(html.Div([
-            html.Div(code, style=styles.get(f'plan_badge_{code.lower()}', styles['plan_badge_free'])),
-            html.Div(p.get('name') or code, style={'fontWeight': '600', 'fontSize': '14px'}),
-            limits_nodes,
-            price_label,
-            btn
-        ], style=card_style))
-    usage_section = None
-    if event_data.get('usage'):
-        usage_section = html.Div([
-            html.H6('Seu Uso Hoje:', style={'margin': '0 0 12px 0', 'fontSize': '13px', 'fontWeight': '600', 'color': '#424242'}),
-            _render_usage_bars(event_data.get('usage'))
-        ], style={'marginBottom': '24px', 'padding': '16px', 'backgroundColor': '#f5f5f5', 'borderRadius': '8px'})
-    modal_content = html.Div([
-        usage_section,
-        html.Div(cards, className='planos-cards-wrapper', style={'display': 'flex', 'flexWrap': 'nowrap', 'gap': '16px'})
-    ]) if usage_section else html.Div(cards, className='planos-cards-wrapper', style={'display': 'flex', 'flexWrap': 'nowrap', 'gap': '16px'})
-    return plan_code, badge_style_with_margin, updated, modal_content
+    return new_code, new_badge_style_with_margin, new_modal_content, {'action': action, 'code': code, 'status': 'ok', 'plan': new_code}, updated_planos_data
 
 
 # =========================
@@ -3020,66 +2457,6 @@ def do_resend_otp(n_clicks, email):
         return f'Enviamos um novo código para {email}.'
     # Mensagem amigável sempre; detalhes no console via debug
     return 'Não foi possível reenviar o código. Tente novamente em instantes.'
-
-
-# =============================
-# Stripe Checkout - Páginas de Retorno
-# =============================
-@app.callback(
-    Output('planos-modal', 'is_open', allow_duplicate=True),
-    Output('store-auth-error', 'data', allow_duplicate=True),
-    Input('url', 'pathname'),
-    Input('url', 'search'),
-    State('store-auth', 'data'),
-    prevent_initial_call=True
-)
-def handle_stripe_return(pathname, search, auth_data):
-    """
-    Detecta retorno do Stripe (/checkout/success ou /checkout/cancel)
-    e exibe mensagem apropriada.
-    """
-    if not pathname:
-        raise PreventUpdate
-    
-    # Sucesso: pagamento confirmado
-    if pathname == '/checkout/success':
-        session_id = None
-        try:
-            params = dict([part.split('=', 1) for part in (search or '').lstrip('?').split('&') if '=' in part])
-            session_id = params.get('session_id')
-        except Exception:
-            pass
-        
-        dbg('BILLING', f"Retorno Stripe SUCCESS: session_id={session_id}")
-        
-        # Se está em popup (window.opener existe), fechar e recarregar página pai
-        # Se não está em popup, mostrar mensagem
-        return False, html.Div([
-            html.H3("✅ Pagamento Confirmado!", style={'color': '#28a745', 'textAlign': 'center'}),
-            html.P("Seu plano está sendo ativado...", style={'textAlign': 'center'}),
-            html.Script("""
-                // Se está em popup, fechar e recarregar pai
-                if (window.opener) {
-                    window.opener.postMessage({type: 'stripe_success', session_id: '%s'}, '*');
-                    window.close();
-                } else {
-                    // Se não está em popup, redirecionar para home após 2s
-                    setTimeout(function() {
-                        window.location.href = '/';
-                    }, 2000);
-                }
-            """ % (session_id or ''))
-        ])
-    
-    # Cancelamento: usuário desistiu
-    elif pathname == '/checkout/cancel':
-        dbg('BILLING', "Retorno Stripe CANCEL: usuário cancelou pagamento")
-        
-        # Reabrir modal de planos com mensagem
-        return True, "⚠️ Pagamento cancelado. Você pode tentar novamente quando quiser."
-    
-    # Não é página de retorno do Stripe
-    raise PreventUpdate
 
 
 # Detecta link de recuperação na URL e aciona a view de reset
@@ -8050,7 +7427,7 @@ if __name__ == '__main__':
         # Produção: sem dev tools, exposto em todas as interfaces
         _port_prod = int(_env.get('PORT', _env.get('RENDER_PORT', '8060')))
         app.run_server(
-            debug=True,
+            debug=False,
             host='0.0.0.0',
             port=_port_prod,
             dev_tools_hot_reload=False,
