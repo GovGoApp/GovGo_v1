@@ -8,9 +8,7 @@ Uso:
 Sinalizadores de ambiente (booleanos: 1/true/yes/on):
     DEBUG              -> master: quando false, desliga TODOS os logs; quando true, respeita apenas as flags por área
     GVG_<AREA>_DEBUG   -> por área (ex.: GVG_AUTH_DEBUG, GVG_SEARCH_DEBUG, GVG_SQL_DEBUG, ...)
-Aliases legados suportados:
-    GVG_BROWSER_DEBUG  -> area=BROWSER
-    GVG_SQL_DEBUG      -> area=SQL
+
 """
 from __future__ import annotations
 
@@ -54,6 +52,8 @@ _AREA_STYLE_MAP: Dict[str, Dict[str, Any]] = {
     'USAGE':     {'style': 'cyan1',             'on': 1},
     'LIMIT':     {'style': 'red3',              'on': 1},
     'ERROR':     {'style': 'bold red',          'on': 1},
+    'BILL':      {'style': 'green_yellow',      'on': 1},
+    'WEBHOOK':   {'style': 'light_sky_blue1',   'on': 1},
 }
 
 _TRUE_SET = {'1', 'true', 'yes', 'on', 'y', 't'}
