@@ -54,6 +54,9 @@ _AREA_STYLE_MAP: Dict[str, Dict[str, Any]] = {
     'USAGE':     {'style': 'cyan1',             'on': 1},
     'LIMIT':     {'style': 'red3',              'on': 1},
     'ERROR':     {'style': 'bold red',          'on': 1},
+    # Billing & Webhook categories (Stripe)
+    'BILL':      {'style': 'green_yellow',      'on': 1},
+    'WEBHOOK':   {'style': 'light_sky_blue1',   'on': 1},
 }
 
 _TRUE_SET = {'1', 'true', 'yes', 'on', 'y', 't'}
