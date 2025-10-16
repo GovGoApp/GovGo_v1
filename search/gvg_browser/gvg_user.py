@@ -166,7 +166,9 @@ def get_user_initials(name: Optional[str]) -> str:
 def fetch_prompt_texts(limit: int = 50) -> List[str]:
     """Retorna textos dos prompts (mais recentes) já filtrando active = true (coluna garantida)."""
     user = get_current_user()
-    uid = user['uid']
+    uid = user.get('uid') if isinstance(user, dict) else None
+    if not uid:
+        return []
     try:
         # cache por usuário
         ck = f"USER.fetch_prompt_texts:{uid}:{limit}"
@@ -344,7 +346,9 @@ def get_prompt_preproc_output(text: str, filters: Optional[Dict[str, Any]] = Non
 def fetch_prompts_with_config(limit: int = 50) -> List[Dict[str, Any]]:
     """Retorna prompts (texto, título, criado_em) com as configurações salvas."""
     user = get_current_user()
-    uid = user['uid']
+    uid = user.get('uid') if isinstance(user, dict) else None
+    if not uid:
+        return []
     try:
         # cache de schema
         cols_existing = set(_schema_columns_cached('user_prompts'))
@@ -528,7 +532,9 @@ def fetch_bookmarks(limit: int = 100) -> List[Dict[str, Any]]:
       unidade_orgao_municipio_nome, unidade_orgao_uf_sigla,
       data_encerramento_proposta, rotulo (opcional)
     """
-    user = get_current_user(); uid = user['uid']
+    user = get_current_user(); uid = user.get('uid') if isinstance(user, dict) else None
+    if not uid:
+        return []
     try:
         # schema (uma chamada)
         bm_cols = set(_schema_columns_cached('user_bookmarks'))

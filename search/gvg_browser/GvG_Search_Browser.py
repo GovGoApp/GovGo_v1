@@ -456,30 +456,6 @@ def api_create_checkout_embedded():
             pass
         return jsonify({'error': str(e)}), 500
 
-# Fallback: confirmar sessão Embedded sem webhook (consulta a Stripe)
-@app.server.route('/billing/confirm_embedded', methods=['POST'])
-def api_confirm_embedded():
-    from flask import request, jsonify
-    try:
-        data = request.get_json(force=True) or {}
-        user_id = (data.get('user_id') or '').strip()
-        plan_code = (data.get('plan_code') or '').strip().upper()
-        session_id = (data.get('checkout_session_id') or '').strip()
-        if not all([user_id, plan_code, session_id]):
-            return jsonify({'error': 'Parâmetros inválidos'}), 400
-        from gvg_billing import confirm_embedded_checkout_session  # type: ignore
-        res = confirm_embedded_checkout_session(user_id, plan_code, session_id)
-        try:
-            dbg('BILL', f"[/billing/confirm_embedded] res={res}")
-        except Exception:
-            pass
-        status = res.get('status')
-        if res.get('error'):
-            return jsonify(res), 400
-        return jsonify({'status': status or 'ok'}), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 # Parse argumentos --debug e --markdown (ex: python GvG_Search_Browser.py --debug --markdown)
 AUTH_INIT = {'status': 'unauth', 'user': None}
 try:
@@ -1359,7 +1335,6 @@ app.clientside_callback(
     prevent_initial_call=True
 )
 def open_close_elements_modal(action_data, close_clicks, is_open):
-    from dash.exceptions import PreventUpdate
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -1445,7 +1420,6 @@ app.clientside_callback(
     prevent_initial_call=True
 )
 def handle_embedded_result(action_data, auth_data):
-    from dash.exceptions import PreventUpdate
     if not action_data or action_data.get('action') != 'open_embedded':
         raise PreventUpdate
     user = (auth_data or {}).get('user') or {}
@@ -1873,90 +1847,7 @@ def refresh_plan_after_payment(event_data, planos_data, modal_open):
     if not modal_open:
         return plan_code, badge_style_with_margin, updated, dash.no_update
 
-    # Habilitar/Desabilitar timers com base no modal e sessão
-    app.clientside_callback(
-        """
-        function(is_open, session) {
-            // habilita polling quando modal abre com sessão válida; desabilita ao fechar
-            const enable = !!(is_open && session && session.client_secret);
-            return [enable ? false : true, enable ? 0 : 0, true, 0];
-        }
-        """,
-        Output('payment-check-interval', 'disabled'),
-        Output('payment-check-interval', 'n_intervals'),
-        Output('payment-autoclose-interval', 'disabled'),
-        Output('payment-autoclose-interval', 'n_intervals'),
-        Input('stripe-payment-modal', 'is_open'),
-        State('store-elements-session', 'data'),
-    )
-
-    # Poll leve do plan_status e emitir evento de pagamento quando houver mudança de plano
-    app.clientside_callback(
-        """
-        async function(n, auth, planos) {
-            if (typeof n !== 'number' || n < 0) return window.dash_clientside.no_update;
-            const user = (auth && auth.user) || {};
-            const uid = user.uid || '';
-            if (!uid) return window.dash_clientside.no_update;
-            const current = (planos && planos.current_code) ? String(planos.current_code).toUpperCase() : 'FREE';
-            // Tentar confirmar sessão Embedded sem webhook (fallback)
-            try {
-                const sess = (planos && planos.pending_embedded) || null;
-                if (sess && sess.checkout_session_id && sess.plan_code) {
-                    await fetch('/billing/confirm_embedded', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ user_id: uid, plan_code: String(sess.plan_code).toUpperCase(), checkout_session_id: sess.checkout_session_id })
-                    });
-                }
-            } catch(_) {}
-            try {
-                const resp = await fetch(`/api/plan_status?uid=${encodeURIComponent(uid)}`);
-                if (!resp.ok) return window.dash_clientside.no_update;
-                const data = await resp.json();
-                const plan_code = (data && data.plan_code) ? String(data.plan_code).toUpperCase() : null;
-                if (!plan_code || plan_code === current) {
-                    return window.dash_clientside.no_update;
-                }
-                const payload = {
-                    uid: uid,
-                    plan_code: plan_code,
-                    limits: data.limits || {},
-                    usage: (data.usage || {}),
-                    ts: new Date().toISOString()
-                };
-                return [payload, true, 0, false, 0];
-            } catch(_) { return window.dash_clientside.no_update; }
-        }
-        """,
-        Output('store-payment-event', 'data'),
-        Output('payment-check-interval', 'disabled'),
-        Output('payment-check-interval', 'n_intervals'),
-        Output('payment-autoclose-interval', 'disabled'),
-        Output('payment-autoclose-interval', 'n_intervals'),
-        Input('payment-check-interval', 'n_intervals'),
-        State('store-auth', 'data'),
-        State('store-planos-data', 'data'),
-    )
-
-    # Fechamento automático do modal após 5s (5 ticks)
-    app.clientside_callback(
-        """
-        function(n, is_open) {
-            if (is_open !== true) return window.dash_clientside.no_update;
-            if (typeof n !== 'number') return window.dash_clientside.no_update;
-            if (n >= 5) {
-                return [false, true, 0];
-            }
-            return window.dash_clientside.no_update;
-        }
-        """,
-        Output('stripe-payment-modal', 'is_open'),
-        Output('payment-autoclose-interval', 'disabled'),
-        Output('payment-autoclose-interval', 'n_intervals'),
-        Input('payment-autoclose-interval', 'n_intervals'),
-        State('stripe-payment-modal', 'is_open'),
-    )
+    # (removidos) callbacks clientside aninhados para timers/poll/autoclose
     # Re-renderizar cards (reutilizar lógica simplificada)
     try:
         from gvg_billing import get_system_plans  # type: ignore
@@ -2886,11 +2777,14 @@ def perform_initial_load(init_state):
         raise PreventUpdate
     # Carregar dados do usuário atual
     try:
-        hist = load_history(max_items=50) or []
+        # Evita consultas com user_id vazio
+        u = get_current_user() if 'get_current_user' in globals() else {'uid': ''}
+        uid = (u or {}).get('uid') or ''
+        hist = load_history(max_items=50) or [] if uid else []
     except Exception:
         hist = []
     try:
-        favs = fetch_bookmarks(limit=100) if 'fetch_bookmarks' in globals() else []  # type: ignore
+        favs = fetch_bookmarks(limit=100) if uid and 'fetch_bookmarks' in globals() else []  # type: ignore
     except Exception:
         favs = []
     # Concluir inicialização
@@ -3969,6 +3863,10 @@ def _sanitize_limit(value, default=DEFAULT_MAX_RESULTS, min_v=5, max_v=1000) -> 
 # ==========================
 def load_history(max_items: int = 20) -> list:
     try:
+        u = get_current_user() if 'get_current_user' in globals() else {'uid': ''}
+        uid = (u or {}).get('uid') or ''
+        if not uid:
+            return []
         return fetch_prompt_texts(limit=max_items)
     except Exception:
         return []
@@ -4097,7 +3995,6 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
         try:
             ensure_capacity(uid, 'consultas')
         except LimitExceeded:
-            from dash.exceptions import PreventUpdate
             dbg('LIMIT', 'bloqueando busca: limite consultas atingido')
             # Notificação de limite atingido (CRÍTICO)
             updated_notifs = list(notifications or [])
@@ -6143,12 +6040,15 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo, noti
     # Usar funções do pipeline de documentos do módulo gvg_documents (já importadas no topo)
     # DOCUMENTS_AVAILABLE é definido no início deste arquivo, com base nas imports de summarize_document/process_pncp_document
     children_out, style_out, btn_styles = [], [], []
+    # Inicializar lista de notificações atualizada
+    updated_notifs = list(notifications or [])
     # Debug início do callback
 
     updated_cache = dict(cache_resumo or {})
     # Quando não há resultados, não há componentes correspondentes; retornar listas vazias é seguro
     if not results:
-        return children_out, style_out, btn_styles, updated_cache
+        # Retorno deve respeitar 5 outputs
+        return children_out, style_out, btn_styles, updated_cache, updated_notifs
 
     # Helper to pick main doc
     def pick_main_doc(docs: list) -> dict | None:
@@ -6326,7 +6226,6 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo, noti
                         )
                     ])
                     # Notificação de limite atingido (CRÍTICO)
-                    updated_notifs = list(notifications or [])
                     try:
                         notif = add_note(NOTIF_ERROR, "Limite diário de resumos atingido. Faça upgrade do plano.")
                         updated_notifs.append(notif)

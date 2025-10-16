@@ -84,7 +84,7 @@ def _load_plans_fallback() -> Dict[str, Dict[str, Any]]:
 		_PLANS_FALLBACK_CACHE = plans
 		return plans
 	except Exception as e:
-		dbg('BILLING', f"Erro ao carregar plans fallback CSV: {e}")
+		dbg('BILL', f"Erro ao carregar plans fallback CSV: {e}")
 		# Fallback hardcoded se CSV falhar
 		return {
 			'FREE': {'limit_consultas_per_day': 5, 'limit_resumos_per_day': 1, 'limit_boletim_per_day': 1, 'limit_favoritos_capacity': 10},
@@ -115,7 +115,7 @@ class MockBillingGateway:
 
 	def create_session(self, plan_code: str, user_id: str) -> Dict[str, Any]:
 		session_id = str(uuid.uuid4())
-		dbg('BILLING', f"mock_session plan={plan_code} uid={user_id} sid={session_id}")
+		dbg('BILL', f"mock_session plan={plan_code} uid={user_id} sid={session_id}")
 		return {
 			'session_id': session_id,
 			'plan_code': plan_code,
@@ -126,7 +126,7 @@ class MockBillingGateway:
 
 	def finalize(self, session_id: str) -> bool:
 		# Mock sempre sucesso
-		dbg('BILLING', f"mock_finalize sid={session_id}")
+		dbg('BILL', f"mock_finalize sid={session_id}")
 		return True
 
 
@@ -179,9 +179,9 @@ def get_user_settings(user_id: str) -> Dict[str, Any]:
 	 WHERE us.user_id = %s
 	"""
 	row = db_fetch_one(sql, (user_id,), as_dict=True, ctx="BILLING.get_user_settings")
-	dbg('BILLING', f"get_user_settings: user_id={user_id} row={row}")
+	dbg('BILL', f"get_user_settings: user_id={user_id} row={row}")
 	if not row:
-		dbg('BILLING', f"get_user_settings: row vazio, retornando FREE fallback")
+		dbg('BILL', f"get_user_settings: row vazio, retornando FREE fallback")
 		return _fallback_free()
 	result = {
 		'user_id': user_id,
@@ -194,7 +194,7 @@ def get_user_settings(user_id: str) -> Dict[str, Any]:
 			'favoritos': row['limit_favoritos_capacity'],
 		}
 	}
-	dbg('BILLING', f"get_user_settings: retornando result={result}")
+	dbg('BILL', f"get_user_settings: retornando result={result}")
 	return result
 
 
@@ -249,7 +249,7 @@ def finalize_upgrade_mock(user_id: str, plan_code: str) -> Dict[str, Any]:
 	if affected == 0:
 		# tentativa de insert se não existir
 		db_execute("INSERT INTO public.user_settings (user_id, plan_id) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET plan_id = EXCLUDED.plan_id", (user_id, plan_id), ctx="BILLING.ins_plan")
-	dbg('BILLING', f"upgrade_mock uid={user_id} plan={plan_code}")
+	dbg('BILL', f"upgrade_mock uid={user_id} plan={plan_code}")
 	return get_user_settings(user_id)
 
 
@@ -311,37 +311,13 @@ def _plan_code_to_id(plan_code: str) -> Optional[int]:
 		return None
 	return row[0] if not isinstance(row, dict) else row.get('id')
 
-def upgrade_plan(user_id: str, target_plan_code: str,
-				 gateway_customer_id: Optional[str] = None,
-				 gateway_subscription_id: Optional[str] = None,
-				 plan_started_at: Optional[_dt.datetime] = None) -> Dict[str, Any]:
-	"""Atualiza user_settings para o plano alvo e persiste IDs do gateway (se fornecidos).
-
-	- Seta plan_id e plan_status='active'.
-	- Define plan_started_at = now() se ainda nulo (ou usa parâmetro, se dado).
-	- Persiste gateway_customer_id/subscription_id via COALESCE (só preenche se vier valor novo).
-	- Limpa next_plan_id.
-	"""
+def upgrade_plan(user_id: str, target_plan_code: str) -> Dict[str, Any]:
 	pid = _plan_code_to_id(target_plan_code)
 	if not user_id or pid is None:
 		return {'error': 'Plano inválido'}
-	try:
-		dbg('BILL', f"[upgrade_plan] uid={user_id} plan={target_plan_code} cust={gateway_customer_id} sub={gateway_subscription_id}")
-	except Exception:
-		pass
-	# UPSERT único para robustez
-	sql = (
-		"INSERT INTO public.user_settings (user_id, plan_id, plan_status, plan_started_at, gateway_customer_id, gateway_subscription_id) "
-		"VALUES (%s, %s, 'active', COALESCE(%s, now()), %s, %s) "
-		"ON CONFLICT (user_id) DO UPDATE SET "
-		"  plan_id = EXCLUDED.plan_id, "
-		"  plan_status = 'active', "
-		"  next_plan_id = NULL, "
-		"  plan_started_at = COALESCE(public.user_settings.plan_started_at, EXCLUDED.plan_started_at), "
-		"  gateway_customer_id = COALESCE(EXCLUDED.gateway_customer_id, public.user_settings.gateway_customer_id), "
-		"  gateway_subscription_id = COALESCE(EXCLUDED.gateway_subscription_id, public.user_settings.gateway_subscription_id)"
-	)
-	db_execute(sql, (user_id, pid, plan_started_at, gateway_customer_id, gateway_subscription_id), ctx="BILLING.upgrade_plan_upsert")
+	# Aplica imediato (sem cobrança) e limpa next_plan_id
+	# Removido updated_at (coluna não existe no schema atual user_settings)
+	db_execute("UPDATE public.user_settings SET plan_id = %s, next_plan_id = NULL, plan_status='active', plan_started_at = COALESCE(plan_started_at, now()) WHERE user_id = %s", (pid, user_id), ctx="BILLING.upgrade_plan")
 	return get_user_settings(user_id)
 
 def schedule_downgrade(user_id: str, target_plan_code: str) -> Dict[str, Any]:
@@ -623,87 +599,6 @@ def handle_webhook_event(event: Dict[str, Any]) -> Dict[str, Any]:
 		return {'status': 'success'}
 
 
-	# =============================
-	# Fallback: confirmar Embedded sem Webhook
-	# =============================
-	def confirm_embedded_checkout_session(user_id: str, plan_code: str, checkout_session_id: str) -> Dict[str, Any]:
-		"""Confirma uma sessão Embedded consultando a API da Stripe (sem depender de webhook).
-
-		Se a sessão estiver concluída, aplica upgrade_plan e registra em user_payment.
-		Idempotente simples: evita duplicar histórico com base em subscription_id.
-		"""
-		try:
-			dbg('BILL', f"[confirm_embedded] uid={user_id} plan={plan_code} sid={checkout_session_id}")
-		except Exception:
-			pass
-		if not STRIPE_AVAILABLE:
-			return {'error': 'Stripe não disponível neste ambiente'}
-		if not all([user_id, plan_code, checkout_session_id]):
-			return {'error': 'Parâmetros inválidos'}
-		try:
-			session = stripe.checkout.Session.retrieve(checkout_session_id)
-			status = (getattr(session, 'status', None) or session.get('status') if isinstance(session, dict) else None)
-			payment_status = (getattr(session, 'payment_status', None) or session.get('payment_status') if isinstance(session, dict) else None)
-			customer_id = (getattr(session, 'customer', None) or session.get('customer') if isinstance(session, dict) else None)
-			subscription_id = (getattr(session, 'subscription', None) or session.get('subscription') if isinstance(session, dict) else None)
-			amount_total = (getattr(session, 'amount_total', None) or session.get('amount_total') if isinstance(session, dict) else 0)
-			currency = (getattr(session, 'currency', None) or session.get('currency') if isinstance(session, dict) else 'brl')
-			payment_intent = (getattr(session, 'payment_intent', None) or session.get('payment_intent') if isinstance(session, dict) else None)
-			try:
-				dbg('BILL', f"[confirm_embedded] status={status} pay_status={payment_status} cust={customer_id} sub={subscription_id}")
-			except Exception:
-				pass
-			if not (status in ('complete', 'completed') or str(payment_status).lower() in ('paid','no_payment_required')):
-				return {'status': 'pending'}
-			if not all([customer_id, subscription_id]):
-				return {'status': 'pending'}
-			# Idempotência simples: já temos pagamento para esta assinatura?
-			exists = db_fetch_one(
-				"SELECT 1 FROM public.user_payment WHERE user_id = %s AND stripe_subscription_id = %s AND status = 'succeeded' LIMIT 1",
-				(user_id, subscription_id), ctx="BILLING.confirm_pay_exists"
-			)
-			if not exists:
-				plan = _get_plan_by_code(plan_code) or {}
-				plan_id = plan.get('id')
-				amt = (amount_total or 0) / 100.0
-				curr = (currency or 'BRL').upper()
-				meta = {
-					'source': 'embedded_confirm',
-					'checkout_session_id': checkout_session_id
-				}
-				db_execute(
-					"INSERT INTO public.user_payment (user_id, plan_id, stripe_customer_id, stripe_subscription_id, stripe_payment_intent_id, amount_paid, currency, status, event_type, metadata) "
-					"VALUES (%s, %s, %s, %s, %s, %s, %s, 'succeeded', 'upgrade', %s)",
-					(user_id, plan_id, customer_id, subscription_id, payment_intent, amt, curr, json.dumps(meta)),
-					ctx="BILLING.confirm_save_payment"
-				)
-				try:
-					dbg('BILL', f"[confirm_embedded] histórico salvo uid={user_id} plan={plan_code} amount={amt}")
-				except Exception:
-					pass
-			# Aplicar upgrade e gateway IDs
-			result = upgrade_plan(user_id, plan_code, customer_id, subscription_id)
-			if isinstance(result, dict) and result.get('error'):
-				return {'status': 'error', 'message': result.get('error')}
-			try:
-				dbg('BILL', f"[confirm_embedded] upgrade aplicado uid={user_id} plan={plan_code}")
-			except Exception:
-				pass
-			return {'status': 'success'}
-		except StripeError as e:
-			try:
-				dbg('BILL', f"[confirm_embedded] StripeError: {e}")
-			except Exception:
-				pass
-			return {'error': f'Erro Stripe: {str(e)}'}
-		except Exception as e:
-			try:
-				dbg('BILL', f"[confirm_embedded] erro: {e}")
-			except Exception:
-				pass
-			return {'error': str(e)}
-
-
 # =============================
 # Cancelamento de Assinatura
 # =============================
@@ -731,5 +626,5 @@ def cancel_subscription(user_id: str) -> Dict[str, Any]:
 
 
 # Exportar símbolos Stripe para quem importa deste módulo
-__all__ += ['create_checkout_session', 'create_checkout_embedded_session', 'create_subscription_elements', 'apply_subscription_result', 'verify_webhook', 'handle_webhook_event', 'cancel_subscription', 'confirm_embedded_checkout_session']
+__all__ += ['create_checkout_session', 'create_checkout_embedded_session', 'create_subscription_elements', 'apply_subscription_result', 'verify_webhook', 'handle_webhook_event', 'cancel_subscription']
 
