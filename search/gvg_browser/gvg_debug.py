@@ -43,7 +43,7 @@ _AREA_STYLE_MAP: Dict[str, Dict[str, Any]] = {
     'DOCS':      {'style': 'orchid',            'on': 0},
     'ASSISTANT': {'style': 'medium_purple3',    'on': 0},
     'IA':        {'style': 'spring_green2',     'on': 1},  
-    'UI':        {'style': 'white',             'on': 1},
+    'UI':        {'style': 'white',             'on': 0},
     'BROWSER':   {'style': 'bright_white',      'on': 0},
     'BOLETIM':   {'style': 'turquoise2',        'on': 1},
     'BMK':       {'style': 'plum1',             'on': 1},

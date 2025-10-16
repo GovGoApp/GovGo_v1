@@ -362,6 +362,10 @@ def api_plan_status():
         from gvg_billing import get_user_settings, get_usage_snapshot  # type: ignore
         settings = get_user_settings(uid)
         usage = get_usage_snapshot(uid)
+        try:
+            dbg('BILL', f"[/api/plan_status] uid={uid} plan={settings.get('plan_code')} usage_ok={bool(usage)}")
+        except Exception:
+            pass
         return jsonify({
             'plan_code': settings.get('plan_code'),
             'limits': settings.get('limits', {}),
@@ -450,6 +454,30 @@ def api_create_checkout_embedded():
             dbg('BILL', f"[/billing/create_checkout_embedded] exception: {e}")
         except Exception:
             pass
+        return jsonify({'error': str(e)}), 500
+
+# Fallback: confirmar sessão Embedded sem webhook (consulta a Stripe)
+@app.server.route('/billing/confirm_embedded', methods=['POST'])
+def api_confirm_embedded():
+    from flask import request, jsonify
+    try:
+        data = request.get_json(force=True) or {}
+        user_id = (data.get('user_id') or '').strip()
+        plan_code = (data.get('plan_code') or '').strip().upper()
+        session_id = (data.get('checkout_session_id') or '').strip()
+        if not all([user_id, plan_code, session_id]):
+            return jsonify({'error': 'Parâmetros inválidos'}), 400
+        from gvg_billing import confirm_embedded_checkout_session  # type: ignore
+        res = confirm_embedded_checkout_session(user_id, plan_code, session_id)
+        try:
+            dbg('BILL', f"[/billing/confirm_embedded] res={res}")
+        except Exception:
+            pass
+        status = res.get('status')
+        if res.get('error'):
+            return jsonify(res), 400
+        return jsonify({'status': status or 'ok'}), 200
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 # Parse argumentos --debug e --markdown (ex: python GvG_Search_Browser.py --debug --markdown)
@@ -1095,6 +1123,9 @@ app.layout = html.Div([
     dcc.Store(id='store-elements-session', data=None),
     # Evento de pagamento Stripe (session_id e timestamp)
     dcc.Store(id='store-payment-event', data=None),
+    # Timers de pagamento: auto-fechamento e polling de status
+    dcc.Interval(id='payment-autoclose-interval', interval=1000, n_intervals=0, disabled=True),
+    dcc.Interval(id='payment-check-interval', interval=1000, n_intervals=0, disabled=True),
     # Campo oculto para capturar session_id vindo do postMessage sem reload
     dcc.Input(id='stripe-success-input', type='text', value='', style={'display': 'none'}),
     # Campo oculto para resultado do Stripe Elements (JSON)
@@ -1175,9 +1206,9 @@ app.layout = html.Div([
         dbc.ModalBody([
             html.Div(id='stripe-embedded-checkout', style={'minHeight': '480px'}),
             html.Div(id='stripe-payment-error', style={'color': '#b00020', 'fontSize': '12px', 'marginTop': '8px'}),
-            html.Div([
-                html.Button('Cancelar', id='stripe-payment-cancel', style=styles['auth_btn_secondary'])
-            ], style={'display': 'flex', 'justifyContent': 'flex-end', 'marginTop': '8px'})
+            # html.Div([
+            #     html.Button('Cancelar', id='stripe-payment-cancel', style=styles['auth_btn_secondary'])
+            # ], style={'display': 'flex', 'justifyContent': 'flex-end', 'marginTop': '8px'})
         ], style={'paddingTop': '12px', 'paddingBottom': '16px'})
     ], id='stripe-payment-modal', is_open=False, size='md', backdrop=True, centered=True),
     auth_overlay,
@@ -1324,17 +1355,16 @@ app.clientside_callback(
     Output('store-elements-session', 'data'),
     Input('store-plan-action', 'data'),
     Input('stripe-payment-close', 'n_clicks'),
-    Input('stripe-payment-cancel', 'n_clicks'),
     State('stripe-payment-modal', 'is_open'),
     prevent_initial_call=True
 )
-def open_close_elements_modal(action_data, close_clicks, cancel_clicks, is_open):
+def open_close_elements_modal(action_data, close_clicks, is_open):
     from dash.exceptions import PreventUpdate
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
     trig = ctx.triggered[0]['prop_id'].split('.')[0]
-    if trig in ('stripe-payment-close', 'stripe-payment-cancel'):
+    if trig in ('stripe-payment-close',):
         try:
             dbg('BILL', f"[modal] close clicked by={trig}")
         except Exception:
@@ -1355,18 +1385,38 @@ def open_close_elements_modal(action_data, close_clicks, cancel_clicks, is_open)
 app.clientside_callback(
     """
     async function(is_open, session, publishableKey) {
-        if (!is_open || !session) {
+        // Cleanup ao fechar: destrói instância existente e limpa container
+        if (!is_open) {
+            if (window.__gvg_embedded_checkout && typeof window.__gvg_embedded_checkout.destroy === 'function') {
+                try { window.__gvg_embedded_checkout.destroy(); } catch(_) {}
+            }
+            window.__gvg_embedded_checkout = null;
+            const node = document.getElementById('stripe-embedded-checkout');
+            if (node) { node.innerHTML = ''; }
+            return window.dash_clientside.no_update;
+        }
+        if (!session) {
             return window.dash_clientside.no_update;
         }
         if (!publishableKey) {
             return 'Chave pública do Stripe ausente';
         }
-        if (!window.Stripe || !window.Stripe.initEmbeddedCheckout) {
+        // Pequeno atraso para garantir carregamento dos scripts da CDN do Stripe
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        if (!window.Stripe) {
             return 'Stripe.js indisponível';
         }
         try {
             const stripe = window.Stripe(publishableKey);
+            if (!stripe || !stripe.initEmbeddedCheckout) {
+                return 'Embedded Checkout indisponível';
+            }
+            // Se já há uma instância prévia, destrói antes de criar outra
+            if (window.__gvg_embedded_checkout && typeof window.__gvg_embedded_checkout.destroy === 'function') {
+                try { window.__gvg_embedded_checkout.destroy(); } catch(_) {}
+            }
             const checkout = await stripe.initEmbeddedCheckout({ clientSecret: session.client_secret });
+            window.__gvg_embedded_checkout = checkout;
             const mountNode = document.getElementById('stripe-embedded-checkout');
             if (mountNode) {
                 mountNode.innerHTML = '';
@@ -1822,6 +1872,91 @@ def refresh_plan_after_payment(event_data, planos_data, modal_open):
     # Se modal não está aberto, não re-renderizar body
     if not modal_open:
         return plan_code, badge_style_with_margin, updated, dash.no_update
+
+    # Habilitar/Desabilitar timers com base no modal e sessão
+    app.clientside_callback(
+        """
+        function(is_open, session) {
+            // habilita polling quando modal abre com sessão válida; desabilita ao fechar
+            const enable = !!(is_open && session && session.client_secret);
+            return [enable ? false : true, enable ? 0 : 0, true, 0];
+        }
+        """,
+        Output('payment-check-interval', 'disabled'),
+        Output('payment-check-interval', 'n_intervals'),
+        Output('payment-autoclose-interval', 'disabled'),
+        Output('payment-autoclose-interval', 'n_intervals'),
+        Input('stripe-payment-modal', 'is_open'),
+        State('store-elements-session', 'data'),
+    )
+
+    # Poll leve do plan_status e emitir evento de pagamento quando houver mudança de plano
+    app.clientside_callback(
+        """
+        async function(n, auth, planos) {
+            if (typeof n !== 'number' || n < 0) return window.dash_clientside.no_update;
+            const user = (auth && auth.user) || {};
+            const uid = user.uid || '';
+            if (!uid) return window.dash_clientside.no_update;
+            const current = (planos && planos.current_code) ? String(planos.current_code).toUpperCase() : 'FREE';
+            // Tentar confirmar sessão Embedded sem webhook (fallback)
+            try {
+                const sess = (planos && planos.pending_embedded) || null;
+                if (sess && sess.checkout_session_id && sess.plan_code) {
+                    await fetch('/billing/confirm_embedded', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_id: uid, plan_code: String(sess.plan_code).toUpperCase(), checkout_session_id: sess.checkout_session_id })
+                    });
+                }
+            } catch(_) {}
+            try {
+                const resp = await fetch(`/api/plan_status?uid=${encodeURIComponent(uid)}`);
+                if (!resp.ok) return window.dash_clientside.no_update;
+                const data = await resp.json();
+                const plan_code = (data && data.plan_code) ? String(data.plan_code).toUpperCase() : null;
+                if (!plan_code || plan_code === current) {
+                    return window.dash_clientside.no_update;
+                }
+                const payload = {
+                    uid: uid,
+                    plan_code: plan_code,
+                    limits: data.limits || {},
+                    usage: (data.usage || {}),
+                    ts: new Date().toISOString()
+                };
+                return [payload, true, 0, false, 0];
+            } catch(_) { return window.dash_clientside.no_update; }
+        }
+        """,
+        Output('store-payment-event', 'data'),
+        Output('payment-check-interval', 'disabled'),
+        Output('payment-check-interval', 'n_intervals'),
+        Output('payment-autoclose-interval', 'disabled'),
+        Output('payment-autoclose-interval', 'n_intervals'),
+        Input('payment-check-interval', 'n_intervals'),
+        State('store-auth', 'data'),
+        State('store-planos-data', 'data'),
+    )
+
+    # Fechamento automático do modal após 5s (5 ticks)
+    app.clientside_callback(
+        """
+        function(n, is_open) {
+            if (is_open !== true) return window.dash_clientside.no_update;
+            if (typeof n !== 'number') return window.dash_clientside.no_update;
+            if (n >= 5) {
+                return [false, true, 0];
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('stripe-payment-modal', 'is_open'),
+        Output('payment-autoclose-interval', 'disabled'),
+        Output('payment-autoclose-interval', 'n_intervals'),
+        Input('payment-autoclose-interval', 'n_intervals'),
+        State('stripe-payment-modal', 'is_open'),
+    )
     # Re-renderizar cards (reutilizar lógica simplificada)
     try:
         from gvg_billing import get_system_plans  # type: ignore
