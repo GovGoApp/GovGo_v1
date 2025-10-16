@@ -1847,7 +1847,80 @@ def refresh_plan_after_payment(event_data, planos_data, modal_open):
     if not modal_open:
         return plan_code, badge_style_with_margin, updated, dash.no_update
 
-    # (removidos) callbacks clientside aninhados para timers/poll/autoclose
+    # Habilitar/Desabilitar timers com base no modal e sessão
+    app.clientside_callback(
+        """
+        function(is_open, session) {
+            // habilita polling quando modal abre com sessão válida; desabilita ao fechar
+            const enable = !!(is_open && session && session.client_secret);
+            return [enable ? false : true, enable ? 0 : 0, true, 0];
+        }
+        """,
+        Output('payment-check-interval', 'disabled'),
+        Output('payment-check-interval', 'n_intervals'),
+        Output('payment-autoclose-interval', 'disabled'),
+        Output('payment-autoclose-interval', 'n_intervals'),
+        Input('stripe-payment-modal', 'is_open'),
+        State('store-elements-session', 'data'),
+    )
+
+    # Poll leve do plan_status e emitir evento de pagamento quando houver mudança de plano
+    app.clientside_callback(
+        """
+        async function(n, auth, planos) {
+            if (typeof n !== 'number' || n < 0) return window.dash_clientside.no_update;
+            const user = (auth && auth.user) || {};
+            const uid = user.uid || '';
+            if (!uid) return window.dash_clientside.no_update;
+            const current = (planos && planos.current_code) ? String(planos.current_code).toUpperCase() : 'FREE';
+            try {
+                const resp = await fetch(`/api/plan_status?uid=${encodeURIComponent(uid)}`);
+                if (!resp.ok) return window.dash_clientside.no_update;
+                const data = await resp.json();
+                const plan_code = (data && data.plan_code) ? String(data.plan_code).toUpperCase() : null;
+                if (!plan_code || plan_code === current) {
+                    return window.dash_clientside.no_update;
+                }
+                // Detected change: disparar store-payment-event e iniciar autoclose; parar polling
+                const payload = {
+                    uid: uid,
+                    plan_code: plan_code,
+                    limits: data.limits || {},
+                    usage: (data.usage || {}),
+                    ts: new Date().toISOString()
+                };
+                return [payload, true, 0, false, 0];
+            } catch(_) { return window.dash_clientside.no_update; }
+        }
+        """,
+        Output('store-payment-event', 'data'),
+        Output('payment-check-interval', 'disabled'),
+        Output('payment-check-interval', 'n_intervals'),
+        Output('payment-autoclose-interval', 'disabled'),
+        Output('payment-autoclose-interval', 'n_intervals'),
+        Input('payment-check-interval', 'n_intervals'),
+        State('store-auth', 'data'),
+        State('store-planos-data', 'data'),
+    )
+
+    # Fechamento automático do modal após 5s (5 ticks)
+    app.clientside_callback(
+        """
+        function(n, is_open) {
+            if (is_open !== true) return window.dash_clientside.no_update;
+            if (typeof n !== 'number') return window.dash_clientside.no_update;
+            if (n >= 5) {
+                return [false, true, 0];
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('stripe-payment-modal', 'is_open'),
+        Output('payment-autoclose-interval', 'disabled'),
+        Output('payment-autoclose-interval', 'n_intervals'),
+        Input('payment-autoclose-interval', 'n_intervals'),
+        State('stripe-payment-modal', 'is_open'),
+    )
     # Re-renderizar cards (reutilizar lógica simplificada)
     try:
         from gvg_billing import get_system_plans  # type: ignore
