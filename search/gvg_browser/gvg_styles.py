@@ -7,6 +7,22 @@ Este módulo concentra:
 - CSS específico para Markdown do resumo (MARKDOWN_CSS)
 """
 
+# Cores base
+_COLOR_PRIMARY = '#FF5722'  # Laranja GovGo
+_COLOR_SECONDARY = '#003A70'  # Azul escuro GovGo
+_COLOR_BACKGROUND = '#E0EAF9'  # Fundo claro GovGo
+_COLOR_BACKGROUND_ALT = '#2E7D32'  # Fundo branco GovGo
+_COLOR_GRAY = '#888888'  # Cinza neutro
+_COLOR_ERROR = "#FF0000"  # Vermelho de erro
+
+
+# Cores dos planos de assinatura
+_COLOR_PLAN_FREE = '#6C757D'      
+_COLOR_PLAN_PLUS = '#7B3FE4'      
+_COLOR_PLAN_PRO = "#04c4ff"    
+_COLOR_PLAN_CORP = '#089800'    
+
+
 # Estilos de componentes (antes definidos em GSB)
 styles = {
     'container': {
@@ -18,7 +34,7 @@ styles = {
     },
     'left_panel': {
     'width': '100%',  ### controle de largura via wrapper/CSS var
-        'backgroundColor': '#E0EAF9',
+        'backgroundColor': _COLOR_BACKGROUND,
         'padding': '10px',
         'margin': '5px',
         'borderRadius': '15px',
@@ -29,7 +45,7 @@ styles = {
     },
     'right_panel': {
     'width': '100%', ### controle de largura via wrapper/CSS var
-        'backgroundColor': '#E0EAF9',
+        'backgroundColor': _COLOR_BACKGROUND,
         'padding': '10px',
         'margin': '5px',
         'borderRadius': '15px',
@@ -47,24 +63,24 @@ styles = {
     'display': 'inline-flex', 'alignItems': 'center', 'gap': '6px',
     'borderRadius': '16px', 'borderTopRightRadius': '18px', 'borderBottomRightRadius': '18px',
     'padding': '4px 2px 4px 8px', 'cursor': 'pointer',
-    'border': '2px solid #D0D7E2', 'backgroundColor': 'white', 'color': '#003A70',
+    'border': '2px solid #D0D7E2', 'backgroundColor': 'white', 'color': _COLOR_SECONDARY,
     'overflow': 'hidden', 'textOverflow': 'ellipsis', 'whiteSpace': 'nowrap',
     'fontSize': '12px', 'flex': '0 0 auto'
     },
     'tab_button_active': {
-    'borderColor': '#003A70',
-    'backgroundColor': '#003A70', 'color': 'white', 'fontWeight': '600'
+    'borderColor': _COLOR_SECONDARY,
+    'backgroundColor': _COLOR_SECONDARY, 'color': 'white', 'fontWeight': '600'
     },
     'tab_button_query': {
-    'borderColor': '#003A70', 'color': '#003A70', 'backgroundColor': "#E4E6F8"
+    'borderColor': _COLOR_SECONDARY, 'color': _COLOR_SECONDARY, 'backgroundColor': "#E4E6F8"
     },
     'tab_button_pncp': {
-    'borderColor': '#2E7D32', 'color': '#2E7D32', 'backgroundColor': "#DDF5DF"
+    'borderColor': _COLOR_BACKGROUND_ALT, 'color': _COLOR_BACKGROUND_ALT, 'backgroundColor': "#DDF5DF"
     },
     'tab_close_btn': {
     'width': '20px', 'height': '20px', 'minWidth': '20px',
     'borderRadius': '50%', 'border': '2px solid #888888', 'backgroundColor': 'white',
-    'color': '#888888', 'cursor': 'pointer',
+    'color': _COLOR_GRAY, 'cursor': 'pointer',
     'display': 'inline-flex', 'alignItems': 'center', 'justifyContent': 'center',
     'lineHeight': '0', 'padding': '0px', 'fontSize': '12px',
     'boxSizing': 'border-box', 'marginRight': '2px', 'marginLeft': '6px',
@@ -83,7 +99,7 @@ styles = {
         'marginTop': '8px',
     },
     'submit_button': {
-        'backgroundColor': '#FF5722',
+        'backgroundColor': _COLOR_PRIMARY,
         'color': 'white',
         'border': 'none',
         'borderRadius': '25px',
@@ -95,7 +111,7 @@ styles = {
     },
     # Variante específica para os botões de exportação (fonte menor)
     'export_button': {
-        'backgroundColor': '#FF5722',
+        'backgroundColor': _COLOR_PRIMARY,
         'color': 'white',
         'border': 'none',
         'borderRadius': '25px',
@@ -123,7 +139,7 @@ styles = {
         'backgroundColor': 'transparent'
     },
     'arrow_button': {
-        'backgroundColor': '#FF5722',
+        'backgroundColor': _COLOR_PRIMARY,
         'color': 'white',
         'border': 'none',
         'borderRadius': '50%',
@@ -136,7 +152,7 @@ styles = {
     },
     'arrow_button_inverted': {
         'backgroundColor': 'white',
-        'color': '#FF5722',
+        'color': _COLOR_PRIMARY,
         'border': '2px solid #FF5722',
         'borderRadius': '50%',
         'width': '32px',
@@ -163,7 +179,7 @@ styles = {
         'height': '40px'
     },
     'header_title': {
-    'fontSize': '24px', 'marginLeft': '15px', 'color': '#003A70', 'fontWeight': 'bold', 'marginTop': '2px', 'marginBottom': '2px'
+    'fontSize': '24px', 'marginLeft': '15px', 'color': _COLOR_SECONDARY, 'fontWeight': 'bold', 'marginTop': '2px', 'marginBottom': '2px'
     },
     # --- Header (top bar) ---
     'header': {
@@ -186,12 +202,18 @@ styles = {
         'display': 'flex',
         'alignItems': 'center'
     },
+    # Botão "Mensagem" (inverso do laranja)
+    'header_message_btn': {
+        'backgroundColor': 'white', 'color': _COLOR_PRIMARY, 'border': '1px solid #FF5722',
+        'borderRadius': '16px', 'height': '32px', 'padding': '0 12px', 'marginRight': '10px',
+        'cursor': 'pointer', 'display': 'flex', 'alignItems': 'center', 'gap': '6px'
+    },
     'header_user_badge': {
         'width': '32px', 'height': '32px', 'minWidth': '32px',
-        'borderRadius': '50%', 'backgroundColor': '#FF5722',
+        'borderRadius': '50%', 'backgroundColor': _COLOR_PRIMARY,
         'color': 'white', 'fontWeight': 'bold', 'fontSize': '14px',
         'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
-        'cursor': 'default'
+        'cursor': 'pointer'
     },
     # --- Progress / Spinner ---
     'progress_bar_container': {
@@ -205,12 +227,12 @@ styles = {
     },
     'progress_fill': {
         'height': '100%',
-        'backgroundColor': '#FF5722',
+        'backgroundColor': _COLOR_PRIMARY,
         'borderRadius': '999px',
         'transition': 'width 250ms ease'
     },
     'progress_label': {
-        'marginTop': '6px', 'textAlign': 'center', 'color': '#FF5722', 'fontSize': '12px'
+        'marginTop': '6px', 'textAlign': 'center', 'color': _COLOR_PRIMARY, 'fontSize': '12px'
     },
     # Container do spinner central dentro do conteúdo da aba de consulta
     'center_spinner': {
@@ -219,7 +241,7 @@ styles = {
     # --- History ---
     'history_item_button': {
         'backgroundColor': 'white',
-        'color': '#003A70',
+        'color': _COLOR_SECONDARY,
         'border': '1px solid #D0D7E2',
         'borderRadius': '16px',
         'display': 'block',
@@ -232,10 +254,10 @@ styles = {
         'cursor': 'pointer'
     },
     'history_prompt': {
-        'fontWeight': 'bold', 'color': '#003A70'
+        'fontWeight': 'bold', 'color': _COLOR_SECONDARY
     },
     'history_config': {
-        'fontSize': '10px', 'color': '#003A70', 'marginTop': '2px'
+        'fontSize': '10px', 'color': _COLOR_SECONDARY, 'marginTop': '2px'
     },
     # Coluna vertical de ações (ex.: lixeira em cima e replay embaixo)
     'history_actions_col': {
@@ -244,20 +266,20 @@ styles = {
     'history_delete_btn': {
         'width': '28px', 'height': '28px', 'minWidth': '28px',
         'borderRadius': '50%', 'border': '1px solid #FF5722',
-        'backgroundColor': 'white', 'color': '#FF5722',
+        'backgroundColor': 'white', 'color': _COLOR_PRIMARY,
         'cursor': 'pointer'
     },
     # Botão de replay com o mesmo formato/dimensão da lixeira
     'history_replay_btn': {
         'width': '28px', 'height': '28px', 'minWidth': '28px',
         'borderRadius': '50%', 'border': '1px solid #FF5722',
-        'backgroundColor': 'white', 'color': '#FF5722',
+        'backgroundColor': 'white', 'color': _COLOR_PRIMARY,
         'cursor': 'pointer'
     },
     'history_email_btn': {
     'width': '28px', 'height': '28px', 'minWidth': '28px',
     'borderRadius': '50%', 'border': '1px solid #FF5722',
-    'backgroundColor': 'white', 'color': '#FF5722',
+    'backgroundColor': 'white', 'color': _COLOR_PRIMARY,
     'cursor': 'pointer', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
     'padding': '0'
     },
@@ -270,7 +292,7 @@ styles = {
     },
     'fav_item_button': {
         'backgroundColor': 'white',
-        'color': '#003A70',
+        'color': _COLOR_SECONDARY,
         'border': '1px solid #D0D7E2',
         'borderRadius': '16px',
         'display': 'block',
@@ -285,7 +307,7 @@ styles = {
     'fav_delete_btn': {
         'width': '28px', 'height': '28px', 'minWidth': '28px',
         'borderRadius': '50%', 'border': '1px solid #FF5722',
-        'backgroundColor': 'white', 'color': '#FF5722',
+        'backgroundColor': 'white', 'color': _COLOR_PRIMARY,
         'cursor': 'pointer'
     },
     'fav_actions_col': {
@@ -296,7 +318,7 @@ styles = {
     'fav_email_btn': {
         'width': '28px', 'height': '28px', 'minWidth': '28px',
         'borderRadius': '50%', 'border': '1px solid #FF5722',
-        'backgroundColor': 'white', 'color': '#FF5722',
+        'backgroundColor': 'white', 'color': _COLOR_PRIMARY,
         'cursor': 'pointer', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
         'textDecoration': 'none'
     },
@@ -304,16 +326,16 @@ styles = {
         'position': 'absolute', 'top': '10px', 'left': '40px',
         'width': '24px', 'height': '24px', 'minWidth': '24px',
         'border': 'none', 'backgroundColor': 'transparent', 'cursor': 'pointer',
-        'color': '#FF5722'
+        'color': _COLOR_PRIMARY
     },
     # --- Buttons (pills) for details right panel ---
     'btn_pill': {
-        'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none',
+        'backgroundColor': _COLOR_PRIMARY, 'color': 'white', 'border': 'none',
         'borderRadius': '16px', 'height': '28px', 'padding': '0 10px',
         'cursor': 'pointer', 'marginLeft': '6px'
     },
     'btn_pill_inverted': {
-        'backgroundColor': 'white', 'color': '#FF5722', 'border': '1px solid #FF5722',
+        'backgroundColor': 'white', 'color': _COLOR_PRIMARY, 'border': '1px solid #FF5722',
         'borderRadius': '16px', 'height': '28px', 'padding': '0 10px',
         'cursor': 'pointer', 'marginLeft': '6px'
     },
@@ -328,8 +350,8 @@ styles = {
         'marginTop': '20px', 'paddingTop': '16px', 'paddingLeft': '20px', 'paddingRight': '20px'
     },
     'panel_wrapper': {
-    'marginTop': '35px', 'backgroundColor': '#FFFFFF', 'border': '1px solid transparent',
-        'borderRadius': '12px', 'padding': '10px',
+    'marginTop': '35px', 'backgroundColor': '#FFFFFF', 'border': f'2px solid {_COLOR_PRIMARY}',
+        'borderRadius': '25px', 'padding': '10px',
     'flex': '1 1 auto', 'position': 'relative', 'display': 'none'
     },
     # --- Export row ---
@@ -344,13 +366,13 @@ styles = {
     'section_header_button': {
         'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between',
         'width': '100%', 'backgroundColor': 'transparent', 'border': 'none', 'padding': '0',
-        'cursor': 'pointer', 'textAlign': 'left', 'color': '#003A70'
+        'cursor': 'pointer', 'textAlign': 'left', 'color': _COLOR_SECONDARY
     },
     'section_header_left': {
         'display': 'flex', 'alignItems': 'center', 'gap': '8px'
     },
     'section_icon': {
-        'color': '#003A70'
+        'color': _COLOR_SECONDARY
     },
     'row_wrap_gap': {
         'display': 'flex', 'gap': '10px', 'flexWrap': 'wrap'
@@ -364,7 +386,7 @@ styles = {
     },
     # Small icon button variant
     'arrow_button_small': {
-        'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none', 'borderRadius': '50%',
+        'backgroundColor': _COLOR_PRIMARY, 'color': 'white', 'border': 'none', 'borderRadius': '50%',
         'width': '24px', 'height': '24px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'cursor': 'pointer'
     },
     # --- Right panel action bar (pills container) ---
@@ -378,7 +400,7 @@ styles = {
     },
     # Inner container inside each details window (content padding + font)
     'details_content_inner': {
-        'padding': '1px',
+        'padding': '10px',
         'fontFamily': "Segoe UI, Roboto, Arial, sans-serif",
         'fontSize': '12px'
     },
@@ -411,19 +433,19 @@ styles = {
         'width': '100%', 'maxWidth': '470px', 'boxShadow': '0 4px 16px rgba(0,0,0,0.12)'
     },
     'auth_logo': { 'height': '48px', 'marginBottom': '10px' },
-    'auth_title': { 'color': '#003A70', 'fontWeight': 'bold', 'fontSize': '18px', 'marginTop': '4px' },
-    'auth_subtitle': { 'color': '#003A70', 'fontSize': '12px', 'marginTop': '6px' },
+    'auth_title': { 'color': _COLOR_SECONDARY, 'fontWeight': 'bold', 'fontSize': '18px', 'marginTop': '4px' },
+    'auth_subtitle': { 'color': _COLOR_SECONDARY, 'fontSize': '12px', 'marginTop': '6px' },
     'auth_input': { 'width': '100%', 'height': '36px', 'borderRadius': '16px', 'border': '1px solid #D0D7E2', 'padding': '6px 10px', 'fontSize': '12px' },
     'auth_input_group': { 'display': 'flex', 'alignItems': 'center', 'gap': '6px' },
     'auth_input_eye': { 'width': '100%', 'height': '36px', 'borderRadius': '16px', 'border': '1px solid #D0D7E2', 'padding': '6px 10px', 'fontSize': '12px', 'flex': '1' },
-    'auth_eye_button': { 'backgroundColor': 'white', 'color': '#003A70', 'border': '1px solid #D0D7E2', 'borderRadius': '16px', 'height': '32px', 'minWidth': '36px', 'padding': '0 10px', 'cursor': 'pointer' },
-    'auth_btn_primary': { 'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none', 'borderRadius': '16px', 'height': '32px', 'padding': '0 14px', 'cursor': 'pointer' },
-    'auth_btn_secondary': { 'backgroundColor': 'white', 'color': '#FF5722', 'border': '1px solid #FF5722', 'borderRadius': '16px', 'height': '32px', 'padding': '0 14px', 'cursor': 'pointer' },
+    'auth_eye_button': { 'backgroundColor': 'white', 'color': _COLOR_SECONDARY, 'border': '1px solid #D0D7E2', 'borderRadius': '16px', 'height': '32px', 'minWidth': '36px', 'padding': '0 10px', 'cursor': 'pointer' },
+    'auth_btn_primary': { 'backgroundColor': _COLOR_PRIMARY, 'color': 'white', 'border': 'none', 'borderRadius': '16px', 'height': '32px', 'padding': '0 14px', 'cursor': 'pointer' },
+    'auth_btn_secondary': { 'backgroundColor': 'white', 'color': _COLOR_PRIMARY, 'border': '1px solid #FF5722', 'borderRadius': '16px', 'height': '32px', 'padding': '0 14px', 'cursor': 'pointer' },
     'auth_actions': { 'display': 'flex', 'gap': '8px', 'marginTop': '16px' },
     'auth_actions_center': { 'display': 'flex', 'gap': '8px', 'marginTop': '16px', 'justifyContent': 'center' },
     'auth_row_between': { 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginTop': '6px' },
-    'auth_link': { 'color': '#FF5722', 'textDecoration': 'underline', 'cursor': 'pointer', 'backgroundColor': 'transparent', 'border': 'none', 'padding': '0', 'height': 'auto', 'fontSize': '11px' },
-    'auth_error': { 'color': '#D32F2F', 'fontSize': '12px', 'marginTop': '6px' },
+    'auth_link': { 'color': _COLOR_PRIMARY, 'textDecoration': 'underline', 'cursor': 'pointer', 'backgroundColor': 'transparent', 'border': 'none', 'padding': '0', 'height': 'auto', 'fontSize': '11px' },
+    'auth_error': { 'color': _COLOR_ERROR, 'fontSize': '12px', 'marginTop': '6px' },
     # --- Planos (modal) ---
     'planos_card': {
         'backgroundColor': 'white', 'border': '1px solid #D0D7E2', 'borderRadius': '14px',
@@ -439,7 +461,7 @@ styles = {
         'width': '100%', 'fontSize': '12px', 'borderCollapse': 'collapse', 'marginTop': '12px'
     },
     'planos_table_th': {
-        'textAlign': 'left', 'padding': '6px 8px', 'backgroundColor': '#003A70', 'color': 'white', 'fontWeight': '600', 'fontSize': '11px'
+        'textAlign': 'left', 'padding': '6px 8px', 'backgroundColor': _COLOR_SECONDARY, 'color': 'white', 'fontWeight': '600', 'fontSize': '11px'
     },
     'planos_table_td': {
         'textAlign': 'left', 'padding': '6px 8px', 'borderBottom': '1px solid #E0EAF9', 'fontSize': '11px'
@@ -455,28 +477,82 @@ styles = {
     },
     'planos_limit_icon': {
         'width': '16px', 'height': '16px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
-        'color': '#003A70', 'fontSize': '13px'
+        'color': _COLOR_SECONDARY, 'fontSize': '13px'
     },
     'planos_desc': {
         'fontSize': '13px', 'fontWeight': '600', 'color': '#444', 'marginTop': '-2px'
     },
     'planos_price': {
-        'fontSize': '14px', 'fontWeight': '600', 'color': '#FF5722', 'marginTop': '6px'
+        'fontSize': '14px', 'fontWeight': '600', 'color': _COLOR_PRIMARY, 'marginTop': '6px'
     },
     'planos_btn_current': {
-        'backgroundColor': '#ECEFF3', 'color': '#003A70', 'border': '1px solid #CAD4E0', 'borderRadius': '18px',
+        'backgroundColor': '#ECEFF3', 'color': _COLOR_SECONDARY, 'border': '1px solid #CAD4E0', 'borderRadius': '18px',
         'height': '32px', 'width': '100%', 'cursor': 'default', 'fontSize': '13px', 'fontWeight': '600'
     },
     'planos_btn_upgrade': {
-        'backgroundColor': 'white', 'color': '#FF5722', 'border': '1px solid #FF5722', 'borderRadius': '18px',
+        'backgroundColor': 'white', 'color': _COLOR_PRIMARY, 'border': '1px solid #FF5722', 'borderRadius': '18px',
         'height': '32px', 'width': '100%', 'cursor': 'pointer', 'fontSize': '13px', 'fontWeight': '600'
     },
+}
+
+# --- User menu (avatar popover) ---
+styles['user_menu'] = {
+    'display': 'flex', 'flexDirection': 'column', 'gap': '4px',
+    'minWidth': '220px', 'fontSize': '12px'
+}
+styles['user_menu_user'] = {
+    'display': 'flex', 'flexDirection': 'column', 'gap': '2px',
+    'color': _COLOR_SECONDARY
+}
+styles['user_menu_name'] = {
+    'fontWeight': '700', 'fontSize': '14px', 'color': _COLOR_SECONDARY
+}
+styles['user_menu_email'] = {
+    'fontStyle': 'italic', 'fontWeight': '700', 'fontSize': '12px', 'color': _COLOR_PRIMARY
+}
+styles['user_menu_sep'] = {
+    'margin': '4px 0', 'border': 'none', 'borderTop': '1px solid #E0EAF9'
+}
+styles['user_menu_item'] = {
+    'padding': '4px 8px', 'borderRadius': '10px', 'cursor': 'pointer',
+    'color': _COLOR_SECONDARY, 'backgroundColor': 'transparent', 'display': 'flex', 'alignItems': 'center', 'gap': '8px',
+    'fontSize': '14px'
+}
+styles['user_menu_icon'] = {
+    'fontSize': '14px', 'color': _COLOR_SECONDARY, 'minWidth': '16px', 'textAlign': 'center'
+}
+
+# --- Mensagem (popover) ---
+styles['message_menu'] = {
+    'display': 'flex', 'flexDirection': 'column', 'gap': '8px',
+    'minWidth': '260px'
+}
+# Wrapper para garantir padding lateral simétrico dentro do popover
+styles['message_wrap'] = {
+    # Apenas padding à direita no wrapper externo do textarea (sem padding esquerdo)
+    'padding': '0 12px 0 0'
+}
+styles['message_textarea'] = {
+    'width': '100%', 'minHeight': '120px', 'resize': 'vertical',
+    'border': '1px solid #D0D7E2', 'borderRadius': '12px', 'padding': '8px 12px', 'boxSizing': 'border-box',
+    'fontSize': '12px', 'fontFamily': "Segoe UI, Roboto, Arial, sans-serif"
+}
+
+# Botão enviar dentro do popover de mensagem (padding simétrico)
+styles['message_send_btn'] = {
+    'backgroundColor': _COLOR_PRIMARY, 'color': 'white', 'border': 'none',
+    'borderRadius': '20px', 'padding': '8px 14px', 'cursor': 'pointer',
+    'display': 'inline-flex', 'alignItems': 'center', 'gap': '8px'
+}
+# Barra de ações com padding lateral simétrico
+styles['message_actions'] = {
+    'display': 'flex', 'justifyContent': 'flex-end', 'padding': '0 12px'
 }
 
 # === Bases comuns para botões de listas (Histórico/Favoritos/Boletins) ===
 # Botão de item de lista (padrão compacto)
 styles['btn_list_item'] = {
-    'backgroundColor': 'white', 'color': '#003A70', 'border': '1px solid #D0D7E2',
+    'backgroundColor': 'white', 'color': _COLOR_SECONDARY, 'border': '1px solid #D0D7E2',
     'borderRadius': '16px', 'display': 'block', 'width': '100%', 'textAlign': 'left',
     'padding': '6px 10px', 'whiteSpace': 'normal', 'wordBreak': 'break-word',
     'lineHeight': '1.25', 'cursor': 'pointer', 'fontSize': '12px'
@@ -484,7 +560,7 @@ styles['btn_list_item'] = {
 # Botão de ação pequeno (ícones: lixeira, replay, e-mail)
 styles['btn_icon_sm'] = {
     'width': '24px', 'height': '24px', 'minWidth': '24px', 'borderRadius': '50%',
-    'border': '1px solid #FF5722', 'backgroundColor': 'white', 'color': '#FF5722',
+    'border': '1px solid #FF5722', 'backgroundColor': 'white', 'color': _COLOR_PRIMARY,
     'cursor': 'pointer', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
     'fontSize': '12px', 'lineHeight': '1'
 }
@@ -520,7 +596,7 @@ styles['result_number'] = {
     'position': 'absolute',
     'top': '10px',
     'left': '10px',
-    'backgroundColor': '#FF5722',
+    'backgroundColor': _COLOR_PRIMARY,
     'color': 'white',
     'borderRadius': '50%',
     'width': '24px',
@@ -535,7 +611,7 @@ styles['result_number'] = {
 
 styles['card_title'] = {
     'fontWeight': 'bold',
-    'color': '#003A70',
+    'color': _COLOR_SECONDARY,
     'paddingRight': '8px',
     'paddingBottom': '8px',
 }
@@ -547,7 +623,7 @@ styles['result_number_email'] = {
     'height': '24px',
     'lineHeight': '24px',
     'textAlign': 'center',
-    'backgroundColor': '#FF5722',
+    'backgroundColor': _COLOR_PRIMARY,
     'color': 'white',
     'borderRadius': '50%',
     'fontSize': '12px',
@@ -558,22 +634,22 @@ styles['result_number_email'] = {
 # === Billing / Planos ===
 # Badges de plano (cores definidas no documento de billing)
 styles['plan_badge_free'] = {
-    'backgroundColor': '#6C757D', 'color': 'white', 'borderRadius': '16px',
+    'backgroundColor': _COLOR_PLAN_FREE, 'color': 'white', 'borderRadius': '16px',
     'padding': '2px 10px', 'fontSize': '12px', 'fontWeight': '600', 'display': 'inline-flex',
     'alignItems': 'center', 'justifyContent': 'center', 'height': '24px', 'lineHeight': '1'
 }
 styles['plan_badge_plus'] = {
-    'backgroundColor': '#7B3FE4', 'color': 'white', 'borderRadius': '16px',
+    'backgroundColor': _COLOR_PLAN_PLUS, 'color': 'white', 'borderRadius': '16px',
     'padding': '2px 10px', 'fontSize': '12px', 'fontWeight': '600', 'display': 'inline-flex',
     'alignItems': 'center', 'justifyContent': 'center', 'height': '24px', 'lineHeight': '1'
 }
 styles['plan_badge_pro'] = {
-    'backgroundColor': '#3b00a1ff', 'color': 'white', 'borderRadius': '16px',
+    'backgroundColor': _COLOR_PLAN_PRO, 'color': 'white', 'borderRadius': '16px',
     'padding': '2px 10px', 'fontSize': '12px', 'fontWeight': '600', 'display': 'inline-flex',
     'alignItems': 'center', 'justifyContent': 'center', 'height': '24px', 'lineHeight': '1'
 }
 styles['plan_badge_corp'] = {
-    'backgroundColor': '#089800ff', 'color': 'white', 'borderRadius': '16px',
+    'backgroundColor': _COLOR_PLAN_CORP, 'color': 'white', 'borderRadius': '16px',
     'padding': '2px 10px', 'fontSize': '12px', 'fontWeight': '600', 'display': 'inline-flex',
     'alignItems': 'center', 'justifyContent': 'center', 'height': '24px', 'lineHeight': '1'
 }
@@ -587,17 +663,17 @@ styles['boletim_item_row'] = {
     'display': 'flex', 'gap': '8px', 'alignItems': 'flex-start', 'marginBottom': '6px'
 }
 styles['boletim_item_button'] = {
-    'backgroundColor': 'white', 'color': '#003A70', 'border': '1px solid #D0D7E2',
+    'backgroundColor': 'white', 'color': _COLOR_SECONDARY, 'border': '1px solid #D0D7E2',
     'borderRadius': '16px', 'display': 'block', 'width': '100%', 'textAlign': 'left',
     'padding': '8px 12px', 'whiteSpace': 'normal', 'wordBreak': 'break-word',
     'lineHeight': '1.25', 'cursor': 'default'
 }
 styles['boletim_delete_btn'] = {
     'width': '28px', 'height': '28px', 'minWidth': '28px', 'borderRadius': '50%',
-    'border': '1px solid #FF5722', 'backgroundColor': 'white', 'color': '#FF5722', 'cursor': 'pointer'
+    'border': '1px solid #FF5722', 'backgroundColor': 'white', 'color': _COLOR_PRIMARY, 'cursor': 'pointer'
 }
 styles['boletim_toggle_btn'] = {
-    'backgroundColor': '#FF5722', 'color': 'white', 'border': 'none', 'borderRadius': '50%',
+    'backgroundColor': _COLOR_PRIMARY, 'color': 'white', 'border': 'none', 'borderRadius': '50%',
     'width': '32px', 'height': '32px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'cursor': 'pointer'
 }
 styles['boletim_config_panel'] = {
@@ -637,10 +713,10 @@ styles['query_textbox'] = {
 
 # Texto da query (negrito) e bloco de configurações (itálico) nos itens de boletim
 styles['boletim_query'] = {
-    'fontWeight': 'bold', 'color': '#003A70'
+    'fontWeight': 'bold', 'color': _COLOR_SECONDARY
 }
 styles['boletim_config'] = {
-    'fontStyle': 'italic', 'color': '#003A70', 'marginTop': '2px'
+    'fontStyle': 'italic', 'color': _COLOR_SECONDARY, 'marginTop': '2px'
 }
 
 # === Overrides focados apenas em botões e espaçamento vertical entre botões ===
@@ -890,6 +966,34 @@ BASE_CSS = """
 /* Toast individual com animação de saída */
 .toast-item-exiting {
     animation: fadeOut 0.3s ease-out forwards;
+}
+
+/* ===== Avatar Popover (user-menu-popover) ===== */
+/* O elemento com id=user-menu-popover é o próprio .popover; use seletor direto e !important para vencer o Bootstrap */
+#user-menu-popover,
+#user-menu-popover.popover {
+    border: 2px solid #FF5722 !important;
+    border-radius: 25px !important;
+    box-shadow: none !important;
+}
+#user-menu-popover .popover-arrow,
+#user-menu-popover .arrow { display: none !important; }
+#user-menu-popover .popover-body { padding: 10px; }
+
+/* ===== Message Popover (message-popover) - Mesmo estilo do avatar ===== */
+#message-popover,
+#message-popover.popover {
+    border: 2px solid #FF5722 !important;
+    border-radius: 25px !important;
+    box-shadow: none !important;
+}
+#message-popover .popover-arrow,
+#message-popover .arrow { display: none !important; }
+#message-popover .popover-body { padding: 10px; }
+#message-popover textarea:focus {
+    border-color: #003A70 !important; /* _COLOR_SECONDARY */
+    box-shadow: none !important;
+    outline: none !important;
 }
 """
 

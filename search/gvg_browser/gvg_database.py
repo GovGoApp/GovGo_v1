@@ -408,87 +408,125 @@ def _parse_numero_controle_pncp(numero_controle: str):
 
 
 def fetch_documentos(numero_controle: str) -> List[dict]:
-    """Busca documentos de um processo (tentativa leve em DB + fallback API PNCP)."""
+    """Busca documentos de um processo com cache em BD (lista_documentos) e fallback para API.
+
+    Estratégia:
+    - Tenta ler public.contratacao.lista_documentos pelo numero_controle_pncp.
+    - Se não houver, chama API PNCP, persiste em lista_documentos e usa o resultado.
+    - Em qualquer falha de BD, cai para API sem quebrar a UI.
+    - Normaliza saída (url, nome, tipo, tamanho, modificacao, sequencial, origem) e ordena por sequencial.
+    """
     if not numero_controle:
         return []
 
     documentos: List[dict] = []
+
+    # 1) Tentar ler do BD (lista_documentos)
+    src_list = None
+    came_from = None
     try:
-        # Colunas existentes em contratacao
-        col_rows = db_fetch_all(
+        row = db_fetch_one(
             """
-            SELECT column_name FROM information_schema.columns
-            WHERE table_schema='public' AND table_name='contratacao'
+            SELECT lista_documentos
+            FROM public.contratacao
+            WHERE numero_controle_pncp = %s
+            LIMIT 1
             """,
-            ctx="DOCS.fetch_documentos:columns"
+            (numero_controle,), as_dict=False, ctx="DOCS.fetch_documentos:read_json"
         )
-        cols = {r[0].lower() for r in (col_rows or [])}
-        url_cols_priority = ['link_sistema_origem', 'url', 'link']
-        url_cols = [c for c in url_cols_priority if c in cols]
-        if url_cols:
-            col = url_cols[0]
-            url_rows = db_fetch_all(
-                f"SELECT {col} FROM contratacao WHERE numero_controle_pncp = %s LIMIT 1",
-                (numero_controle,), ctx="DOCS.fetch_documentos:select_url"
-            ) or []
-            for r in url_rows:
-                # rows vem como tuplas (as_dict False)
-                try:
-                    url = r[0]
-                except Exception:
-                    url = None
-                if url:
-                    # Usar a própria URL (sem protocolo) como nome em vez de placeholder genérico
-                    try:
-                        display = url.split('://',1)[-1]
-                    except Exception:
-                        display = url
-                    documentos.append({'url': url, 'nome': display, 'tipo': 'origem', 'origem': 'db'})
+        if row is not None:
+            try:
+                val = row[0]
+                # psycopg2 já desserializa jsonb para tipos Python (list/dict)
+                if isinstance(val, list):
+                    src_list = val
+                    came_from = 'bd'
+            except Exception:
+                src_list = None
     except Exception as e:
+        # Coluna pode não existir ou BD indisponível — seguir para API
         try:
-            dbg('SQL', f"fetch_documentos DB: {e}")
+            dbg('DOCS', f"fetch_documentos BD skip: {e}")
         except Exception:
             pass
+        src_list = None
 
-    if documentos:
-        return documentos
+    # 2) Se não houver no BD, chamar API e tentar persistir
+    if not src_list:
+        cnpj, sequencial, ano = _parse_numero_controle_pncp(numero_controle)
+        if not all([cnpj, sequencial, ano]):
+            return []
+        api_url = (
+            f"https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}/arquivos"
+        )
+        try:
+            resp = requests.get(api_url, timeout=20)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list):
+                    src_list = [item for item in data if isinstance(item, dict)]
+                    came_from = 'api'
+                # contabilizar bytes baixados
+                try:
+                    from gvg_usage import _get_current_aggregator
+                    aggr = _get_current_aggregator()
+                    if aggr:
+                        aggr.add_file_in(len(resp.content or b''))
+                except Exception:
+                    pass
+            else:
+                dbg('DOCS', f"API documentos status {resp.status_code} ({numero_controle})")
+        except Exception as e:
+            dbg('DOCS', f"API documentos erro: {e}")
 
-    # Fallback API oficial (somente se não achou nada no DB)
-    cnpj, sequencial, ano = _parse_numero_controle_pncp(numero_controle)
-    if not all([cnpj, sequencial, ano]):
-        return []
-    api_url = (
-        f"https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}/arquivos"
-    )
-    try:
-        resp = requests.get(api_url, timeout=20)
-        if resp.status_code == 200:
-            data = resp.json()
-            if isinstance(data, list):
-                for item in data:
-                    if not isinstance(item, dict):
-                        continue
-                    documentos.append({
-                        'url': item.get('url') or item.get('uri') or '',
-                        'nome': item.get('titulo') or 'Documento',
-                        'tipo': item.get('tipoDocumentoNome') or 'N/I',
-                        'tamanho': item.get('tamanhoArquivo'),
-                        'modificacao': item.get('dataPublicacaoPncp'),
-                        'sequencial': item.get('sequencialDocumento'),
-                        'origem': 'api',
-                    })
-            # contabilizar bytes baixados
+        # Persistir no BD se veio da API e houver conexão/coluna
+        if src_list and came_from == 'api':
             try:
-                from gvg_usage import _get_current_aggregator
-                aggr = _get_current_aggregator()
-                if aggr:
-                    aggr.add_file_in(len(resp.content or b''))
-            except Exception:
-                pass
-        else:
-            dbg('DOCS', f"API documentos status {resp.status_code} ({numero_controle})")
-    except Exception as e:
-        dbg('DOCS', f"API documentos erro: {e}")
+                # Usar psycopg2.extras.Json para garantir serialização correta
+                from psycopg2.extras import Json  # type: ignore
+                affected = db_execute(
+                    """
+                    UPDATE public.contratacao
+                    SET lista_documentos = %s, updated_at = COALESCE(updated_at, now())
+                    WHERE numero_controle_pncp = %s
+                    """,
+                    (Json(src_list), numero_controle),
+                    ctx="DOCS.fetch_documentos:write_json"
+                )
+                if not affected:
+                    # Caso não atualize (registro não encontrado), tentar um UPSERT mínimo se permitido
+                    pass
+            except Exception as e:
+                try:
+                    dbg('DOCS', f"persist lista_documentos FAIL: {e}")
+                except Exception:
+                    pass
+
+    # 3) Normalizar saída
+    for item in (src_list or []):
+        try:
+            url = item.get('url') or item.get('uri') or ''
+            if not url:
+                continue
+            nome = item.get('titulo') or 'Documento'
+            documentos.append({
+                'url': url,
+                'nome': nome,
+                'tipo': item.get('tipoDocumentoNome') or 'N/I',
+                'tamanho': item.get('tamanhoArquivo'),
+                'modificacao': item.get('dataPublicacaoPncp'),
+                'sequencial': item.get('sequencialDocumento'),
+                'origem': came_from or 'api',
+            })
+        except Exception:
+            continue
+
+    # 4) Ordenar por sequencial quando disponível
+    try:
+        documentos.sort(key=lambda x: int(x.get('sequencial') or 0))
+    except Exception:
+        pass
+
     return documentos
 
 # =====================
@@ -578,3 +616,215 @@ def upsert_user_resumo(user_id: str, numero_pncp: str, resumo_md: str) -> bool:
         finally:
             if conn:
                 conn.close()
+
+
+# =====================
+# Storage genérico (Supabase Python SDK)
+# =====================
+
+_SUPABASE_CLIENT = None
+
+def get_supabase_client():
+    """Retorna cliente Supabase (singleton simples)."""
+    global _SUPABASE_CLIENT
+    if _SUPABASE_CLIENT is not None:
+        return _SUPABASE_CLIENT
+    try:
+        from supabase import create_client  # type: ignore
+    except Exception as e:
+        dbg('DB', f"Supabase SDK indisponível: {e}")
+        return None
+    _load_env_priority()
+    url = os.getenv('SUPABASE_URL')
+    k_srv = os.getenv('SUPABASE_KEY')
+    k_anon = os.getenv('SUPABASE_ANON_KEY')
+    
+    def _looks_jwt(s: str | None) -> bool:
+        try:
+            return bool(s and s.strip().startswith('eyJ'))
+        except Exception:
+            return False
+    key = k_srv if _looks_jwt(k_srv) else (k_anon if _looks_jwt(k_anon) else (k_srv or k_anon))
+    if not url or not key:
+        dbg('DB', 'get_supabase_client FAIL: SUPABASE_URL/KEY ausentes')
+        return None
+    try:
+        _SUPABASE_CLIENT = create_client(url, key)
+        dbg('DB', f'supabase client ok url={url} key_type={"service" if key==k_srv else "anon"}')
+        return _SUPABASE_CLIENT
+    except Exception as e:
+        dbg('DB', f"Erro ao criar Supabase client: {e}")
+        return None
+
+def storage_get_public_url(bucket: str, key: str) -> Optional[str]:
+    client = get_supabase_client()
+    if not client:
+        return None
+    try:
+        url = client.storage.from_(bucket).get_public_url(key)
+        # Sanitiza URLs que venham com '?' vazio ao final
+        try:
+            if isinstance(url, str):
+                if url.endswith('?'):
+                    return url[:-1]
+                # Normaliza '?download=' vazio
+                if url.endswith('?download='):
+                    return url[:-10]
+            return url
+        except Exception:
+            return url
+    except Exception as e:
+        dbg('DB', f'storage_get_public_url ERRO: {e}')
+        return None
+
+def storage_put_bytes(bucket: str, key: str, data: bytes, content_type: str = 'application/octet-stream', upsert: bool = False) -> tuple[bool, Optional[str], int]:
+    client = get_supabase_client()
+    if not client:
+        return False, None, 0
+    try:
+        # SDK Python v2: upload(path, file, file_options={"contentType": "...", "upsert": True})
+        opts = {"contentType": content_type, "upsert": "true" if upsert else "false"}
+        dbg('DB', f'storage upload: bucket={bucket} key={key} size={len(data or b"" )} upsert={opts.get("upsert")}')
+        res = client.storage.from_(bucket).upload(key, data, file_options=opts)
+        # upload retorna dict ou None; se sem exceção, consideramos OK
+        size = len(data or b'')
+        public_url = storage_get_public_url(bucket, key)
+        dbg('DB', f'storage upload ok: public_url={public_url}')
+        try:
+            from gvg_usage import _get_current_aggregator
+            aggr = _get_current_aggregator()
+            if aggr:
+                aggr.add_file_out(size)
+        except Exception:
+            pass
+        return True, public_url, size
+    except Exception as e:
+        dbg('DB', f'storage_put_bytes ERRO: {e}')
+        return False, None, 0
+
+def storage_put_text(bucket: str, key: str, text: str, content_type: str = 'text/markdown; charset=utf-8', upsert: bool = False) -> tuple[bool, Optional[str], int]:
+    # Inclui BOM para melhor compatibilidade no Windows ao abrir .md diretamente
+    bom = b"\xef\xbb\xbf" if isinstance(text, str) and content_type.startswith('text/') else b''
+    data = bom + (text or '').encode('utf-8')
+    return storage_put_bytes(bucket, key, data, content_type=content_type, upsert=upsert)
+
+def storage_download(bucket: str, key: str) -> tuple[bool, Optional[bytes], Optional[str]]:
+    client = get_supabase_client()
+    if not client:
+        return False, None, 'no-client'
+    try:
+        data = client.storage.from_(bucket).download(key)
+        return True, data, None
+    except Exception as e:
+        return False, None, str(e)
+
+def storage_list(bucket: str, prefix: str = '') -> list:
+    client = get_supabase_client()
+    if not client:
+        return []
+    try:
+        return client.storage.from_(bucket).list(prefix)
+    except Exception as e:
+        dbg('DB', f'storage_list ERRO: {e}')
+        return []
+
+def storage_remove(bucket: str, keys: list[str]) -> bool:
+    client = get_supabase_client()
+    if not client:
+        return False
+    try:
+        client.storage.from_(bucket).remove(keys)
+        return True
+    except Exception as e:
+        dbg('DB', f'storage_remove ERRO: {e}')
+        return False
+
+
+def upsert_user_document(user_id: str, numero_pncp: str, doc_name: str, doc_type: str | None, storage_url: str, size_bytes: int | None = None) -> bool:
+    """Insere registro em public.user_documents.
+
+    Requer que a tabela exista no BD. Se não existir ou falhar, retorna False sem quebrar o fluxo.
+    """
+    if not user_id or not numero_pncp or not storage_url or not doc_name:
+        return False
+    conn = None
+    cur = None
+    try:
+        conn = create_connection()
+        if not conn:
+            return False
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO public.user_documents
+                (user_id, numero_controle_pncp, doc_name, doc_type, storage_url, size_bytes, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, now(), now())
+            """,
+            (user_id, str(numero_pncp), doc_name, (doc_type or None), storage_url, int(size_bytes or 0))
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        try:
+            if conn:
+                conn.rollback()
+        except Exception:
+            pass
+        try:
+            dbg('DB', f"upsert_user_document erro: {e}")
+        except Exception:
+            pass
+        return False
+    finally:
+        try:
+            if cur:
+                cur.close()
+        finally:
+            if conn:
+                conn.close()
+
+
+# =====================
+# Mensagens do usuário (insert)
+# =====================
+
+def insert_user_message(user_id: str, user_name: str, message: str, resolved_status: int = 0) -> Optional[dict]:
+    """Insere uma mensagem do usuário e retorna {'id': ..., 'created_at': ...} ou None.
+
+    Requer tabela public.user_message com colunas:
+      (id, user_id uuid, user_name text, message text, resolved_status smallint, created_at, updated_at)
+    """
+    try:
+        uid = (user_id or '').strip()
+        uname = (user_name or '').strip()
+        msg = (message or '').strip()
+        if not uid or not uname or not msg:
+            return None
+        row = db_execute_returning_one(
+            """
+            INSERT INTO public.user_message (user_id, user_name, message, resolved_status, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, now(), now())
+            RETURNING id, created_at
+            """,
+            (uid, uname, msg, int(resolved_status)),
+            as_dict=False,
+            ctx="MSG.insert_user_message",
+        )
+        if not row:
+            return None
+        try:
+            _id = row[0]
+            _ts = row[1]
+        except Exception:
+            return None
+        try:
+            created_iso = _ts.isoformat() if hasattr(_ts, 'isoformat') else str(_ts)
+        except Exception:
+            created_iso = None
+        return {'id': _id, 'created_at': created_iso}
+    except Exception as e:
+        try:
+            dbg('DB', f"insert_user_message ERRO: {e}")
+        except Exception:
+            pass
+        return None

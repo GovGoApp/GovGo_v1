@@ -40,7 +40,7 @@ _AREA_STYLE_MAP: Dict[str, Dict[str, Any]] = {
     'DB':        {'style': 'gold1',             'on': 1},
     'AUTH':      {'style': 'green3',            'on': 0},
     'SEARCH':    {'style': 'deep_sky_blue1',    'on': 1},
-    'DOCS':      {'style': 'orchid',            'on': 0},
+    'DOCS':      {'style': 'orchid',            'on': 1},
     'ASSISTANT': {'style': 'medium_purple3',    'on': 0},
     'IA':        {'style': 'spring_green2',     'on': 1},  
     'UI':        {'style': 'white',             'on': 0},
@@ -56,6 +56,7 @@ _AREA_STYLE_MAP: Dict[str, Dict[str, Any]] = {
     'ERROR':     {'style': 'bold red',          'on': 1},
     'BILL':      {'style': 'green_yellow',      'on': 1},
     'WEBHOOK':   {'style': 'light_sky_blue1',   'on': 1},
+    'MESSAGE':   {'style': 'light_goldenrod1',  'on': 1},
 }
 
 _TRUE_SET = {'1', 'true', 'yes', 'on', 'y', 't'}

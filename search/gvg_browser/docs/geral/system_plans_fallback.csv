@@ -1,0 +1,5 @@
+id,code,name,price_month_brl,limit_consultas_per_day,limit_favoritos_capacity,limit_boletim_per_day,limit_resumos_per_day,active
+1,FREE,Free,0.00,5,10,1,1,true
+2,PLUS,Plus,49.00,20,200,5,20,true
+3,PRO,Professional,199.00,100,2000,10,100,true
+4,CORP,Corporation,999.00,1000,20000,100,1000,true

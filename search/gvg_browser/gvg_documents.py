@@ -32,7 +32,12 @@ import time
 from dotenv import load_dotenv
 from gvg_debug import debug_log as dbg
 from gvg_ai_utils import ai_assistant_run_text, ai_assistant_run_with_files
-from gvg_database import fetch_documentos  # centralizado
+from gvg_database import (
+    fetch_documentos,
+    storage_put_text,
+    storage_get_public_url,
+    upsert_user_document,
+)
 
 _OPENAI_AVAILABLE = True  # compat
 
@@ -75,25 +80,75 @@ def strip_citations(text: str) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
+# Inferência robusta de tipo de documento (extensão)
+def _infer_doc_type(name: str | None, url: str | None, default: str = 'md') -> str:
+    """Inferir extensão do documento a partir do nome e/ou URL.
+    Retorna sem ponto, minúsculas. Se não detectável, retorna default.
+    """
+    try:
+        # 1) Nome do arquivo
+        n = str(name or '').strip()
+        ext = ''
+        if n:
+            ext = os.path.splitext(n)[1].lstrip('.').lower()
+        # 2) URL (path)
+        if not ext:
+            u = str(url or '').strip()
+            if u:
+                try:
+                    p = urlparse(u)
+                    ext = os.path.splitext(os.path.basename(p.path))[1].lstrip('.').lower()
+                except Exception:
+                    pass
+        # Normalizar
+        if ext:
+            return ext
+        return str(default or 'md').lower()
+    except Exception:
+        return str(default or 'md').lower()
+
 # Diretórios de trabalho
 _BASE_PATH = os.getenv('BASE_PATH') or str(Path(__file__).resolve().parents[2] / 'data')
 FILE_PATH = os.getenv('FILES_PATH') or str(Path(_BASE_PATH) / 'files')
 SUMMARY_PATH = os.getenv('RESULTS_PATH') or str(Path(_BASE_PATH) / 'reports')
 TEMP_PATH = os.getenv('TEMP_PATH') or tempfile.gettempdir()
 
-# Controle: gerar Markdown (Docling) antes do resumo ou enviar arquivo original ao Assistant
-# Não vem do .env. Padrão: False (0). Será alterado pelo app (--markdown)
-GVG_MARKDOWN = False
+# Flags de controle (ambas lidas do .env com padrão true)
+def _truthy(v: str | None, default=True) -> bool:
+    if v is None:
+        return bool(default)
+    return str(v).strip().lower() in ("1","true","yes","on")
+
+# Se true: usa Markdown para gerar o resumo; se false: envia arquivos originais
+GVG_USE_MARKDOWN_SUMMARY = _truthy(os.getenv('GVG_USE_MARKDOWN_SUMMARY', 'true'), default=True)
 
 def set_markdown_enabled(enabled: bool):
-    global GVG_MARKDOWN
-    GVG_MARKDOWN = bool(enabled)
+    # compatibilidade com flag via CLI (altera apenas o uso de MD para o resumo)
+    global GVG_USE_MARKDOWN_SUMMARY
+    GVG_USE_MARKDOWN_SUMMARY = bool(enabled)
+
+# Se true: salva documentos .md no bucket e registra em BD
+GVG_SAVE_DOCUMENTS = _truthy(os.getenv('GVG_SAVE_DOCUMENTS', 'true'), default=True)
 
 _ASSISTANT_SUMMARY_ID = os.getenv('GVG_SUMMARY_DOCUMENT_v1')
 
 def create_files_directory():
     Path(FILE_PATH).mkdir(parents=True, exist_ok=True)
     Path(SUMMARY_PATH).mkdir(parents=True, exist_ok=True)
+
+def _sanitize_pncp_id(p: str | None) -> str | None:
+    """Sanitiza PNCP preservando hífens e trocando '/' por '-'. Remove demais caracteres.
+    Ex.: '07954480000179-1-019938/2025' -> '07954480000179-1-019938-2025'."""
+    if not p:
+        return None
+    s = str(p).strip()
+    # Troca '/' por '-'
+    s = s.replace('/', '-')
+    # Mantém apenas dígitos e '-'
+    s = re.sub(r"[^0-9\-]+", "", s)
+    # Normaliza múltiplos hífens consecutivos
+    s = re.sub(r"-{2,}", "-", s).strip('-')
+    return s if s else None
 
 def download_document(doc_url, timeout=30):
     try:
@@ -157,9 +212,9 @@ def download_document(doc_url, timeout=30):
         return False, None, None, f"Erro inesperado: {str(e)}"
 
 def convert_document_to_markdown(file_path, original_filename):
-    """Convert a PDF to Markdown using Docling in a subprocess (stable path)."""
+    """Convert a PDF to Markdown using Docling em subprocesso (caminho estável)."""
     try:
-        dbg('DOCS', f"Subprocesso Docling iniciado para '{original_filename}'")
+        dbg('DOCS', f"Docling: start original='{original_filename}' path='{file_path}'")
         code = (
             "import json,sys; "
             "fp=sys.argv[1]; fn=sys.argv[2];\n"
@@ -188,15 +243,18 @@ def convert_document_to_markdown(file_path, original_filename):
         try:
             payload = json.loads(proc.stdout.strip())
             if payload.get('ok') and 'markdown' in payload:
-                return True, payload['markdown'], None
+                md = payload['markdown']
+                dbg('DOCS', f"Docling: ok original='{original_filename}' md_len={len(md) if isinstance(md,str) else 'N/A'}")
+                return True, md, None
         except Exception as e:
             return False, None, f"Saída inválida do subprocesso Docling: {e}"
+        dbg('DOCS', f"Docling: saída inesperada original='{original_filename}'")
         return False, None, "Saída inesperada do subprocesso Docling"
     except ImportError:
         dbg('DOCS', "ImportError em Docling - Docling não instalado")
         return False, None, "Docling não está instalado. Execute: pip install docling"
     except Exception as e:
-        dbg('DOCS', f"Exceção em convert_document_to_markdown: {e}")
+        dbg('DOCS', f"Docling: exceção original='{original_filename}' err={e}")
         return False, None, f"Erro na conversão: {str(e)}"
 
 def save_markdown_file(content, original_filename, doc_url, timestamp=None):
@@ -218,7 +276,8 @@ def save_markdown_file(content, original_filename, doc_url, timestamp=None):
 
 {content}
 """
-        with open(markdown_path, 'w', encoding='utf-8') as f:
+        # utf-8-sig para compatibilidade com Notepad/Windows (acento correto)
+        with open(markdown_path, 'w', encoding='utf-8-sig') as f:
             f.write(content_with_url)
         return True, markdown_path, None
     except Exception as e:
@@ -277,6 +336,7 @@ def generate_document_summary(markdown_content, max_tokens=None, pncp_data=None)
         )
         out = ai_assistant_run_text(_ASSISTANT_SUMMARY_ID, user_message, context_key='doc_summary', timeout=180)
         out = strip_citations(out or "")
+        return out
 
     except Exception as e:
         return f"Erro ao gerar resumo (Assistants): {str(e)}"
@@ -310,6 +370,7 @@ def generate_document_summary_from_files(file_paths: list[str], max_tokens=None,
         )
         out = ai_assistant_run_with_files(_ASSISTANT_SUMMARY_ID, list(file_paths or []), user_message, timeout=180)
         out = strip_citations(out or "")
+        return out
 
     except Exception as e:
         return f"Erro ao gerar resumo (Assistants arquivos): {str(e)}"
@@ -489,13 +550,13 @@ def extract_all_supported_files_from_rar(rar_path: str):
                         outp = os.path.join(extract_dir, nm)
                         if os.path.exists(outp):
                             extracted_files.append((outp, os.path.basename(nm)))
-                            _dbg(f"   📄 Extraído: {os.path.basename(nm)}")
+                            _dbg('DOCS',f"   📄 Extraído: {os.path.basename(nm)}")
                     except Exception as e:
-                        _dbg(f"   ⚠️ Erro ao extrair {nm}: {e}")
+                        _dbg('DOCS',f"   ⚠️ Erro ao extrair {nm}: {e}")
                         continue
             used_rarfile = True
         except Exception as e:
-            _dbg(f"[RAR] rarfile indisponível/erro: {e}")
+            _dbg('DOCS',f"[RAR] rarfile indisponível/erro: {e}")
         # Fallback 7z
         if not extracted_files:
             seven = _discover_7z_exe()
@@ -512,7 +573,7 @@ def extract_all_supported_files_from_rar(rar_path: str):
                         if ext in supported_extensions:
                             path = os.path.join(root, fn)
                             extracted_files.append((path, fn))
-                            _dbg(f"   📄 Extraído: {fn}")
+                            _dbg('DOCS',f"   📄 Extraído: {fn}")
             except Exception as e:
                 return False, [], f"Falha ao usar 7-Zip para RAR: {e}"
         if not extracted_files:
@@ -524,22 +585,46 @@ def extract_all_supported_files_from_rar(rar_path: str):
 def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data=None):
     temp_path = None
     try:
-        processing_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        dbg('DOCS', f"process_pncp_document() inicio url='{str(doc_url)[:80]}{'...' if doc_url and len(str(doc_url))>80 else ''}' nome='{document_name}'")
+        # Timestamp do lote (compartilhado entre todos os docs deste processamento)
+        batch_ts = None
+        try:
+            if isinstance(pncp_data, dict):
+                batch_ts = pncp_data.get('batch_ts')
+        except Exception:
+            batch_ts = None
+        processing_timestamp = (str(batch_ts) if batch_ts else datetime.now().strftime('%Y%m%d_%H%M'))
+        # Número sequencial do documento (para listas externas): opcional
+        try:
+            doc_seq = None
+            if isinstance(pncp_data, dict):
+                ds = pncp_data.get('doc_seq')
+                if ds is not None:
+                    doc_seq = int(ds)
+        except Exception:
+            doc_seq = None
+        uid = (pncp_data or {}).get('uid') or (pncp_data or {}).get('user_id') or os.getenv('PASS_USER_UID')
+        pncp = (pncp_data or {}).get('numero_controle_pncp') or (pncp_data or {}).get('id')
+        dbg('DOCS', f"process start uid={uid} pncp={pncp} url='{str(doc_url)[:80]}{'...' if doc_url and len(str(doc_url))>80 else ''}' nome='{document_name}' flags: SAVE={GVG_SAVE_DOCUMENTS} MD_SUMMARY={GVG_USE_MARKDOWN_SUMMARY}")
         success, temp_path, filename, error = download_document(doc_url)
-        dbg('DOCS', f"download_document -> success={success} temp='{temp_path}' file='{filename}' err='{error}'")
+        dbg('DOCS', f"download done ok={success} temp='{temp_path}' file='{filename}' err='{error}'")
 
         if not success:
             return f"Erro no download: {error}"
         final_filename = document_name if document_name else filename
         if is_zip_file(temp_path):
+            try:
+                size_mb = (os.path.getsize(temp_path) / (1024*1024)) if os.path.exists(temp_path) else 0.0
+            except Exception:
+                size_mb = 0.0
+            dbg('DOCS', f"detect: ZIP size={size_mb:.2f}MB path='{temp_path}'")
             dbg('DOCS', "📦 Arquivo ZIP detectado. Extraindo TODOS os arquivos suportados...")
             success, extracted_files_list, error = extract_all_supported_files_from_zip(temp_path)
             if not success:
                 return f"Erro ao extrair arquivos do ZIP: {error}"
             if not extracted_files_list:
                 return "Erro: Nenhum arquivo suportado encontrado no ZIP"
-            if GVG_MARKDOWN:
+            dbg('DOCS', f"extract ZIP: total={len(extracted_files_list)}")
+            if GVG_USE_MARKDOWN_SUMMARY:
                 # Docling -> Markdown -> Assistant
                 all_markdown_content = f"# Documento PNCP: {final_filename} (ZIP com múltiplos arquivos)\n\n"
                 all_markdown_content += f"**Arquivo original:** `{final_filename}`  \n"
@@ -548,19 +633,40 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                 all_markdown_content += f"**Arquivos extraídos:** {len(extracted_files_list)}  \n\n"
                 all_markdown_content += "---\n\n"
                 processed_files = []
+                doc_counter = 0
                 for extracted_path, original_name in extracted_files_list:
                     dbg('DOCS', f"📄 Processando arquivo extraído: {original_name}")
                     if os.path.exists(extracted_path):
                         file_size_extracted = os.path.getsize(extracted_path) / (1024 * 1024)
-                        dbg('DOCS', f"📏 Tamanho: {file_size_extracted:.2f} MB")
+                        dbg('DOCS', f"Docling: arquivo extraído size={file_size_extracted:.2f}MB name='{original_name}'")
                         file_success, file_markdown, file_error = convert_document_to_markdown(extracted_path, original_name)
                         if file_success:
+                            doc_counter += 1
                             all_markdown_content += f"## 📄 Arquivo: {original_name}\n\n"
                             all_markdown_content += f"**Tamanho:** {file_size_extracted:.2f} MB  \n"
                             all_markdown_content += f"**Status:** ✅ Processado com sucesso  \n\n"
                             all_markdown_content += "### Conteúdo:\n\n"
                             all_markdown_content += file_markdown
                             all_markdown_content += "\n\n---\n\n"
+                            # Upload best-effort por arquivo
+                            if GVG_SAVE_DOCUMENTS:
+                                try:
+                                    # Monta nome padronizado
+                                    pncp_raw = (pncp_data or {}).get('numero_controle_pncp') or (pncp_data or {}).get('id')
+                                    pncp_raw = str(pncp_raw) if pncp_raw else None
+                                    pncp_key = _sanitize_pncp_id(pncp_raw)
+                                    if pncp_key:
+                                        key = f"DOCUMENTS/PNCP_{pncp_key}_DOC{doc_counter}.md"
+                                        ok, public_url, size_bytes = storage_put_text('govgo', key, file_markdown)
+                                        dbg('DOCS', f"upload file ok={ok} key='{key}' size={size_bytes} url='{public_url}' pncp_raw='{pncp_raw}' pncp_key='{pncp_key}'")
+                                        if ok and public_url:
+                                            uid = (pncp_data or {}).get('uid') or (pncp_data or {}).get('user_id')
+                                            if uid and pncp_raw:
+                                                doc_type = _infer_doc_type(original_name, doc_url, default=None)
+                                                ok_db = upsert_user_document(str(uid), str(pncp_raw), original_name, doc_type, public_url, size_bytes)
+                                                dbg('DOCS', f"db insert user_documents ok={ok_db} uid={uid} pncp_raw='{pncp_raw}' name='{original_name}'")
+                                except Exception as _e:
+                                    dbg('DOCS', f"upload/db erro arquivo='{original_name}' err={_e}")
                             processed_files.append({'name': original_name, 'success': True})
                             dbg('DOCS', f"✅ {original_name} processado com sucesso")
                         else:
@@ -580,7 +686,7 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                         if os.path.exists(extract_dir):
                             shutil.rmtree(extract_dir)
                 except Exception as cleanup_error:
-                    dbg('DOCS', f"⚠️ Aviso: Erro na limpeza: {cleanup_error}")
+                    dbg('DOCS', f"cleanup ZIP erro: {cleanup_error}")
                 successful_files = [f for f in processed_files if f['success']]
                 if successful_files:
                     success = True
@@ -599,6 +705,29 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                     summary_success, summary_path, summary_error = save_summary_file(summary, final_filename, doc_url, processing_timestamp, pncp_data, method_label=method_label, markdown_filename=None)
                     if not summary_success:
                         dbg('DOCS', f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
+                    # Além do resumo, se habilitado, converter e salvar MD de cada item
+                    if GVG_SAVE_DOCUMENTS:
+                        try:
+                            pncp_raw = (pncp_data or {}).get('numero_controle_pncp') or (pncp_data or {}).get('id')
+                            pncp_raw = str(pncp_raw) if pncp_raw else None
+                            pncp_key = _sanitize_pncp_id(pncp_raw)
+                            uid = (pncp_data or {}).get('uid') or (pncp_data or {}).get('user_id')
+                            doc_counter = 0
+                            if pncp_key and uid:
+                                for extracted_path, original_name in extracted_files_list:
+                                    if os.path.exists(extracted_path):
+                                        conv_ok, conv_md, conv_err = convert_document_to_markdown(extracted_path, original_name)
+                                        if conv_ok and isinstance(conv_md, str) and conv_md.strip():
+                                            doc_counter += 1
+                                            key = f"DOCUMENTS/PNCP_{pncp_key}_DOC{doc_counter}.md"
+                                            ok, public_url, size_bytes = storage_put_text('govgo', key, conv_md)
+                                            dbg('DOCS', f"upload conv ok={ok} key='{key}' size={size_bytes} url='{public_url}' pncp_raw='{pncp_raw}' pncp_key='{pncp_key}'")
+                                            if ok and public_url and pncp_raw:
+                                                doc_type = _infer_doc_type(original_name, doc_url, default=None)
+                                                ok_db = upsert_user_document(str(uid), str(pncp_raw), original_name, doc_type, public_url, size_bytes)
+                                                dbg('DOCS', f"db insert user_documents ok={ok_db} uid={uid} pncp_raw='{pncp_raw}' name='{original_name}'")
+                        except Exception:
+                            dbg('DOCS', 'upload conv erro (ZIP)')
                     # Cleanup extract dir
                     try:
                         if extracted_files_list:
@@ -613,13 +742,19 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                     # Ensure temp is removed
                     pass
         elif is_rar_file(temp_path):
+            try:
+                size_mb = (os.path.getsize(temp_path) / (1024*1024)) if os.path.exists(temp_path) else 0.0
+            except Exception:
+                size_mb = 0.0
+            dbg('DOCS', f"detect: RAR size={size_mb:.2f}MB path='{temp_path}'")
             dbg('DOCS', "📦 Arquivo RAR detectado. Extraindo TODOS os arquivos suportados...")
             success, extracted_files_list, error = extract_all_supported_files_from_rar(temp_path)
             if not success:
                 return f"Erro ao extrair arquivos do RAR: {error}"
             if not extracted_files_list:
                 return "Erro: Nenhum arquivo suportado encontrado no RAR"
-            if GVG_MARKDOWN:
+            dbg('DOCS', f"extract RAR: total={len(extracted_files_list)}")
+            if GVG_USE_MARKDOWN_SUMMARY:
                 # Docling -> Markdown -> Assistant
                 all_markdown_content = f"# Documento PNCP: {final_filename} (RAR com múltiplos arquivos)\n\n"
                 all_markdown_content += f"**Arquivo original:** `{final_filename}`  \n"
@@ -684,31 +819,51 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                             if os.path.exists(extract_dir):
                                 shutil.rmtree(extract_dir)
                     except Exception as cleanup_error:
-                        print(f"⚠️ Aviso: Erro na limpeza: {cleanup_error}")
+                        dbg('DOCS', f"cleanup RAR erro: {cleanup_error}")
                     return summary
                 finally:
                     pass
         else:
-            dbg('DOCS', f"📄 Processando arquivo diretamente: {final_filename}")
+            dbg('DOCS', f"detect: arquivo único nome='{final_filename}'")
             file_to_process = temp_path
             dbg('DOCS', f"Converter -> path='{file_to_process}' nome='{final_filename}'")
 
-            if GVG_MARKDOWN:
+            if GVG_USE_MARKDOWN_SUMMARY:
                 success, markdown_content, error = convert_document_to_markdown(file_to_process, final_filename)
                 if not success:
                     return f"Erro na conversão: {error}"
                 
-                dbg('DOCS', "Salvando Markdown...")
+                dbg('DOCS', "Salvar MD local...")
                 save_success, saved_path, save_error = save_markdown_file(markdown_content, final_filename, doc_url, processing_timestamp)
                 if not save_success:
                     dbg('DOCS', f"Falha ao salvar Markdown: {save_error}")
                     return f"Erro ao salvar: {save_error}"
+                # Upload do MD único
+                if GVG_SAVE_DOCUMENTS:
+                    try:
+                        pncp_raw = (pncp_data or {}).get('numero_controle_pncp') or (pncp_data or {}).get('id')
+                        pncp_raw = str(pncp_raw) if pncp_raw else None
+                        pncp_key = _sanitize_pncp_id(pncp_raw)
+                        uid_local = (pncp_data or {}).get('uid') or (pncp_data or {}).get('user_id') or os.getenv('PASS_USER_UID')
+                        if pncp_key:
+                            seq = doc_seq if (doc_seq and doc_seq > 0) else 1
+                            key = f"DOCUMENTS/PNCP_{pncp_key}_DOC{seq}.md"
+                            ok, public_url, size_bytes = storage_put_text('govgo', key, markdown_content)
+                            dbg('DOCS', f"upload single ok={ok} key='{key}' size={size_bytes} url='{public_url}' pncp_raw='{pncp_raw}' pncp_key='{pncp_key}'")
+                            if ok and public_url and uid_local and pncp_raw:
+                                doc_type = _infer_doc_type(final_filename, doc_url, default=None)
+                                ok_db = upsert_user_document(str(uid_local), str(pncp_raw), final_filename, doc_type, public_url, size_bytes)
+                                dbg('DOCS', f"db insert user_documents ok={ok_db} uid={uid_local} pncp_raw='{pncp_raw}' name='{final_filename}'")
+                            elif ok and public_url and not uid_local:
+                                dbg('DOCS', 'db insert skipped: uid ausente')
+                    except Exception:
+                        dbg('DOCS', 'upload single erro')
                 summary = generate_document_summary(markdown_content, max_tokens, pncp_data)
                 
-                dbg('DOCS', f"Resumo gerado (len={len(summary) if isinstance(summary,str) else 'N/A'})")
+                dbg('DOCS', f"resumo gerado len={len(summary) if isinstance(summary,str) else 'N/A'}")
                 summary_success, summary_path, summary_error = save_summary_file(summary, final_filename, doc_url, processing_timestamp, pncp_data, method_label="Docling + Assistant", markdown_filename=os.path.basename(saved_path) if save_success else None)
                 if not summary_success:
-                    dbg('DOCS', f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
+                    dbg('DOCS', f"summary save erro: {summary_error}")
                 return summary
             else:
                 # Assistant direto com arquivo original
@@ -716,19 +871,59 @@ def process_pncp_document(doc_url, max_tokens=500, document_name=None, pncp_data
                 method_label = "Assistant (arquivo original)"
                 summary_success, summary_path, summary_error = save_summary_file(summary, final_filename, doc_url, processing_timestamp, pncp_data, method_label=method_label, markdown_filename=None)
                 if not summary_success:
-                    dbg('DOCS', f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
+                    dbg('DOCS', f"summary save erro: {summary_error}")
+                # Upload MD do arquivo original (somente armazenamento)
+                if GVG_SAVE_DOCUMENTS and os.path.exists(file_to_process):
+                    try:
+                        conv_ok, conv_md, conv_err = convert_document_to_markdown(file_to_process, final_filename)
+                        if conv_ok and isinstance(conv_md, str) and conv_md.strip():
+                            pncp_raw = (pncp_data or {}).get('numero_controle_pncp') or (pncp_data or {}).get('id')
+                            pncp_raw = str(pncp_raw) if pncp_raw else None
+                            pncp_key = _sanitize_pncp_id(pncp_raw)
+                            uid_local = (pncp_data or {}).get('uid') or (pncp_data or {}).get('user_id') or os.getenv('PASS_USER_UID')
+                            if pncp_key:
+                                seq = doc_seq if (doc_seq and doc_seq > 0) else 1
+                                key = f"DOCUMENTS/PNCP_{pncp_key}_DOC{seq}.md"
+                                ok, public_url, size_bytes = storage_put_text('govgo', key, conv_md)
+                                dbg('DOCS', f"upload original->md ok={ok} key='{key}' size={size_bytes} url='{public_url}' pncp_raw='{pncp_raw}' pncp_key='{pncp_key}'")
+                                if ok and public_url and uid_local and pncp_raw:
+                                    doc_type = _infer_doc_type(final_filename, doc_url, default=None)
+                                    ok_db = upsert_user_document(str(uid_local), str(pncp_raw), final_filename, doc_type, public_url, size_bytes)
+                                    dbg('DOCS', f"db insert user_documents ok={ok_db} uid={uid_local} pncp_raw='{pncp_raw}' name='{final_filename}'")
+                                elif ok and public_url and not uid_local:
+                                    dbg('DOCS', 'db insert skipped: uid ausente')
+                    except Exception:
+                        dbg('DOCS', 'upload original->md erro')
                 return summary
-        # Common path (GVG_MARKDOWN True) continues below to save markdown + summary (already returned in direct paths)
-        dbg('DOCS', "Salvando Markdown...")
+        # Caminho comum (Markdown consolidado) segue abaixo para salvar markdown + resumo
+        dbg('DOCS', "Salvar MD consolidado...")
         save_success, saved_path, save_error = save_markdown_file(markdown_content, final_filename, doc_url, processing_timestamp)
         if not save_success:
-            dbg('DOCS', f"Falha ao salvar Markdown: {save_error}")
+            dbg('DOCS', f"salvar MD consolidado erro: {save_error}")
             return f"Erro ao salvar: {save_error}"
+        # Upload consolidado (ZIP/RAR)
+        if GVG_SAVE_DOCUMENTS:
+            try:
+                pncp_raw = (pncp_data or {}).get('numero_controle_pncp') or (pncp_data or {}).get('id')
+                pncp_raw = str(pncp_raw) if pncp_raw else None
+                pncp_key = _sanitize_pncp_id(pncp_raw)
+                uid = (pncp_data or {}).get('uid') or (pncp_data or {}).get('user_id')
+                if pncp_key and uid:
+                    key = f"DOCUMENTS/PNCP_{pncp_key}_DOC1.md"
+                    ok, public_url, size_bytes = storage_put_text('govgo', key, markdown_content)
+                    dbg('DOCS', f"upload consolidado ok={ok} key='{key}' size={size_bytes} url='{public_url}' pncp_raw='{pncp_raw}' pncp_key='{pncp_key}'")
+                    if ok and public_url and pncp_raw:
+                        # Consolidado: usar o tipo do pacote original, se possível
+                        doc_type = _infer_doc_type(filename, doc_url, default=None)
+                        ok_db = upsert_user_document(str(uid), str(pncp_raw), final_filename, doc_type, public_url, size_bytes)
+                        dbg('DOCS', f"db insert user_documents ok={ok_db} uid={uid} pncp_raw='{pncp_raw}' name='{final_filename}'")
+            except Exception:
+                dbg('DOCS', 'upload consolidado erro')
         summary = generate_document_summary(markdown_content, max_tokens, pncp_data)
-        dbg('DOCS', f"Resumo gerado (len={len(summary) if isinstance(summary,str) else 'N/A'})")
+        dbg('DOCS', f"resumo gerado (consolidado) len={len(summary) if isinstance(summary,str) else 'N/A'}")
         summary_success, summary_path, summary_error = save_summary_file(summary, final_filename, doc_url, processing_timestamp, pncp_data, method_label="Docling + Assistant", markdown_filename=os.path.basename(saved_path) if save_success else None)
         if not summary_success:
-            dbg('DOCS', f"⚠️ Aviso: Erro ao salvar resumo: {summary_error}")
+            dbg('DOCS', f"summary save (consolidado) erro: {summary_error}")
         return summary
     except Exception as e:
         return f"Erro inesperado no processamento: {str(e)}"

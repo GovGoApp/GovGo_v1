@@ -67,14 +67,14 @@ from gvg_user import (
     fetch_user_results_for_prompt_text,
     get_prompt_preproc_output,
 )
-from gvg_database import get_user_resumo, upsert_user_resumo, fetch_documentos, db_fetch_all
+from gvg_database import get_user_resumo, upsert_user_resumo, fetch_documentos, db_fetch_all, insert_user_message
 
 from gvg_boletim import (
     create_user_boletim,
     deactivate_user_boletim,
     fetch_user_boletins,
 )
-from gvg_styles import styles, CSS_ALL
+from gvg_styles import styles, CSS_ALL, _COLOR_PRIMARY, _COLOR_SECONDARY, _COLOR_BACKGROUND, _COLOR_BACKGROUND_ALT, _COLOR_GRAY
 
 from gvg_debug import debug_log as dbg
 
@@ -598,22 +598,20 @@ _PLAN_BADGE_STYLE = styles.get(f"plan_badge_{_USER_PLAN_CODE.lower()}", styles.g
 LOGO_PATH = "https://hemztmtbejcbhgfmsvfq.supabase.co/storage/v1/object/public/govgo/LOGO/LOGO_TEXTO_GOvGO_TRIM_v3.png"
 header = html.Div([
     html.Div([
-    html.Img(src=LOGO_PATH, style=styles['header_logo']),
-    html.Div("Search", className='gvg-header-title', style=styles['header_title'])
+        html.Img(src=LOGO_PATH, style=styles['header_logo']),
+        html.Div("Search", className='gvg-header-title', style=styles['header_title']),
+        html.Div(_USER_PLAN_CODE, id='header-plan-badge', style={**_PLAN_BADGE_STYLE, 'marginLeft': '6px'})
     ], style=styles['header_left']),
     html.Div([
-        html.Div(_USER_PLAN_CODE, id='header-plan-badge', style={**_PLAN_BADGE_STYLE, 'marginRight': '10px'}),
         html.Button([
-            html.I(className='fas fa-rocket', style={'marginRight': '6px'}),
-            html.Span('Planos')
-        ], id='open-planos-btn', title='Planos e limites', style={**styles['btn_pill_inverted'], 'marginRight': '10px', 'display': 'flex', 'alignItems': 'center'}),
+            html.I(className='fas fa-paper-plane'),
+            html.Span('Mensagem')
+        ], id='header-message-btn', title='Enviar mensagem', style=styles['header_message_btn']),
         html.Div(
-            _USER_INITIALS,
             id='header-user-badge',
-            title=f"{_USER.get('name','Usuário')} ({_USER.get('email','')})",
+            children='U',  # inicial do usuário; atualizado por callback
             style=styles['header_user_badge']
-        ),
-        html.Button('Sair', id='auth-logout', title='Encerrar sessão', style={**styles['btn_pill_inverted'], 'marginLeft': '10px'})
+        )
     ], style=styles['header_right'])
 ], style=styles['header'])
 
@@ -1157,6 +1155,55 @@ app.layout = html.Div([
     # Scripts de assets são carregados automaticamente (assets/stripe-elements.js)
 
     header,
+    # Popover de Mensagem (botão ao lado do avatar)
+    dbc.Popover(
+        html.Div([
+            html.Div(
+                dcc.Textarea(id='message-textarea', placeholder='Escreva sua mensagem...', rows=6, style=styles['message_textarea']),
+                style=styles.get('message_wrap', {'padding': '0 12px'})
+            ),
+            html.Div([
+                html.Button([
+                    html.I(className='fas fa-paper-plane', style={'marginRight': '6px'}),
+                    html.Span('Enviar')
+                ], id='message-send-btn', n_clicks=0, style=styles.get('message_send_btn', styles['auth_btn_primary']))
+            ], style=styles.get('message_actions', {'display': 'flex', 'justifyContent': 'flex-end', 'padding': '0 12px'}))
+        ], style=styles['message_menu']),
+        id='message-popover',
+        target='header-message-btn',
+        is_open=False,
+        placement='bottom',
+        trigger='manual',  # controle via callback
+        body=True
+    ),
+    # Popover do usuário (menu do avatar)
+    dbc.Popover(
+        html.Div([
+            html.Div([
+                html.Div(id='user-menu-name', style=styles['user_menu_name']),
+                html.Div(id='user-menu-email', style=styles['user_menu_email'])
+            ], style=styles['user_menu_user']),
+            html.Hr(style=styles['user_menu_sep']),
+            html.Div([
+                html.I(className='fas fa-tags', style=styles['user_menu_icon']),
+                html.Span('Planos')
+            ], id='user-menu-item-planos', n_clicks=0, role='button', style=styles['user_menu_item']),
+            html.Div([
+                html.I(className='fas fa-cog', style=styles['user_menu_icon']),
+                html.Span('Configurações')
+            ], id='user-menu-item-config', n_clicks=0, role='button', style=styles['user_menu_item']),
+            html.Div([
+                html.I(className='fas fa-sign-out-alt', style=styles['user_menu_icon']),
+                html.Span('Sair')
+            ], id='user-menu-item-logout', n_clicks=0, role='button', style=styles['user_menu_item'])
+        ], style=styles['user_menu']),
+        id='user-menu-popover',
+        target='header-user-badge',
+        is_open=False,
+        placement='bottom',
+        trigger='manual',  # controle via callback
+        body=True
+    ),
     # Modal Planos e Limites
     dbc.Modal([
         dbc.ModalHeader(
@@ -1462,17 +1509,21 @@ def reflect_header_badge(auth_data):
 # =============================
 @app.callback(
     Output('planos-modal', 'is_open'),
-    Input('open-planos-btn', 'n_clicks'),
+    Input('user-menu-item-planos', 'n_clicks'),
     Input('planos-modal-close', 'n_clicks'),
     State('planos-modal', 'is_open'),
     prevent_initial_call=True
 )
-def toggle_planos_modal(open_clicks, close_clicks, is_open):
-    ctx = callback_context
+def toggle_planos_modal(open_from_menu, close_clicks, is_open):
+    ctx = dash.callback_context
     if not ctx.triggered:
-        raise PreventUpdate
-    return not is_open
-
+        return is_open
+    trig = ctx.triggered[0]['prop_id'].split('.')[0]
+    if trig == 'user-menu-item-planos' and open_from_menu:
+        return True
+    if trig == 'planos-modal-close' and close_clicks:
+        return False
+    return is_open
 
 @app.callback(
     Output('planos-modal-body', 'children'),
@@ -2919,25 +2970,7 @@ def reflect_auth_view(view, err_text, pending_email):
     return login_st, signup_st, confirm_st, reset_st, confirm_txt, err_children, err_style
 
 
-@app.callback(
-    Output('store-auth-view', 'data'),
-    Input('auth-switch-signup', 'n_clicks'),
-    Input('auth-switch-login', 'n_clicks'),
-    Input('auth-switch-login-2', 'n_clicks'),
-    prevent_initial_call=True,
-)
-def switch_auth_view(n_signup, n_login1, n_login2):
-    ctx = callback_context
-    if not ctx.triggered:
-        raise PreventUpdate
-    trig = ctx.triggered[0]['prop_id']
-    try:
-        dbg('AUTH', f"[GvG_Browser.switch_auth_view] triggered_by={trig}")
-    except Exception:
-        pass
-    if 'auth-switch-signup' in trig:
-        return 'signup'
-    return 'login'
+## removido callback duplicado de logout (substituído pelo existente mais abaixo)
 
 
 @app.callback(
@@ -3364,9 +3397,117 @@ def cancel_password_reset(n_clicks):
     return 'login'
 
 
+# Abrir/fechar Popover do usuário (avatar)
+@app.callback(
+    Output('user-menu-popover', 'is_open'),
+    Input('header-user-badge', 'n_clicks'),
+    Input('user-menu-item-planos', 'n_clicks'),
+    Input('user-menu-item-config', 'n_clicks'),
+    Input('user-menu-item-logout', 'n_clicks'),
+    State('user-menu-popover', 'is_open'),
+    prevent_initial_call=True,
+)
+def toggle_user_menu(click_avatar, click_plan, click_cfg, click_logout, is_open):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    trig = ctx.triggered[0]['prop_id'].split('.')[0]
+    if trig == 'header-user-badge':
+        return not is_open
+    # Qualquer item do menu fecha o popover
+    return False
+
+
+# Abrir/fechar Popover de Mensagem e limpar textarea ao enviar
+@app.callback(
+    Output('message-popover', 'is_open'),
+    Output('message-textarea', 'value'),
+    Input('header-message-btn', 'n_clicks'),
+    State('message-popover', 'is_open'),
+    prevent_initial_call=True,
+)
+def toggle_message_popover(click_open, is_open):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    trig = ctx.triggered[0]['prop_id'].split('.')[0]
+    if trig == 'header-message-btn' and (click_open or 0) >= 0:
+        return (not is_open), dash.no_update
+    raise PreventUpdate
+
+
+# Enviar mensagem: persiste no BD, loga e notifica
+@app.callback(
+    Output('message-popover', 'is_open', allow_duplicate=True),
+    Output('message-textarea', 'value', allow_duplicate=True),
+    Output('store-notifications', 'data', allow_duplicate=True),
+    Input('message-send-btn', 'n_clicks'),
+    State('message-textarea', 'value'),
+    State('store-auth', 'data'),
+    State('store-notifications', 'data'),
+    prevent_initial_call=True,
+)
+def handle_send_message(n_clicks, text_value, auth_data, notifications):
+    if not n_clicks:
+        raise PreventUpdate
+    notifs = list(notifications or [])
+    msg = (text_value or '').strip()
+    if not msg:
+        notif = add_note(NOTIF_WARNING, 'Escreva uma mensagem antes de enviar.')
+        notifs.append(notif)
+        return dash.no_update, dash.no_update, notifs
+    user = (auth_data or {}).get('user') or {}
+    uid = (user.get('uid') or '').strip()
+    if not uid:
+        notif = add_note(NOTIF_ERROR, 'Faça login para enviar mensagens.')
+        notifs.append(notif)
+        return dash.no_update, dash.no_update, notifs
+    user_name = (user.get('name') or user.get('email') or 'Usuário').strip()
+    try:
+        res = insert_user_message(uid, user_name, msg, 0)
+        if res and res.get('id') is not None:
+            try:
+                dbg('MESSAGE', f"insert uid={uid} id={res.get('id')} len={len(msg)} status=0")
+            except Exception:
+                pass
+            notif = add_note(NOTIF_SUCCESS, 'Mensagem enviada com sucesso! Obrigado.')
+            notifs.append(notif)
+            # Fecha popover e limpa textarea
+            return False, '', notifs
+        else:
+            try:
+                dbg('MESSAGE', f"insert FAIL uid={uid} len={len(msg)}")
+            except Exception:
+                pass
+            notif = add_note(NOTIF_ERROR, 'Não foi possível enviar sua mensagem. Tente novamente.')
+            notifs.append(notif)
+            return dash.no_update, dash.no_update, notifs
+    except Exception as e:
+        try:
+            dbg('MESSAGE', f"exception: {e}")
+        except Exception:
+            pass
+        notif = add_note(NOTIF_ERROR, 'Erro ao enviar sua mensagem.')
+        notifs.append(notif)
+        return dash.no_update, dash.no_update, notifs
+
+
+# Renderizar nome e e-mail no menu do usuário
+@app.callback(
+    Output('user-menu-name', 'children'),
+    Output('user-menu-email', 'children'),
+    Input('store-auth', 'data'),
+)
+def render_user_menu_userinfo(auth_data):
+    user = (auth_data or {}).get('user') or {}
+    name = (user.get('name') or 'Usuário')
+    email = (user.get('email') or '')
+    return name, email
+
+
 @app.callback(
     Output('store-auth', 'data'),
-    Input('auth-logout', 'n_clicks'),
+    Input('user-menu-item-logout', 'n_clicks'),
     State('store-auth', 'data'),
     prevent_initial_call=True,
 )
@@ -3806,19 +3947,19 @@ def _enc_status_text(status: str, dt_value) -> str:
     try:
         dt = _parse_date_generic(dt_value)
         if dt and dt == _date.today():
-            return 'encerra hoje!'
+            return 'é hoje!'
     except Exception:
         pass
     if status == 'lt3':
-        return 'encerra em até 3 dias'
+        return 'em até 3 dias'
     if status == 'lt7':
-        return 'encerra em até 7 dias'
+        return 'em até 7 dias'
     if status == 'lt15':
-        return 'encerra em até 15 dias'
+        return 'em até 15 dias'
     if status == 'lt30':
-        return 'encerra em até 30 dias'
+        return 'em até 30 dias'
     if status == 'gt30':
-        return 'encerra > 30 dias'
+        return 'mais de 30 dias'
     return ''
 
 
@@ -5636,7 +5777,7 @@ def render_results_table(results, sort_state):
         header_cond.append({
             'if': {'column_id': active_col},
             'backgroundColor': '#FFE6DB',  # light orange highlight
-            'color': '#FF5722',
+            'color': _COLOR_PRIMARY,
             'fontWeight': 'bold'
         })
     return dash_table.DataTable(
@@ -6199,14 +6340,52 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo, noti
                     docs = fetch_documentos(pid) or []
             except Exception:
                 docs = []
-            # Se já existe summary no cache, evita recomputar e mostra direto
+            # Helper para validar se um resumo é "bom" (nem erro, nem fallback)
+            def _is_good_summary(text: str | None) -> bool:
+                if not isinstance(text, str) or not text.strip():
+                    return False
+                t = text.strip()
+                if t.startswith('Erro'):
+                    return False
+                if t == 'Não foi possível gerar o resumo.':
+                    return False
+                if 'Limite diário de resumos atingido' in t:
+                    return False
+                return True
+
+            # 1) Sempre tentar BD primeiro (prioridade sobre cache)
             try:
-                if isinstance(cache_resumo, dict) and str(pid) in cache_resumo and isinstance(cache_resumo[str(pid)], dict) and 'summary' in cache_resumo[str(pid)]:
-                    cached_summary = cache_resumo[str(pid)]['summary']
-                    children_out.append([html.Div(dcc.Markdown(children=cached_summary, className='markdown-summary'), style=styles['details_content_inner'])])
+                user = get_current_user() if 'get_current_user' in globals() else {'uid': ''}
+                uid = (user or {}).get('uid') or ''
+            except Exception:
+                uid = ''
+            if uid:
+                try:
+                    db_summary = get_user_resumo(uid, pid)
+                except Exception:
+                    db_summary = None
+                if _is_good_summary(db_summary):
+                    if SQL_DEBUG:
+                        sz = len(db_summary) if isinstance(db_summary, str) else 'N/A'
+                        dbg('RESUMO', f"Resumo obtido do BD (chars={sz})")
+                    try:
+                        updated_cache[str(pid)] = {'docs': (docs or []), 'summary': db_summary}
+                    except Exception:
+                        pass
+                    children_out.append([html.Div(dcc.Markdown(children=db_summary, className='markdown-summary'), style=styles['details_content_inner'])])
                     style_out[-1] = {**style_out[-1], 'display': 'block'}
                     btn_styles[-1] = inverted_btn_style
                     continue
+
+            # 2) Se não houver BD válido, tentar cache somente se for bom
+            try:
+                if isinstance(cache_resumo, dict) and str(pid) in cache_resumo and isinstance(cache_resumo[str(pid)], dict) and 'summary' in cache_resumo[str(pid)]:
+                    cached_summary = cache_resumo[str(pid)]['summary']
+                    if _is_good_summary(cached_summary):
+                        children_out.append([html.Div(dcc.Markdown(children=cached_summary, className='markdown-summary'), style=styles['details_content_inner'])])
+                        style_out[-1] = {**style_out[-1], 'display': 'block'}
+                        btn_styles[-1] = inverted_btn_style
+                        continue
             except Exception:
                 pass
 
@@ -6242,18 +6421,7 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo, noti
                 btn_styles[-1] = inverted_btn_style
                 continue
 
-            main_doc = pick_main_doc(docs)
-            if not main_doc:
-                children_out.append(html.Div('Nenhum documento disponível para resumo.', style=styles['details_content_inner']))
-                style_out[-1] = {**style_out[-1], 'display': 'block'}
-                btn_styles[-1] = inverted_btn_style
-                continue
-
-            nome = main_doc.get('nome') or main_doc.get('titulo') or 'Documento'
-            url = main_doc.get('url') or main_doc.get('uri') or ''
-            if SQL_DEBUG:
-                short = (url[:80] + '...') if len(url) > 80 else url
-                dbg('RESUMO', f"Documento escolhido: nome='{nome}' url='{short}'")
+            # Preparar dados PNCP
             pncp_data = {}
             # Build pncp_data from matching result
             try:
@@ -6261,8 +6429,15 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo, noti
                 pncp_data = _build_pncp_data(d)
             except Exception:
                 pncp_data = {}
+            # Timestamp único por PNCP (lote)
+            try:
+                if isinstance(pncp_data, dict):
+                    if not pncp_data.get('batch_ts'):
+                        pncp_data['batch_ts'] = datetime.now().strftime('%Y%m%d_%H%M')
+            except Exception:
+                pass
 
-            # Call summarizer (prefer summarize_document) with cache
+            # Call summarizer para TODOS os documentos e concatenar resultados
             summary_text = None
             try:
                 if isinstance(cache_resumo, dict) and str(pid) in cache_resumo and isinstance(cache_resumo[str(pid)], dict) and 'summary' in cache_resumo[str(pid)]:
@@ -6273,7 +6448,7 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo, noti
             children_out.append([
                 html.Div(
                     html.Div(
-                        html.I(className="fas fa-spinner fa-spin", style={'color': '#FF5722', 'fontSize': '24px'}),
+                        html.I(className="fas fa-spinner fa-spin", style={'color': _COLOR_PRIMARY, 'fontSize': '24px'}),
                         style=styles['details_spinner_center']
                     ),
                     style={**styles['details_content_inner'], 'height': '100%'}
@@ -6319,15 +6494,34 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo, noti
                 summary_event_started = False
 
             if DOCUMENTS_AVAILABLE:
+                combined = []
                 try:
-                    if summarize_document:
-                        if SQL_DEBUG:
-                            dbg('RESUMO', "Gerando resumo via summarize_document...")
-                        summary_text = summarize_document(url, max_tokens=500, document_name=nome, pncp_data=pncp_data)
-                    elif process_pncp_document:
-                        if SQL_DEBUG:
-                            dbg('RESUMO', "Gerando resumo via process_pncp_document (fallback)...")
-                        summary_text = process_pncp_document(url, max_tokens=500, document_name=nome, pncp_data=pncp_data)
+                    for idx_doc, doc in enumerate(docs or []):
+                        nome = str(doc.get('nome') or doc.get('titulo') or f'Documento {idx_doc+1}')
+                        url = str(doc.get('url') or doc.get('uri') or '')
+                        if not url:
+                            continue
+                        # Numerador do documento no lote
+                        try:
+                            if isinstance(pncp_data, dict):
+                                pncp_data['doc_seq'] = idx_doc + 1
+                        except Exception:
+                            pass
+                        if summarize_document:
+                            if SQL_DEBUG:
+                                short = (url[:80] + '...') if len(url) > 80 else url
+                                dbg('RESUMO', f"Gerando resumo do doc {idx_doc+1}/{len(docs)}: '{nome}' url='{short}'")
+                            piece = summarize_document(url, max_tokens=500, document_name=nome, pncp_data=pncp_data)
+                        elif process_pncp_document:
+                            if SQL_DEBUG:
+                                short = (url[:80] + '...') if len(url) > 80 else url
+                                dbg('RESUMO', f"Gerando resumo (fallback) do doc {idx_doc+1}/{len(docs)}: '{nome}' url='{short}'")
+                            piece = process_pncp_document(url, max_tokens=500, document_name=nome, pncp_data=pncp_data)
+                        else:
+                            piece = 'Pipeline de documentos não está disponível neste ambiente.'
+                        if isinstance(piece, str) and piece.strip():
+                            combined.append(f"## {nome}\n\n{piece}\n")
+                    summary_text = "\n\n---\n\n".join(combined) if combined else None
                 except Exception as e:
                     summary_text = f"Erro ao gerar resumo: {e}"
             else:
@@ -6337,16 +6531,20 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo, noti
                 sz = len(summary_text) if isinstance(summary_text, str) else 'N/A'
                 dbg('RESUMO', f"Resumo GERADO (chars={sz})")
 
-            if not summary_text:
-                summary_text = 'Não foi possível gerar o resumo.'
+            # Guardar fallback só para exibição (não cachear/persistir)
+            is_good = False
+            if isinstance(summary_text, str) and summary_text.strip() and not summary_text.startswith('Erro') and summary_text != 'Pipeline de documentos não está disponível neste ambiente.':
+                is_good = True
+            display_text = summary_text if is_good else 'Não foi possível gerar o resumo.'
 
             try:
-                updated_cache[str(pid)] = {'docs': docs, 'summary': summary_text}
+                if is_good:
+                    updated_cache[str(pid)] = {'docs': docs, 'summary': summary_text}
             except Exception:
                 pass
 
             # Persistir no BD por usuário (best-effort)
-            if uid and isinstance(summary_text, str) and summary_text.strip():
+            if uid and is_good:
                 try:
                     upsert_user_resumo(uid, pid, summary_text)
                 except Exception:
@@ -6371,11 +6569,11 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo, noti
             # Notificações de resultado do resumo
             updated_notifs = list(notifications or [])
             try:
-                if isinstance(summary_text, str) and summary_text.strip() and not summary_text.startswith('Erro'):
+                if is_good:
                     # Sucesso
                     notif = add_note(NOTIF_SUCCESS, "Resumo gerado com sucesso!")
                     updated_notifs.append(notif)
-                elif summary_text and summary_text.startswith('Erro'):
+                elif isinstance(summary_text, str) and summary_text.startswith('Erro'):
                     # Erro ao gerar
                     notif = add_note(NOTIF_ERROR, "Erro ao gerar resumo. Tente novamente.")
                     updated_notifs.append(notif)
@@ -6383,7 +6581,7 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo, noti
                 pass
             
             # Substitui o spinner pelo conteúdo final (resumo)
-            children_out[-1] = [html.Div(dcc.Markdown(children=summary_text, className='markdown-summary'), style=styles['details_content_inner'])]
+            children_out[-1] = [html.Div(dcc.Markdown(children=display_text, className='markdown-summary'), style=styles['details_content_inner'])]
         else:
             children_out.append([])
     return children_out, style_out, btn_styles, updated_cache, updated_notifs
@@ -6423,13 +6621,25 @@ def show_resumo_spinner_when_active(active_map, results, cache_resumo):
                     cached = cache_resumo[str(pid)].get('summary')
             except Exception:
                 cached = None
-            if cached:
+            # Permitir cache somente se for bom (nem erro, nem fallback)
+            def _is_good_summary(text: str | None) -> bool:
+                if not isinstance(text, str) or not text.strip():
+                    return False
+                t = text.strip()
+                if t.startswith('Erro'):
+                    return False
+                if t == 'Não foi possível gerar o resumo.':
+                    return False
+                if 'Limite diário de resumos atingido' in t:
+                    return False
+                return True
+            if _is_good_summary(cached):
                 children_out.append([html.Div(dcc.Markdown(children=cached, className='markdown-summary'), style=styles['details_content_inner'])])
                 btn_styles.append(styles['btn_pill_inverted'])
             else:
                 spinner = html.Div(
                     html.Div(
-                        html.I(className="fas fa-spinner fa-spin", style={'color': '#FF5722', 'fontSize': '24px'}),
+                        html.I(className="fas fa-spinner fa-spin", style={'color': _COLOR_PRIMARY, 'fontSize': '24px'}),
                         style=styles['details_spinner_center']
                     ),
                     style={**styles['details_content_inner'], 'height': '100%'}
@@ -6530,14 +6740,11 @@ def toggle_panel_wrapper(active_map, results):
         pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
         pncp_ids.append(str(pid) if pid is not None else 'N/A')
     for pid in pncp_ids:
-        base = {
-            'backgroundColor': '#FFFFFF', 'border': '1px solid transparent',
-            'borderRadius': '12px', 'padding': '10px',
-            'flex': '1 1 auto', 'position': 'relative', 'display': 'none'
-        }
+        # Usar o estilo canônico centralizado (mantém borda/cor/radius padronizados)
+        base = dict(styles['panel_wrapper'])
         if str(pid) in (active_map or {}):
             base['display'] = 'block'
-            base['border'] = '1px solid #FF5722'
+            # Não alterar a borda; já é definida pelo styles['panel_wrapper']
         styles_out.append(base)
     return styles_out
 
