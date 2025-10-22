@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from search.gvg_browser.gvg_boletim import set_last_sent, get_user_email
-    from search.gvg_browser.gvg_database import create_connection
+    from search.gvg_browser.gvg_database import create_connection, fetch_documentos
     from search.gvg_browser.gvg_email import send_html_email
     from search.gvg_browser.gvg_styles import styles
 except Exception:
@@ -34,7 +34,7 @@ except Exception:
     import sys, os
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from gvg_boletim import set_last_sent, get_user_email
-    from gvg_database import create_connection
+    from gvg_database import create_connection, fetch_documentos
     from gvg_email import send_html_email
     from gvg_styles import styles
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -439,6 +439,34 @@ def _render_html_boletim(query_text: str, items: List[Dict[str, Any]],
         # Tag de status de data (aplica backgroundColor dinâmico)
         link_html = f"<a href='{link}' target='_blank'>{link_text}</a>" if link else 'N/A'
 
+        # Documentos do processo (lista curta de links)
+        docs_html = ""
+        try:
+            docs = fetch_documentos(str(pncp_id)) if pncp_id else []
+        except Exception:
+            docs = []
+        if docs:
+            max_docs = 5
+            doc_items = []
+            for d in docs[:max_docs]:
+                try:
+                    d_url = d.get('url')
+                    if not d_url:
+                        continue
+                    d_nome = (d.get('nome') or 'Documento').strip()
+                    if len(d_nome) > 80:
+                        d_nome = d_nome[:77] + '...'
+                    doc_items.append(f"<li style='margin:0 0 2px 0;'><a href='{d_url}' target='_blank'>{d_nome}</a></li>")
+                except Exception:
+                    continue
+            if doc_items:
+                more = len(docs) - len(doc_items)
+                more_txt = f"<li style='color:#555;font-size:11px;list-style:none;margin-top:2px;'>+{more} mais…</li>" if more > 0 else ""
+                docs_html = (
+                    "<div style='margin-top:6px;'><span style='font-weight:bold;'>Documentos: </span>"
+                    "<ul style='margin:4px 0 0 18px;padding:0;'>" + "".join(doc_items) + more_txt + "</ul></div>"
+                )
+
         body_html = (
             f"<div style='{details_body_style}'>"
             f"<div style='font-weight:bold;color:#003A70;margin-bottom:6px;'>{i}</div>"
@@ -452,6 +480,7 @@ def _render_html_boletim(query_text: str, items: List[Dict[str, Any]],
             f"<span style='font-weight:bold;'>Data de Encerramento: </span>"
             f"<span style='color:{enc_color};font-weight:bold;'> {data_enc} - {status_text}</span></div>"
             f"<div style='margin-bottom:8px;'><span style='font-weight:bold;'>Link: </span>{link_html}</div>"
+            f"{docs_html}"
             f"<div><span style='font-weight:bold;'>Descrição: </span><span>{objeto}</span></div>"
             f"</div>"
         )

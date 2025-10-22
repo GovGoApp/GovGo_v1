@@ -604,8 +604,7 @@ header = html.Div([
     ], style=styles['header_left']),
     html.Div([
         html.Button([
-            html.I(className='fas fa-paper-plane'),
-            html.Span('Mensagem')
+            html.I(className='fas fa-comments')
         ], id='header-message-btn', title='Enviar mensagem', style=styles['header_message_btn']),
         html.Div(
             id='header-user-badge',
@@ -718,7 +717,7 @@ controls_panel = html.Div([
                                 rows=2,
                                 style={**styles['input_field'], 'overflowY': 'auto', 'resize': 'none', 'height': '80px', 'width': '100%'}
                             )
-                        ], style=styles.get('query_textbox', {})),
+                        ], id='query-textarea-wrap', style=styles.get('query_textbox', {})),
                         style=styles.get('query_text_cell', {'width': '100%'})
                     ),
                     html.Td(

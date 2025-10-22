@@ -222,6 +222,30 @@ def _to_float(value):
         return None
 
 
+def _as_bool(x, default: bool = False) -> bool:
+    """Converte valores diversos (bool/int/str) para bool de forma previsível.
+
+    Aceita: True/False, 1/0, "true"/"false", "yes"/"no", "on"/"off", "1"/"0".
+    Valores None ou desconhecidos retornam o default.
+    """
+    try:
+        if x is None:
+            return default
+        if isinstance(x, bool):
+            return x
+        if isinstance(x, (int, float)):
+            return x != 0
+        if isinstance(x, str):
+            s = x.strip().lower()
+            if s in ("true", "1", "yes", "on", "y", "t"):
+                return True
+            if s in ("false", "0", "no", "off", "n", "f", ""):
+                return False
+    except Exception:
+        pass
+    return default
+
+
 def _sort_results(results: List[Dict[str, Any]], order_mode: int) -> List[Dict[str, Any]]:
     if not results:
         return results
@@ -375,11 +399,11 @@ def run_once(now: Optional[datetime] = None) -> None:
         sort_mode = int(cfg.get('sort_mode', 1))
         max_results = int(cfg.get('max_results', 50))
         top_categories_count = int(cfg.get('top_categories_count', 10))
-        filter_expired = bool(cfg.get('filter_expired', True))
+        filter_expired = _as_bool(cfg.get('filter_expired'), default=True)
         negation_emb = bool(cfg.get('negation_emb', True))
 
         # Log dos parâmetros que serão enviados para a busca
-    # (Parâmetros omitidos do log para reduzir ruído)
+        # (Parâmetros omitidos do log para reduzir ruído)
 
         # Executa busca respeitando snapshot, sem IA por padrão (usa cache de pré-processamento, se houver)
         try:
@@ -421,6 +445,24 @@ def run_once(now: Optional[datetime] = None) -> None:
                     pass
                 where_sql = info.get('sql_conditions') or filters_sql
                 base_terms = (info.get('search_terms') or query or '').strip()
+
+            # Aplicar filtro de encerrados de forma explícita no where_sql e nas sql_conditions do preproc
+            if filter_expired:
+                _enc_filter = "to_date(NULLIF(c.data_encerramento_proposta,''),'YYYY-MM-DD') >= CURRENT_DATE"
+                try:
+                    # Injetar no where_sql (usado por approaches com where_sql)
+                    where_sql = list(where_sql or [])
+                    if _enc_filter not in where_sql:
+                        where_sql.append(_enc_filter)
+                    # Injetar também nas sql_conditions do preproc (usado por query_obj nas buscas diretas)
+                    if isinstance(info, dict):
+                        sc = list((info.get('sql_conditions') or []))
+                        if _enc_filter not in sc:
+                            sc.append(_enc_filter)
+                            info['sql_conditions'] = sc
+                    log_line("Filtro de encerrados aplicado (filter_expired=True)")
+                except Exception:
+                    pass
 
             # Negative terms (usados para eventual embedding / futura extensão) - manter referência
             negative_terms = ''

@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from search.gvg_browser.gvg_boletim import set_last_sent, get_user_email
-    from search.gvg_browser.gvg_database import create_connection
+    from search.gvg_browser.gvg_database import create_connection, fetch_documentos
     from search.gvg_browser.gvg_email import send_html_email
     from search.gvg_browser.gvg_styles import styles
 except Exception:
@@ -34,7 +34,7 @@ except Exception:
     import sys, os
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from gvg_boletim import set_last_sent, get_user_email
-    from gvg_database import create_connection
+    from gvg_database import create_connection, fetch_documentos
     from gvg_email import send_html_email
     from gvg_styles import styles
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -439,6 +439,31 @@ def _render_html_boletim(query_text: str, items: List[Dict[str, Any]],
         # Tag de status de data (aplica backgroundColor dinâmico)
         link_html = f"<a href='{link}' target='_blank'>{link_text}</a>" if link else 'N/A'
 
+        # Documentos (lista completa) — busca via BD/API
+        docs_html = ''
+        try:
+            docs = fetch_documentos(pncp_id) if pncp_id else []
+        except Exception:
+            docs = []
+        try:
+            if docs:
+                items_html = []
+                for d in docs:
+                    url = (d or {}).get('url') or ''
+                    nome = (d or {}).get('nome') or (d or {}).get('tipo') or 'Documento'
+                    if not url:
+                        continue
+                    if len(nome) > 80:
+                        nome = nome[:77] + '...'
+                    items_html.append(f"<a href='{url}' target='_blank'>{nome}</a>")
+                docs_html = (
+                    "<div style='margin-top:0px;'><span style='font-weight:bold;'>Documentos: </span>"
+                    + (" | ".join(items_html) if items_html else 'N/A')
+                    + "</div>"
+                )
+        except Exception:
+            docs_html = ''
+
         body_html = (
             f"<div style='{details_body_style}'>"
             f"<div style='font-weight:bold;color:#003A70;margin-bottom:6px;'>{i}</div>"
@@ -447,11 +472,12 @@ def _render_html_boletim(query_text: str, items: List[Dict[str, Any]],
             f"<div><span style='font-weight:bold;'>Local: </span><span>{local}</span></div>"
             f"<div><span style='font-weight:bold;'>ID PNCP: </span><span>{pncp_id or 'N/A'}</span></div>"
             f"<div><span style='font-weight:bold;'>Valor: </span><span>{valor}</span></div>"
-            #f"<div style='display:flex;align-items:center;gap:4px;'><span style='font-weight:bold;'>Data de Abertura: </span><span> {data_abertura}</span></div>"
+            f"<div style='display:flex;align-items:center;gap:4px;'><span style='font-weight:bold;'>Data de Abertura: </span><span> {data_abertura}</span></div>"
             f"<div style='display:flex;align-items:center;gap:6px;margin-top:2px;'>"
-            f"<span style='font-weight:bold;'>Data de Encerramento: </span>"
+            f"<span style='font-weight:bold;'>Data de Encerramento:  </span>"
             f"<span style='color:{enc_color};font-weight:bold;'> {data_enc} - {status_text}</span></div>"
-            f"<div style='margin-bottom:8px;'><span style='font-weight:bold;'>Link: </span>{link_html}</div>"
+            f"<div style='margin-bottom:0px;'><span style='font-weight:bold;'>Link: </span>{link_html}</div>"
+            f"{docs_html}"
             f"<div><span style='font-weight:bold;'>Descrição: </span><span>{objeto}</span></div>"
             f"</div>"
         )

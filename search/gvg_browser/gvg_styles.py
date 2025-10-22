@@ -995,6 +995,13 @@ BASE_CSS = """
     box-shadow: none !important;
     outline: none !important;
 }
+
+/* ===== Query input focus highlight (igual ao textarea da mensagem) ===== */
+#query-textarea-wrap:focus-within {
+    border-color: #003A70 !important; /* _COLOR_SECONDARY */
+    box-shadow: none !important;
+    outline: none !important;
+}
 """
 
 # Classe aplicada em dcc.Markdown(children=..., className='markdown-summary')
