@@ -140,6 +140,7 @@ def _filters_to_sql_conditions(f: Dict[str, Any] | None) -> List[str]:
     pncp = (f.get('pncp') or '').strip() if f.get('pncp') else ''
     orgao = (f.get('orgao') or '').strip() if f.get('orgao') else ''
     cnpj = (f.get('cnpj') or '').strip() if f.get('cnpj') else ''
+    uasg = (f.get('uasg') or '').strip() if f.get('uasg') else ''
     uf_val = f.get('uf')
     municipio = (f.get('municipio') or '').strip() if f.get('municipio') else ''
     modalidade_id = f.get('modalidade_id') if f.get('modalidade_id') is not None else None
@@ -154,6 +155,8 @@ def _filters_to_sql_conditions(f: Dict[str, Any] | None) -> List[str]:
         out.append(f"( c.orgao_entidade_razao_social ILIKE '%{o}%' OR c.unidade_orgao_nome_unidade ILIKE '%{o}%' )")
     if cnpj:
         out.append(f"c.orgao_entidade_cnpj = '{_esc(cnpj)}'")
+    if uasg:
+        out.append(f"c.unidade_orgao_codigo_unidade = '{_esc(uasg)}'")
     if isinstance(uf_val, list):
         ufs = [str(u).strip() for u in uf_val if str(u).strip()]
         if ufs:

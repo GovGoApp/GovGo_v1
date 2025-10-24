@@ -124,6 +124,30 @@ Este documento resume a arquitetura do módulo `gvg_browser` e, em especial, o a
 - (Opcional) Aplica Filtro de Relevância (níveis 2/3) com Assistant.
 - Persiste histórico: salva prompt (com embedding do prompt) e resultados em `user_results` (se as tabelas existirem).
 
+### Filtros avançados (V2)
+
+Quando o modo V2 está habilitado, a busca aceita filtros avançados pela UI que são convertidos em condições SQL seguras e aplicadas a todas as abordagens de busca. Campos suportados:
+
+- pncp: número de controle PNCP (igualdade)
+- orgao: razão social/nome da unidade (ILIKE em `orgao_entidade_razao_social` ou `unidade_orgao_nome_unidade`)
+- cnpj: CNPJ do órgão (igualdade em `orgao_entidade_cnpj`)
+- uasg: UASG do órgão (igualdade em `unidade_orgao_codigo_unidade`)
+- uf: UF (valor único ou lista; igualdade/IN em `unidade_orgao_uf_sigla`)
+- municipio: texto (ILIKE em `unidade_orgao_municipio_nome`, suporta múltiplos termos separados por vírgula)
+- modalidade_id: valor único ou lista (igualdade/IN em `modalidade_id`)
+- modo_id: valor único ou lista (igualdade/IN em `modo_disputa_id`)
+- date_field: `encerramento` (padrão) | `abertura` | `publicacao`
+- date_start/date_end: datas (YYYY-MM-DD) aplicadas com `to_date(...)` sobre a coluna escolhida por `date_field`
+
+Observações:
+- O filtro UASG mapeia diretamente para `c.unidade_orgao_codigo_unidade = '<valor>'` (igualdade exata). Na UI ele aparece como “UASG do Órgão”.
+- O filtro “Somente abertos” (filter_expired) adiciona: `to_date(NULLIF(c.data_encerramento_proposta,''),'YYYY-MM-DD') >= CURRENT_DATE`.
+- Os mesmos filtros são respeitados pelos Boletins (agendador) e pelo Replay do Boletim/Histórico.
+
+Exemplos rápidos:
+- Buscar por “pregão combustível” somente em um UASG específico: preencher UASG com `160123` e executar.
+- Filtrar por UF SP e dois municípios: UF=`SP`; Município=`Campinas, Ribeirão Preto`.
+
 Limites e métricas de uso:
 - Antes da execução, verifica capacidade por plano com `ensure_capacity('consultas')`.
 - Eventos de uso são registrados com agregador ao final: `query` para buscas; contagem diária considera `created_at_date`.

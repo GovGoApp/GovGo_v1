@@ -851,6 +851,10 @@ controls_panel = html.Div([
                 dcc.Input(id='flt-cnpj', type='text', placeholder='Somente números', style=styles['input_fullflex'])
             ], className='gvg-form-row'),
             html.Div([
+                html.Label('UASG do Órgão', className='gvg-form-label'),
+                dcc.Input(id='flt-uasg', type='text', placeholder='Ex.: 160123', style=styles['input_fullflex'])
+            ], className='gvg-form-row'),
+            html.Div([
                 html.Label('Estado (UF)', className='gvg-form-label'),
                 dcc.Dropdown(
                     id='flt-uf',
@@ -2070,6 +2074,7 @@ def _build_sql_conditions_from_ui_filters(f: dict | None) -> list[str]:
     pncp = (f.get('pncp') or '').strip() if f.get('pncp') else ''
     orgao = (f.get('orgao') or '').strip() if f.get('orgao') else ''
     cnpj = (f.get('cnpj') or '').strip() if f.get('cnpj') else ''
+    uasg = (f.get('uasg') or '').strip() if f.get('uasg') else ''
     uf_val = f.get('uf') if isinstance(f, dict) else None
     municipio = (f.get('municipio') or '').strip() if f.get('municipio') else ''
     modalidade_id = f.get('modalidade_id') if f.get('modalidade_id') is not None else None
@@ -2088,6 +2093,8 @@ def _build_sql_conditions_from_ui_filters(f: dict | None) -> list[str]:
         )
     if cnpj:
         out.append(f"c.orgao_entidade_cnpj = '{cnpj}'")
+    if uasg:
+        out.append(f"c.unidade_orgao_codigo_unidade = '{uasg.replace("'","''")}'")
     # UF pode ser string única ou lista
     if isinstance(uf_val, list):
         ufs = [str(u).strip() for u in uf_val if str(u).strip()]
@@ -2642,6 +2649,11 @@ def render_boletins_list(data):
             filt_spans.append(html.Span([
                 html.Span('CNPJ: ', style={'fontWeight': 'bold'}),
                 html.Span(str(f.get('cnpj') or ''), style={'fontStyle': 'italic'})
+            ]))
+        if _has(f.get('uasg')):
+            filt_spans.append(html.Span([
+                html.Span('UASG: ', style={'fontWeight': 'bold'}),
+                html.Span(str(f.get('uasg') or ''), style={'fontStyle': 'italic'})
             ]))
         if _has(f.get('uf')):
             uf_val = f.get('uf')
@@ -5180,6 +5192,7 @@ def update_filters_icon(is_open):
     Input('flt-pncp', 'value'),
     Input('flt-orgao', 'value'),
     Input('flt-cnpj', 'value'),
+    Input('flt-uasg', 'value'),
     Input('flt-uf', 'value'),
     Input('flt-municipio', 'value'),
     Input('flt-modalidade-id', 'value'),
@@ -5189,7 +5202,7 @@ def update_filters_icon(is_open):
     Input('flt-date-end', 'value'),
     prevent_initial_call=False,
 )
-def sync_filters_store(pncp, orgao, cnpj, uf, municipio, modalidade_id, modo_id, date_field, start_date_txt, end_date_txt):
+def sync_filters_store(pncp, orgao, cnpj, uasg, uf, municipio, modalidade_id, modo_id, date_field, start_date_txt, end_date_txt):
     def val(x):
         try:
             s = (x or '').strip()
@@ -5244,6 +5257,7 @@ def sync_filters_store(pncp, orgao, cnpj, uf, municipio, modalidade_id, modo_id,
         'pncp': val(pncp),
         'orgao': val(orgao),
         'cnpj': val(cnpj),
+        'uasg': val(uasg),
         'uf': uf_payload,
         'municipio': val(municipio),
     'modalidade_id': modalidade_id if modalidade_id not in ('', None, []) else None,
@@ -5469,6 +5483,11 @@ def render_history_list(history):
                     html.Span('CNPJ: ', style={'fontWeight': 'bold'}),
                     html.Span(str(f.get('cnpj') or ''), style={'fontStyle': 'italic'})
                 ]))
+            if _has(f.get('uasg')):
+                parts.append(html.Span([
+                    html.Span('UASG: ', style={'fontWeight': 'bold'}),
+                    html.Span(str(f.get('uasg') or ''), style={'fontStyle': 'italic'})
+                ]))
             if _has(f.get('uf')):
                 uf_val = f.get('uf')
                 if isinstance(uf_val, list):
@@ -5628,6 +5647,11 @@ def render_status_and_categories(meta, categories, last_query, filters):
             parts.append(html.Span([
                 html.Span('CNPJ: ', style={'fontWeight': 'bold'}),
                 html.Span(str(f.get('cnpj') or ''), style={'fontStyle': 'italic'})
+            ]))
+        if _has(f.get('uasg')):
+            parts.append(html.Span([
+                html.Span('UASG: ', style={'fontWeight': 'bold'}),
+                html.Span(str(f.get('uasg') or ''), style={'fontStyle': 'italic'})
             ]))
         if _has(f.get('uf')):
             uf_val = f.get('uf')
@@ -7192,6 +7216,7 @@ def replay_from_boletim(n_clicks_list, boletins, notifications):
     Output('flt-pncp', 'value'),
     Output('flt-orgao', 'value'),
     Output('flt-cnpj', 'value'),
+    Output('flt-uasg', 'value'),
     Output('flt-uf', 'value'),
     Output('flt-municipio', 'value'),
     Output('flt-modalidade-id', 'value'),
@@ -7301,6 +7326,9 @@ def apply_history_to_ui(n_clicks_list, history):
     # Preparar saídas; quando config ausente, mantém valor atual (dash.no_update)
     toggles_val = (['filter_expired'] if (fe is True) else ([] if fe is False else dash.no_update))
 
+    # Campo UASG (string simples)
+    uasg = (f.get('uasg') or '').strip() if isinstance(f.get('uasg'), str) else (f.get('uasg') or '' )
+
     return (
         (st if st is not None else dash.no_update),
         (sa if sa is not None else dash.no_update),
@@ -7312,6 +7340,7 @@ def apply_history_to_ui(n_clicks_list, history):
         pncp,
         orgao,
         cnpj,
+        uasg,
         uf_out,
         municipio,
         mod_out,
