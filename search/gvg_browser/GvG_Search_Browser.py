@@ -4959,15 +4959,14 @@ def update_submit_button(is_processing, query_text, filters):
     return html.I(className="fas fa-arrow-right"), (not enabled), st
 
 
-# Mostrar/ocultar spinner central no painel direito
+# Mostrar/ocultar spinner central no painel direito (comportamento global)
 @app.callback(
     Output('gvg-center-spinner', 'style'),
     Input('processing-state', 'data')
 )
 def toggle_center_spinner(is_processing):
-    if is_processing:
-        return {'display': 'block'}
-    return {'display': 'none'}
+    # Exibe o spinner central sempre que houver processamento global ativo
+    return {'display': 'block'} if is_processing else {'display': 'none'}
 
 
 # Habilita/desabilita o Interval do progresso conforme o processamento
@@ -4997,7 +4996,7 @@ def update_progress_store(_n, is_processing):
     return {'percent': p, 'label': lbl}
 
 
-# Reflete a barra de progresso na UI
+# Reflete a barra de progresso na UI (comportamento global)
 @app.callback(
     Output('progress-fill', 'style'),
     Output('progress-bar', 'style'),
@@ -5008,24 +5007,26 @@ def update_progress_store(_n, is_processing):
     prevent_initial_call=False,
 )
 def reflect_progress_bar(data, is_processing):
-    percent = 0
     try:
         percent = int((data or {}).get('percent', 0))
     except Exception:
         percent = 0
     label = (data or {}).get('label') or ''
+
+    show_progress = bool(is_processing and (percent > 0 and percent < 100))
+
     bar_style = dict(styles['progress_bar_container'])
-    bar_style['display'] = 'block' if (is_processing and percent > 0 and percent < 100) else 'none'
+    bar_style['display'] = 'block' if show_progress else 'none'
 
     fill_style = dict(styles['progress_fill'])
     fill_style['width'] = f'{percent}%'
     label_text = f"{percent}% — {label}" if label else (f"{percent}%" if percent else '')
     label_style = dict(styles['progress_label'])
-    label_style['display'] = 'block' if (is_processing and percent > 0 and percent < 100) else 'none'
+    label_style['display'] = 'block' if show_progress else 'none'
     return fill_style, bar_style, label_text, label_style
 
 
-# Limpar conteúdo do painel de resultados ao iniciar nova busca
+# Limpar conteúdo do painel de resultados ao iniciar nova busca (global)
 @app.callback(
     Output('results-table-inner', 'children', allow_duplicate=True),
     Output('results-details', 'children', allow_duplicate=True),
@@ -5041,11 +5042,11 @@ def reflect_progress_bar(data, is_processing):
 def clear_results_content_on_start(is_processing):
     if not is_processing:
         raise PreventUpdate
-    # Esvazia conteúdos imediatamente
+    # Esvazia conteúdos imediatamente durante o início do processamento global
     return [], [], [], [], {}, {}, {}, {}
 
 
-# Ocultar cartões/tabelas enquanto processa (evita flicker de conteúdo antigo)
+# Ocultar cartões/tabelas enquanto processa (global; evita flicker de conteúdo antigo)
 @app.callback(
     Output('status-bar', 'style', allow_duplicate=True),
     Output('categories-table', 'style', allow_duplicate=True),

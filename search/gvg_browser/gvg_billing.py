@@ -171,9 +171,17 @@ def get_system_plans() -> List[Dict[str, Any]]:
 def get_user_settings(user_id: str) -> Dict[str, Any]:
 	if not user_id:
 		return _fallback_free()
+	# Buscar settings + IDs do gateway
 	sql = f"""
-	SELECT us.user_id, sp.code AS plan_code, sp.name AS plan_name,
-		   sp.limit_consultas_per_day, sp.limit_resumos_per_day, sp.limit_boletim_per_day, sp.limit_favoritos_capacity
+	SELECT us.user_id,
+	       sp.code AS plan_code,
+	       sp.name AS plan_name,
+	       sp.limit_consultas_per_day,
+	       sp.limit_resumos_per_day,
+	       sp.limit_boletim_per_day,
+	       sp.limit_favoritos_capacity,
+	       us.gateway_customer_id,
+	       us.gateway_subscription_id
 	  FROM public.user_settings us
 	  JOIN public.system_plans sp ON sp.id = us.plan_id
 	 WHERE us.user_id = %s
@@ -181,8 +189,17 @@ def get_user_settings(user_id: str) -> Dict[str, Any]:
 	row = db_fetch_one(sql, (user_id,), as_dict=True, ctx="BILLING.get_user_settings")
 	dbg('BILL', f"get_user_settings: user_id={user_id} row={row}")
 	if not row:
-		dbg('BILL', f"get_user_settings: row vazio, retornando FREE fallback")
-		return _fallback_free()
+		# Se não existir, garantir criação automática com plano FREE
+		try:
+			_created = ensure_user_settings(user_id)
+			dbg('BILL', f"get_user_settings: ensure_user_settings created={_created}")
+		except Exception as e:
+			dbg('BILL', f"get_user_settings: erro ensure_user_settings e={e}")
+		# Tentar novamente
+		row = db_fetch_one(sql, (user_id,), as_dict=True, ctx="BILLING.get_user_settings.retry")
+		if not row:
+			dbg('BILL', f"get_user_settings: row ainda vazio, retornando FREE fallback")
+			return _fallback_free()
 	result = {
 		'user_id': user_id,
 		'plan_code': row['plan_code'],
@@ -192,7 +209,9 @@ def get_user_settings(user_id: str) -> Dict[str, Any]:
 			'resumos': row['limit_resumos_per_day'],
 			'boletim_run': row['limit_boletim_per_day'],
 			'favoritos': row['limit_favoritos_capacity'],
-		}
+		},
+		'gateway_customer_id': row.get('gateway_customer_id'),
+		'gateway_subscription_id': row.get('gateway_subscription_id'),
 	}
 	dbg('BILL', f"get_user_settings: retornando result={result}")
 	return result
@@ -311,13 +330,67 @@ def _plan_code_to_id(plan_code: str) -> Optional[int]:
 		return None
 	return row[0] if not isinstance(row, dict) else row.get('id')
 
-def upgrade_plan(user_id: str, target_plan_code: str) -> Dict[str, Any]:
+def _get_free_plan_id_default() -> int:
+	"""Obtém o id do plano FREE; se não achar, retorna 1 como fallback."""
+	row = db_fetch_one("SELECT id FROM public.system_plans WHERE UPPER(code)='FREE' LIMIT 1", ctx="BILLING.free_plan")
+	if not row:
+		return 1
+	return row[0] if not isinstance(row, dict) else int(row.get('id', 1))
+
+
+def ensure_user_settings(user_id: str) -> bool:
+	"""Garante que exista uma linha em user_settings para o usuário (plano FREE).
+	Retorna True se inseriu, False se já existia ou nada foi feito.
+	"""
+	if not user_id:
+		return False
+	free_id = _get_free_plan_id_default()
+	sql = (
+		"INSERT INTO public.user_settings (user_id, plan_id, plan_status, plan_started_at) "
+		"VALUES (%s, %s, 'active', now()) "
+		"ON CONFLICT (user_id) DO NOTHING"
+	)
+	affected = 0
+	try:
+		affected = db_execute(sql, (user_id, free_id), ctx="BILLING.ensure_user_settings")
+		try:
+			dbg('BILL', f"ensure_user_settings uid={user_id} affected={affected}")
+		except Exception:
+			pass
+	except Exception as e:
+		try:
+			dbg('BILL', f"ensure_user_settings erro: {e}")
+		except Exception:
+			pass
+	return affected > 0
+
+
+def upgrade_plan(user_id: str, target_plan_code: str, gateway_customer_id: Optional[str] = None, gateway_subscription_id: Optional[str] = None) -> Dict[str, Any]:
 	pid = _plan_code_to_id(target_plan_code)
 	if not user_id or pid is None:
 		return {'error': 'Plano inválido'}
-	# Aplica imediato (sem cobrança) e limpa next_plan_id
-	# Removido updated_at (coluna não existe no schema atual user_settings)
-	db_execute("UPDATE public.user_settings SET plan_id = %s, next_plan_id = NULL, plan_status='active', plan_started_at = COALESCE(plan_started_at, now()) WHERE user_id = %s", (pid, user_id), ctx="BILLING.upgrade_plan")
+	# Tentar UPDATE direto
+	sql_upd = (
+		"UPDATE public.user_settings "
+		"SET plan_id = %s, next_plan_id = NULL, plan_status='active', "
+		"plan_started_at = COALESCE(plan_started_at, now()), "
+		"gateway_customer_id = COALESCE(%s, gateway_customer_id), "
+		"gateway_subscription_id = COALESCE(%s, gateway_subscription_id) "
+		"WHERE user_id = %s"
+	)
+	affected = db_execute(sql_upd, (pid, gateway_customer_id, gateway_subscription_id, user_id), ctx="BILLING.upgrade_plan.upd")
+	if affected == 0:
+		# Upsert se não existir
+		sql_ins = (
+			"INSERT INTO public.user_settings (user_id, plan_id, next_plan_id, plan_status, plan_started_at, gateway_customer_id, gateway_subscription_id) "
+			"VALUES (%s, %s, NULL, 'active', now(), %s, %s) "
+			"ON CONFLICT (user_id) DO UPDATE SET "
+			"plan_id = EXCLUDED.plan_id, next_plan_id = EXCLUDED.next_plan_id, plan_status = EXCLUDED.plan_status, "
+			"plan_started_at = COALESCE(user_settings.plan_started_at, EXCLUDED.plan_started_at), "
+			"gateway_customer_id = COALESCE(EXCLUDED.gateway_customer_id, user_settings.gateway_customer_id), "
+			"gateway_subscription_id = COALESCE(EXCLUDED.gateway_subscription_id, user_settings.gateway_subscription_id)"
+		)
+		db_execute(sql_ins, (user_id, pid, gateway_customer_id, gateway_subscription_id), ctx="BILLING.upgrade_plan.ins")
 	return get_user_settings(user_id)
 
 def schedule_downgrade(user_id: str, target_plan_code: str) -> Dict[str, Any]:
@@ -544,7 +617,7 @@ def handle_webhook_event(event: Dict[str, Any]) -> Dict[str, Any]:
 		if not plan:
 			return {'status': 'error', 'message': f'Plano {plan_code} não encontrado'}
 		plan_id = plan.get('id')
-		# Persistir plano e IDs do gateway no user_settings
+		# Persistir plano e IDs do gateway no user_settings (upsert)
 		result = upgrade_plan(user_id, plan_code, customer_id, subscription_id)
 		try:
 			dbg('BILL', f"[webhook.completed] upgrade_plan applied uid={user_id} plan={plan_code} cust={customer_id} sub={subscription_id}")
