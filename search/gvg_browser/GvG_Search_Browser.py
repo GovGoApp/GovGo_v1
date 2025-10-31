@@ -6241,8 +6241,6 @@ def load_itens_for_cards(n_clicks_list, active_map, results, cache_itens):
             for idx_it, it in enumerate(itens, start=1):
                 desc = (it.get('descricao_item') or it.get('descricao') or it.get('objeto') or '')
                 desc = str(desc)
-                if len(desc) > 50:
-                    desc = desc[:47] + '...'
                 qty = it.get('quantidade_item') or it.get('quantidade') or it.get('qtd')
                 unit = it.get('valor_unitario_estimado') or it.get('valor_unitario') or it.get('valorUnitario')
                 tot = it.get('valor_total_estimado') or it.get('valor_total') or it.get('valorTotal')
