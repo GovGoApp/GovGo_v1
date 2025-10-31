@@ -592,6 +592,27 @@ styles['fav_orgao'] = {
     'fontSize': '11px'
 }
 
+# Ícones de artefatos (positioned near bookmark in detail cards)
+styles['artifact_icons_wrap'] = {
+    'position': 'absolute', 'top': '12px', 'left': '66px',
+    'display': 'flex', 'gap': '6px', 'alignItems': 'center',
+    'color': _COLOR_PRIMARY
+}
+styles['artifact_icon_box'] = {
+    'width': '24px', 'height': '24px', 'minWidth': '24px',
+    'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center',
+    'color': _COLOR_PRIMARY
+}
+styles['artifact_icon'] = {
+    'color': _COLOR_PRIMARY, 'fontSize': '16px'
+}
+
+# Ícones inline ao lado do título na lista de Favoritos
+styles['fav_icons_inline'] = {
+    'display': 'inline-flex', 'gap': '6px', 'alignItems': 'center', 'marginLeft': '6px',
+    'color': _COLOR_PRIMARY, 'fontSize': '16px'
+}
+
 styles['result_number'] = {
     'position': 'absolute',
     'top': '10px',

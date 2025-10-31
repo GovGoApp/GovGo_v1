@@ -46,5 +46,215 @@
     "question": "quero tambem o valor medio da similaridade para cada cod_cat, o valor max e o valor min, para qualquer posição ",
     "sql": "WITH random_cod_cat AS ( SELECT cod_cat, nom_cat FROM categoria ORDER BY RANDOM() LIMIT 100 ) SELECT r.cod_cat, r.nom_cat, COUNT(DISTINCT e.numero_controle_pncp) AS total_contratacoes, AVG(unnest(e.top_similarities)::numeric) AS similaridade_media, MAX(unnest(e.top_similarities)::numeric) AS similaridade_max, MIN(unnest(e.top_similarities)::numeric) AS similaridade_min FROM random_cod_cat AS r LEFT JOIN contratacao_emb AS e ON r.cod_cat = ANY(e.top_categories) GROUP BY r.cod_cat, r.nom_cat ORDER BY total_contratacoes DESC;",
     "timestamp": "10/09/2025 00:28:17"
+  },
+  {
+    "id": "1",
+    "question": "me de a lista de fornecedores (razao social e cnpj) por soma e valor global de contratos",
+    "sql": "SELECT ct.nome_razao_social_fornecedor, ct.ni_fornecedor AS cnpj, SUM(ct.valor_global) AS soma_valor_global FROM contrato AS ct WHERE ct.valor_global IS NOT NULL GROUP BY ct.nome_razao_social_fornecedor, ct.ni_fornecedor ORDER BY soma_valor_global DESC LIMIT 1000;",
+    "timestamp": "27/10/2025 19:01:23"
+  },
+  {
+    "id": "2",
+    "question": "me de o select total das primeiras 30 linhas de contrato",
+    "sql": "SELECT * FROM contrato AS ct LIMIT 30;",
+    "timestamp": "27/10/2025 19:01:54"
+  },
+  {
+    "id": "1",
+    "question": "me de a lista de atas por soma de valor global ",
+    "sql": "SELECT a.numero_controle_ata_pncp, a.numero_ata_registro_preco, SUM(ct.valor_global) AS soma_valor_global FROM ata AS a JOIN contrato AS ct ON a.numero_controle_pncp_compra = ct.numero_controle_pncp GROUP BY a.numero_controle_ata_pncp, a.numero_ata_registro_preco ORDER BY soma_valor_global DESC LIMIT 1000;",
+    "timestamp": "27/10/2025 19:06:26"
+  },
+  {
+    "id": "2",
+    "question": "quero as atas que tenham numero de contratcao associado. ",
+    "sql": "SELECT a.numero_controle_ata_pncp, a.numero_ata_registro_preco, a.numero_controle_pncp_compra FROM ata AS a WHERE a.numero_controle_pncp_compra IS NOT NULL ORDER BY a.numero_controle_ata_pncp LIMIT 1000;",
+    "timestamp": "27/10/2025 19:53:19"
+  },
+  {
+    "id": "3",
+    "question": "conte os itens de pca por classificacao_superior_nome, ordem desc",
+    "sql": "SELECT cat.nom_nv0 AS classificacao_superior_nome, COUNT(ip.numero_item) AS quantidade_itens FROM item_pca AS ip JOIN categoria AS cat ON ip.item_categoria_id = cat.cod_cat GROUP BY cat.nom_nv0 ORDER BY quantidade_itens DESC LIMIT 1000;",
+    "timestamp": "27/10/2025 20:06:38"
+  },
+  {
+    "id": "1",
+    "question": "faca a contagem de itens pca por data de atualização ordem asc",
+    "sql": "SELECT data_desejada, COUNT(numero_item) as quantidade_itens FROM item_pca GROUP BY data_desejada ORDER BY data_desejada ASC;",
+    "timestamp": "27/10/2025 21:02:23"
+  },
+  {
+    "id": "1",
+    "question": "faça contagem de contrato por categoria_processo_id e categoria_processo_nome",
+    "sql": "SELECT c.categoria_processo_id, c.categoria_processo_nome, COUNT(ct.numero_controle_pncp) AS quantidade_contratos FROM contratacao AS c LEFT JOIN contrato AS ct ON c.numero_controle_pncp = ct.numero_controle_pncp GROUP BY c.categoria_processo_id, c.categoria_processo_nome ORDER BY quantidade_contratos DESC LIMIT 1000;",
+    "timestamp": "28/10/2025 09:22:53"
+  },
+  {
+    "id": "1",
+    "question": "SELECT ct.orgao_entidade_razaosocial, ct.orgao_entidade_cnpj, COUNT(ct.numero_controle_pncp) AS quantidade_contratos FROM contrato AS ct GROUP BY ct.orgao_entidade_razaosocial, ct.orgao_entidade_cnpj ORDER BY quantidade_contratos DESC LIMIT 100;",
+    "sql": "SELECT ct.orgao_entidade_razaosocial, ct.orgao_entidade_cnpj, COUNT(ct.numero_controle_pncp) AS quantidade_contratos FROM contrato AS ct GROUP BY ct.orgao_entidade_razaosocial, ct.orgao_entidade_cnpj ORDER BY quantidade_contratos DESC LIMIT 100;",
+    "timestamp": "28/10/2025 11:44:58"
+  },
+  {
+    "id": "1",
+    "question": "me a contagem de contrato e a soma de valor global por razao social e cnpj de forncedores , ordene por valor desc",
+    "sql": "SELECT ct.nome_razao_social_fornecedor, ct.ni_fornecedor, COUNT(ct.numero_contrato_empenho) AS total_contratos, SUM(ct.valor_global) AS soma_valor_global FROM contrato AS ct GROUP BY ct.nome_razao_social_fornecedor, ct.ni_fornecedor ORDER BY soma_valor_global DESC LIMIT 1000;",
+    "timestamp": "28/10/2025 11:46:53"
+  },
+  {
+    "id": "2",
+    "question": "me de a contagem e a soma de valor global de contratos por municipio , codigo ibge e uf",
+    "sql": "SELECT ct.unidade_orgao_municipio_nome, ct.unidade_orgao_uf_sigla, COUNT(ct.numero_contrato_empenho) AS total_contratos, SUM(ct.valor_global) AS soma_valor_global FROM contrato AS ct GROUP BY ct.unidade_orgao_municipio_nome, ct.unidade_orgao_uf_sigla ORDER BY soma_valor_global DESC LIMIT 1000;",
+    "timestamp": "28/10/2025 11:49:42"
+  },
+  {
+    "id": "3",
+    "question": "por favor, ponha o valor global em formato dinheiro (separador de milhar com ponto e separador decimal com virgula)",
+    "sql": "SELECT ct.unidade_orgao_municipio_nome, ct.unidade_orgao_uf_sigla, COUNT(ct.numero_contrato_empenho) AS total_contratos, TO_CHAR(SUM(ct.valor_global), 'FM999G999G999G999D99') AS soma_valor_global FROM contrato AS ct GROUP BY ct.unidade_orgao_municipio_nome, ct.unidade_orgao_uf_sigla ORDER BY soma_valor_global DESC LIMIT 1000;",
+    "timestamp": "28/10/2025 11:51:50"
+  },
+  {
+    "id": "4",
+    "question": "ponto é separador de milhar! virgula é depardor decimal!",
+    "sql": "SELECT ct.unidade_orgao_municipio_nome, ct.unidade_orgao_uf_sigla, COUNT(ct.numero_contrato_empenho) AS total_contratos, TO_CHAR(SUM(ct.valor_global), 'FM999,999,999,999.00') AS soma_valor_global FROM contrato AS ct GROUP BY ct.unidade_orgao_municipio_nome, ct.unidade_orgao_uf_sigla ORDER BY soma_valor_global DESC LIMIT 1000;",
+    "timestamp": "28/10/2025 12:13:59"
+  },
+  {
+    "id": "5",
+    "question": "nao é 999,999,999,999.00 e sim 999.999.999.999,00",
+    "sql": "SELECT ct.unidade_orgao_municipio_nome, ct.unidade_orgao_uf_sigla, COUNT(ct.numero_contrato_empenho) AS total_contratos, TO_CHAR(SUM(ct.valor_global), 'FM999G999G999G999D00', 'L=\".\"D=\",\"') AS soma_valor_global FROM contrato AS ct GROUP BY ct.unidade_orgao_municipio_nome, ct.unidade_orgao_uf_sigla ORDER BY soma_valor_global DESC LIMIT 1000;",
+    "timestamp": "28/10/2025 12:15:46"
+  },
+  {
+    "id": "1",
+    "question": "me de a contagem de contratos cujo objeto_contrato é nulo ou nao tem texto",
+    "sql": "SELECT COUNT(*) FROM contrato AS ct WHERE ct.objeto_contrato IS NULL OR TRIM(ct.objeto_contrato) = '';",
+    "timestamp": "28/10/2025 15:29:14"
+  },
+  {
+    "id": "1",
+    "question": "conte quantos contratos_emb (cujo embedding not null) e quantos contratos existe por dia em janeiro de 2025",
+    "sql": "SELECT ct.data_assinatura::date AS dia, COUNT(DISTINCT ct.numero_controle_pncp) AS total_contratos, COUNT(DISTINCT cte.numero_controle_pncp) AS total_contratos_emb FROM contrato AS ct LEFT JOIN contrato_emb AS cte ON ct.numero_controle_pncp = cte.numero_controle_pncp AND cte.embeddings IS NOT NULL WHERE ct.data_assinatura BETWEEN '2025-01-01' AND '2025-01-31' GROUP BY ct.data_assinatura::date ORDER BY ct.data_assinatura::date ASC;",
+    "timestamp": "28/10/2025 16:57:29"
+  },
+  {
+    "id": "2",
+    "question": "é data_atualizacao_global em contrato",
+    "sql": "SELECT ct.data_atualizacao_global::date AS dia, COUNT(DISTINCT ct.numero_controle_pncp) AS total_contratos, COUNT(DISTINCT cte.numero_controle_pncp) AS total_contratos_emb FROM contrato AS ct LEFT JOIN contrato_emb AS cte ON ct.numero_controle_pncp = cte.numero_controle_pncp AND cte.embeddings IS NOT NULL WHERE ct.data_atualizacao_global BETWEEN '2025-01-01' AND '2025-01-31' GROUP BY ct.data_atualizacao_global::date ORDER BY ct.data_atualizacao_global::date ASC;",
+    "timestamp": "28/10/2025 16:58:33"
+  },
+  {
+    "id": "3",
+    "question": "de novo",
+    "sql": "SELECT ct.data_atualizacao_global::date AS dia, COUNT(DISTINCT ct.numero_controle_pncp) AS total_contratos, COUNT(DISTINCT cte.numero_controle_pncp) AS total_contratos_emb FROM contrato AS ct LEFT JOIN contrato_emb AS cte ON ct.numero_controle_pncp = cte.numero_controle_pncp AND cte.embeddings IS NOT NULL WHERE ct.data_atualizacao_global BETWEEN '2025-01-01' AND '2025-01-31' GROUP BY ct.data_atualizacao_global::date ORDER BY ct.data_atualizacao_global::date ASC;",
+    "timestamp": "28/10/2025 17:02:44"
+  },
+  {
+    "id": "4",
+    "question": "de novo",
+    "sql": "SELECT ct.data_atualizacao_global::date AS dia, COUNT(DISTINCT ct.numero_controle_pncp) AS total_contratos, COUNT(DISTINCT cte.numero_controle_pncp) AS total_contratos_emb FROM contrato AS ct LEFT JOIN contrato_emb AS cte ON ct.numero_controle_pncp = cte.numero_controle_pncp AND cte.embeddings IS NOT NULL WHERE ct.data_atualizacao_global BETWEEN '2025-01-01' AND '2025-01-31' GROUP BY ct.data_atualizacao_global::date ORDER BY ct.data_atualizacao_global::date ASC;",
+    "timestamp": "28/10/2025 18:08:40"
+  },
+  {
+    "id": "5",
+    "question": "de novo",
+    "sql": "SELECT ct.data_atualizacao_global::date AS dia, COUNT(DISTINCT ct.numero_controle_pncp) AS total_contratos, COUNT(DISTINCT cte.numero_controle_pncp) AS total_contratos_emb FROM contrato AS ct LEFT JOIN contrato_emb AS cte ON ct.numero_controle_pncp = cte.numero_controle_pncp AND cte.embeddings IS NOT NULL WHERE ct.data_atualizacao_global BETWEEN '2025-01-01' AND '2025-01-31' GROUP BY ct.data_atualizacao_global::date ORDER BY ct.data_atualizacao_global::date ASC;",
+    "timestamp": "28/10/2025 21:49:16"
+  },
+  {
+    "id": "1",
+    "question": "me de a contagem de contratos por dia de janeiro de 2025, em embeddings not null e de top_categories not null",
+    "sql": "SELECT ct.data_assinatura::date AS dia, COUNT(ct.numero_controle_pncp) AS contagem_contratos FROM contrato AS ct JOIN contrato_emb AS ce ON ct.numero_controle_pncp = ce.numero_controle_pncp WHERE ce.embeddings IS NOT NULL AND ce.top_categories IS NOT NULL AND ct.data_assinatura LIKE '2025-01%' GROUP BY dia ORDER BY dia ASC LIMIT 1000;",
+    "timestamp": "29/10/2025 17:54:59"
+  },
+  {
+    "id": "2",
+    "question": "eu quero a contagem de contratos, a contagem de embeddings not null e a contagem de top_categories not null",
+    "sql": "SELECT COUNT(ct.numero_controle_pncp) AS contagem_contratos, COUNT(ce.embeddings) AS contagem_embeddings_not_null, COUNT(ce.top_categories) AS contagem_top_categories_not_null FROM contrato AS ct LEFT JOIN contrato_emb AS ce ON ct.numero_controle_pncp = ce.numero_controle_pncp;",
+    "timestamp": "29/10/2025 17:56:02"
+  },
+  {
+    "id": "3",
+    "question": "eu quero a contagem de contratos, a contagem de embeddings not null e a contagem de top_categories not null por dia de janeiro 2025 ",
+    "sql": "SELECT ct.data_assinatura::date AS dia, COUNT(ct.numero_controle_pncp) AS contagem_contratos, COUNT(ce.embeddings) AS contagem_embeddings_not_null, COUNT(ce.top_categories) AS contagem_top_categories_not_null FROM contrato AS ct LEFT JOIN contrato_emb AS ce ON ct.numero_controle_pncp = ce.numero_controle_pncp WHERE ct.data_assinatura LIKE '2025-01%' GROUP BY dia ORDER BY dia ASC LIMIT 1000;",
+    "timestamp": "29/10/2025 17:57:43"
+  },
+  {
+    "id": "4",
+    "question": "nao use left join, use =",
+    "sql": "SELECT ct.data_assinatura::date AS dia, COUNT(ct.numero_controle_pncp) AS contagem_contratos, COUNT(ce.embeddings) AS contagem_embeddings_not_null, COUNT(ce.top_categories) AS contagem_top_categories_not_null FROM contrato AS ct, contrato_emb AS ce WHERE ct.numero_controle_pncp = ce.numero_controle_pncp AND ct.data_assinatura LIKE '2025-01%' GROUP BY dia ORDER BY dia ASC LIMIT 1000;",
+    "timestamp": "29/10/2025 18:02:31"
+  },
+  {
+    "id": "1",
+    "question": "eu quero a contagem de contratos, a contagem de embeddings not null e a contagem de top_categories not null por dia de janeiro 2025",
+    "sql": "SELECT ct.data_assinatura::date AS data, COUNT(DISTINCT ct.numero_contrato_empenho) AS contagem_contratos, COUNT(DISTINCT ce.numero_controle_pncp) AS contagem_embeddings_not_null, COUNT(DISTINCT ce2.numero_controle_pncp) AS contagem_top_categories_not_null FROM contrato AS ct LEFT JOIN contrato_emb AS ce ON ct.numero_controle_pncp = ce.numero_controle_pncp AND ce.embeddings IS NOT NULL LEFT JOIN contrato_emb AS ce2 ON ct.numero_controle_pncp = ce2.numero_controle_pncp AND ce2.top_categories IS NOT NULL WHERE ct.data_assinatura LIKE '2025-01-%' GROUP BY ct.data_assinatura::date ORDER BY ct.data_assinatura::date LIMIT 1000;",
+    "timestamp": "29/10/2025 23:00:51"
+  },
+  {
+    "id": "1",
+    "question": "me de a contagem de embeddings e de top_categories not null em contrato_emb",
+    "sql": "SELECT COUNT(embeddings) AS count_embeddings, COUNT(top_categories) AS count_top_categories FROM contrato_emb WHERE embeddings IS NOT NULL AND top_categories IS NOT NULL;",
+    "timestamp": "31/10/2025 11:26:01"
+  },
+  {
+    "id": "2",
+    "question": "me de a contagem de numero_controle_pncp, de embeddings e de top_categories not null em contrato_emb",
+    "sql": "SELECT COUNT(numero_controle_pncp) AS count_numero_controle_pncp, COUNT(embeddings) AS count_embeddings, COUNT(top_categories) AS count_top_categories FROM contrato_emb WHERE numero_controle_pncp IS NOT NULL AND embeddings IS NOT NULL AND top_categories IS NOT NULL;",
+    "timestamp": "31/10/2025 11:26:38"
+  },
+  {
+    "id": "3",
+    "question": "eu quero a contagem total dos embeddings nao nulos, e tambem a contagem total dos top_categories nao nulos! O WHERE que voce colocou pressupoe um AND , nao é isso!",
+    "sql": "SELECT COUNT(embeddings) AS count_embeddings, COUNT(top_categories) AS count_top_categories FROM contrato_emb WHERE embeddings IS NOT NULL OR top_categories IS NOT NULL;",
+    "timestamp": "31/10/2025 11:59:47"
+  },
+  {
+    "id": "4",
+    "question": "de novo",
+    "sql": "SELECT COUNT(*) AS count_embeddings_not_null FROM contrato_emb WHERE embeddings IS NOT NULL; SELECT COUNT(*) AS count_top_categories_not_null FROM contrato_emb WHERE top_categories IS NOT NULL;",
+    "timestamp": "31/10/2025 12:38:34"
+  },
+  {
+    "id": "5",
+    "question": "me de a contagem de embeddings nao nulos e a contagem de top_categories nao nulos por dia em janeiro e fevereiro de 2025 em contrat_emb",
+    "sql": "SELECT DATE(data_aprovacao) AS date, COUNT(embeddings) AS count_embeddings_not_null, COUNT(top_categories) AS count_top_categories_not_null FROM contrato_emb WHERE (embeddings IS NOT NULL OR top_categories IS NOT NULL) AND DATE(data_aprovacao) BETWEEN '2025-01-01' AND '2025-02-28' GROUP BY DATE(data_aprovacao) ORDER BY DATE(data_aprovacao) ASC;",
+    "timestamp": "31/10/2025 12:55:19"
+  },
+  {
+    "id": "1",
+    "question": "me de a contagem diaria de embeddings nao nulos e de top_categorias nao nulas em contrato_emb para os meses de janeiro e fevereiro de 2025 utilizando data_atualizacao_global de contrato",
+    "sql": "SELECT DATE_TRUNC('day', c.data_atualizacao_global) AS dia, COUNT(e.embeddings) AS embeddings_nao_nulos, COUNT(e.top_categories) AS top_categorias_nao_nulas FROM contrato AS c JOIN contrato_emb AS e ON c.numero_controle_pncp = e.numero_controle_pncp WHERE c.data_atualizacao_global BETWEEN '2025-01-01T00:00:00' AND '2025-02-28T23:59:59' AND e.embeddings IS NOT NULL AND e.top_categories IS NOT NULL GROUP BY dia ORDER BY dia LIMIT 1000;",
+    "timestamp": "31/10/2025 13:04:46"
+  },
+  {
+    "id": "2",
+    "question": "me de a contagem de top_categorias nao nulas em contrato_emb",
+    "sql": "SELECT COUNT(e.top_categories) AS top_categorias_nao_nulas FROM contrato_emb AS e WHERE e.top_categories IS NOT NULL;",
+    "timestamp": "31/10/2025 13:08:40"
+  },
+  {
+    "id": "3",
+    "question": "de novo",
+    "sql": "SELECT COUNT(*) AS top_categorias_nao_nulas FROM contrato_emb AS e WHERE e.top_categories IS NOT NULL;",
+    "timestamp": "31/10/2025 13:14:13"
+  },
+  {
+    "id": "4",
+    "question": "me de  a contagem de top_categorias nao nulas em contrato_emb por dia de data_atualizacao_global de contrato",
+    "sql": "SELECT DATE_TRUNC('day', c.data_atualizacao_global) AS dia, COUNT(e.top_categories) AS top_categorias_nao_nulas FROM contrato AS c JOIN contrato_emb AS e ON c.numero_controle_pncp = e.numero_controle_pncp WHERE e.top_categories IS NOT NULL GROUP BY dia ORDER BY dia LIMIT 1000;",
+    "timestamp": "31/10/2025 13:14:51"
+  },
+  {
+    "id": "5",
+    "question": "SELECT COUNT(*) AS top_categorias_nao_nulas FROM contrato_emb AS e WHERE e.top_categories IS NOT NULL;",
+    "sql": "SELECT COUNT(e.top_categories) AS top_categorias_nao_nulas FROM contrato_emb AS e WHERE e.top_categories IS NOT NULL;",
+    "timestamp": "31/10/2025 13:21:29"
+  },
+  {
+    "id": "6",
+    "question": "de novo",
+    "sql": "SELECT COUNT(*) AS top_categorias_nao_nulas FROM contrato_emb AS e WHERE e.top_categories IS NOT NULL;",
+    "timestamp": "31/10/2025 14:15:45"
   }
 ]

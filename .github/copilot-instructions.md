@@ -83,3 +83,7 @@
 - Confirme entendimento do pedido e liste passos objetivos.
 - Se faltar detalhe, faça no máximo 1–2 suposições razoáveis e siga, sempre apontando-as.
 - Entregue diffs minimalistas; atualize `docs/README.md` quando necessário.
+
+## IMPORTANTE:
+- Não criar smoke tests automáticos ou unitários sem pedir autorização (default: Não)
+- Não criar arquivos de teste ou mocks sem pedir autorização (default: Não)

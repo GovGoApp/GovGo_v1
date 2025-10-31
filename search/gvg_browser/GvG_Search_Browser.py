@@ -67,7 +67,7 @@ from gvg_user import (
     fetch_user_results_for_prompt_text,
     get_prompt_preproc_output,
 )
-from gvg_database import get_user_resumo, upsert_user_resumo, fetch_documentos, db_fetch_all, insert_user_message
+from gvg_database import get_user_resumo, upsert_user_resumo, fetch_documentos, db_fetch_all, insert_user_message, get_artifacts_status
 
 from gvg_boletim import (
     create_user_boletim,
@@ -1071,7 +1071,7 @@ results_panel = html.Div([
 app.layout = html.Div([
     # Precisa estar no topo para capturar hash/query do Supabase na navegação inicial
     dcc.Location(id='url'),
-    dcc.Store(id='store-auth', data=AUTH_INIT),
+    dcc.Store(id='store-auth', data=AUTH_INIT, storage_type='local'),
     dcc.Store(id='store-auth-view', data='login'),
     dcc.Store(id='store-auth-error', data=''),
     dcc.Store(id='store-auth-pending-email', data=''),
@@ -1115,6 +1115,8 @@ app.layout = html.Div([
     dcc.Store(id='store-cache-itens', data={}),
     dcc.Store(id='store-cache-docs', data={}),
     dcc.Store(id='store-cache-resumo', data={}),
+    # Status de artefatos (por PNCP): {'<pncp>': {'has_summary': bool, 'has_md': bool}}
+    dcc.Store(id='store-artifacts-status', data={}),
     dcc.Store(id='progress-store', data={'percent': 0, 'label': ''}),
     # Filtros avançados da busca (payload canônico)
     dcc.Store(id='store-search-filters', data={}),
@@ -2842,6 +2844,19 @@ def update_boletins_icon(is_open):
 def on_auth_changed(auth_data):
     data = auth_data or {}
     status = data.get('status')
+    # Hidratar usuário/token quando status='auth' (suporte a reload com store persistida)
+    try:
+        if status == 'auth' and isinstance(data.get('user'), dict):
+            try:
+                set_current_user(data.get('user'))
+            except Exception:
+                pass
+            try:
+                set_access_token(data.get('access_token'))
+            except Exception:
+                pass
+    except Exception:
+        pass
     # Valores padrão para limpeza
     empty_results = []
     empty_categories = []
@@ -3034,6 +3049,11 @@ def do_login(n_clicks, email, password, remember_values, notifications):
     # Usuário autenticado
     try:
         set_current_user(session.get('user'))
+    except Exception:
+        pass
+    # Hidratar access_token para camadas que dependem do token no backend
+    try:
+        set_access_token(session.get('access_token'))
     except Exception:
         pass
     auth_state = {
@@ -4397,8 +4417,13 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
     elapsed = time.time() - t0
     # Persistir prompt do usuário e resultados (após processamento)
     try:
+        should_save = False
+        prompt_text = None
+        prompt_emb = None
+        # Com texto de query: salvar com embedding
         if query and isinstance(query, str) and query.strip():
-            # Preparar embedding do prompt (com negação, se aplicável)
+            should_save = True
+            prompt_text = query.strip()
             try:
                 search_terms = (info.get('search_terms') if isinstance(info, dict) else None) or query
                 negative_terms = (info.get('negative_terms') if isinstance(info, dict) else None) or ''
@@ -4407,12 +4432,19 @@ def run_search(is_processing, query, s_type, approach, relevance, order, max_res
                 prompt_emb = emb.tolist() if emb is not None and hasattr(emb, 'tolist') else (emb if emb is not None else None)
             except Exception:
                 prompt_emb = None
+        # Sem texto de query, mas com filtros (V2): salvar sem title/text/embedding
+        elif ENABLE_SEARCH_V2 and _has_any_filter(ui_filters):
+            should_save = True
+            prompt_text = None
+            prompt_emb = None
+
+        if should_save:
             try:
                 progress_set(90, 'Salvando histórico')
             except Exception:
                 pass
             prompt_id = add_prompt(
-                query.strip(),
+                prompt_text,
                 search_type=s_type,
                 search_approach=approach,
                 relevance_level=relevance,
@@ -5829,14 +5861,89 @@ def render_results_table(results, sort_state):
     )
 
 
+# =============================
+# Artefatos (resumo/docs) — carregar flags em lote
+# =============================
+@app.callback(
+    Output('store-artifacts-status', 'data'),
+    Input('store-results-sorted', 'data'),
+    Input('store-favorites', 'data'),
+    Input('store-auth', 'data'),
+    Input('store-cache-resumo', 'data'),
+    prevent_initial_call=True,
+)
+def compute_artifacts_status(results, favs, auth, cache_resumo):
+    # Coletar lista de PNCPs visíveis (resultados + favoritos)
+    pncp_set = set()
+    try:
+        for r in (results or []):
+            d = (r or {}).get('details', {}) or {}
+            pid = d.get('numerocontrolepncp') or d.get('numeroControlePNCP') or d.get('numero_controle_pncp') or r.get('id') or r.get('numero_controle')
+            if pid is not None:
+                pncp_set.add(str(pid))
+    except Exception:
+        pass
+    try:
+        for f in (favs or []):
+            p = (f or {}).get('numero_controle_pncp')
+            if p:
+                pncp_set.add(str(p))
+    except Exception:
+        pass
+    pncp_list = list(pncp_set)
+    # Obter usuário
+    try:
+        uid = ((auth or {}).get('user') or {}).get('id') or ((auth or {}).get('user') or {}).get('uid')
+    except Exception:
+        uid = None
+    if not uid:
+        try:
+            u = get_current_user() if 'get_current_user' in globals() else {'uid': ''}
+            uid = (u or {}).get('uid') or None
+        except Exception:
+            uid = None
+    # Fallback final: variável de ambiente (bypass)
+    if not uid:
+        try:
+            env_uid = os.getenv('PASS_USER_UID')
+            if env_uid and env_uid.strip():
+                uid = env_uid.strip()
+        except Exception:
+            pass
+    status_map = {p: {'has_summary': False, 'has_md': False} for p in pncp_list}
+    # Consultar BD quando autenticado
+    if uid and pncp_list:
+        try:
+            db_map = get_artifacts_status(str(uid), pncp_list)
+            if isinstance(db_map, dict):
+                for k, v in db_map.items():
+                    if k in status_map and isinstance(v, dict):
+                        status_map[k]['has_summary'] = bool(v.get('has_summary', status_map[k]['has_summary']))
+                        status_map[k]['has_md'] = bool(v.get('has_md', status_map[k]['has_md']))
+        except Exception:
+            pass
+    # Se houver resumo em cache_resumo, marcar has_summary=True (UX imediata)
+    try:
+        if isinstance(cache_resumo, dict):
+            for k, val in cache_resumo.items():
+                if isinstance(val, dict) and 'summary' in val and k in status_map:
+                    txt = val.get('summary')
+                    if isinstance(txt, str) and txt.strip() and not txt.strip().startswith('Erro') and txt.strip() != 'Não foi possível gerar o resumo.' and 'Limite diário de resumos atingido' not in txt:
+                        status_map[k]['has_summary'] = True
+    except Exception:
+        pass
+    return status_map
+
+
 ## Detalhes por resultado (cards)
 @app.callback(
     Output('results-details', 'children'),
     Input('store-results-sorted', 'data'),
     Input('store-last-query', 'data'),
+    State('store-artifacts-status', 'data'),
     prevent_initial_call=True,
 )
-def render_details(results, last_query):
+def render_details(results, last_query, artifacts_status):
     if not results:
         # Debug: sem resultados
         if SQL_DEBUG:
@@ -5978,13 +6085,26 @@ def render_details(results, last_query):
             title='Salvar/Remover favorito',
             style=styles['bookmark_btn']
         )
+        # Ícones de artefatos (somente RESUMO)
+        has_summary = False
+        try:
+            st = artifacts_status or {}
+            flags = st.get(str(pncp_id)) or {}
+            has_summary = bool(flags.get('has_summary'))
+        except Exception:
+            has_summary = False
+        icons_children = []
+        if has_summary:
+            icons_children.append(html.Div(html.I(className='fas fa-file-alt', style=styles['artifact_icon']), style=styles['artifact_icon_box']))
+        artifact_icons = html.Div(icons_children, style=styles['artifact_icons_wrap']) if icons_children else None
         cards.append(html.Div([
             html.Div([
                 left_panel,
                 right_panel
             ], className='gvg-details-row', style={'display': 'flex', 'gap': '10px', 'alignItems': 'stretch'}),
             html.Div(str(r.get('rank')), style=styles['result_number']),
-            bookmark_btn
+            bookmark_btn,
+            artifact_icons
         ], style=_card_style))
     return cards
 
@@ -6453,6 +6573,17 @@ def load_resumo_for_cards(n_clicks_list, active_map, results, cache_resumo, noti
                 pncp_data = _build_pncp_data(d)
             except Exception:
                 pncp_data = {}
+            # Garantir user_id e PNCP no contexto para persistir user_documents/user_resumos corretamente
+            try:
+                user = get_current_user() if 'get_current_user' in globals() else {'uid': ''}
+                uid_for_docs = (user or {}).get('uid') or os.getenv('PASS_USER_UID') or ''
+                if isinstance(pncp_data, dict):
+                    if uid_for_docs:
+                        pncp_data['uid'] = uid_for_docs
+                    if pid and not pncp_data.get('numero_controle_pncp'):
+                        pncp_data['numero_controle_pncp'] = str(pid)
+            except Exception:
+                pass
             # Timestamp único por PNCP (lote)
             try:
                 if isinstance(pncp_data, dict):
@@ -7487,9 +7618,10 @@ def update_favorites_icon(is_open):
 @app.callback(
     Output('favorites-list', 'children'),
     Input('store-favorites', 'data'),
-    Input('toggles', 'value')
+    Input('toggles', 'value'),
+    State('store-artifacts-status', 'data')
 )
-def render_favorites_list(favs, toggles):
+def render_favorites_list(favs, toggles, artifacts_status):
     hide_expired = 'filter_expired' in (toggles or [])
     items = []
     visible_count = 0
@@ -7517,8 +7649,21 @@ def render_favorites_list(favs, toggles):
             html.Span(enc_txt, style={'color': enc_color, 'fontWeight': 'bold'}),
             tag
         ], style={'display': 'flex', 'alignItems': 'center', 'gap': '4px'})
+        # Cabeçalho com rótulo + ícones (se existirem)
+        label_div = html.Div(rotulo or (orgao[:40] if isinstance(orgao, str) else ''), style=styles.get('fav_label'))
+        icons_inline = []
+        try:
+            flags = (artifacts_status or {}).get(str(pncp)) or {}
+            if bool(flags.get('has_summary')):
+                icons_inline.append(html.I(className='fas fa-file-alt'))
+        except Exception:
+            icons_inline = []
+        # Demais linhas do corpo
         body = html.Div([
-            html.Div(rotulo or (orgao[:40] if isinstance(orgao, str) else ''), style=styles.get('fav_label')),
+            html.Div([
+                label_div,
+                (html.Div(icons_inline, style=styles.get('fav_icons_inline')) if icons_inline else None)
+            ], style={'display': 'flex', 'alignItems': 'center', 'gap': '6px'}),
             html.Div(local, style=styles.get('fav_local')),
             html.Div(orgao, style=styles.get('fav_orgao')),
             date_row

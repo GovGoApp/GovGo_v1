@@ -196,7 +196,7 @@ def fetch_prompt_texts(limit: int = 50) -> List[str]:
 
 
 def add_prompt(
-    text: str,
+    text: Optional[str],
     title: Optional[str] = None,
     *,
     search_type: Optional[int] = None,
@@ -215,8 +215,6 @@ def add_prompt(
     - Dedup por (user_id, text)
     - Retorna o id do prompt inserido (prompt_id) em caso de sucesso; None em erro.
     """
-    if not text:
-        return None
     user = get_current_user(); uid = user['uid']
     try:
         # Dedup por texto do mesmo usuário: obter ids
@@ -244,6 +242,12 @@ def add_prompt(
         insert_cols = ['user_id', 'title', 'text']
         insert_vals: List[Any] = [uid, title or (text[:60] if text else None), text]
         placeholders: List[str] = ['%s', '%s', '%s']
+
+        # Garantir que active=true no insert quando a coluna existir (evita depender de DEFAULT no DB)
+        if 'active' in cols_existing:
+            insert_cols.append('active')
+            placeholders.append('%s')
+            insert_vals.append(True)
 
         # Campos opcionais
         optional_map = [
@@ -400,6 +404,16 @@ def delete_prompt(text: str) -> bool:
                 "UPDATE public.user_prompts SET active=false WHERE user_id=%s AND text=%s",
                 (uid, text), ctx="USER.delete_prompt:soft_delete"
             )
+            # Invalida caches para refletir imediatamente na UI
+            try:
+                _cache_invalidate_prefix(f"USER.fetch_prompt_texts:{uid}:")
+                _cache_invalidate_prefix(f"USER.fetch_prompts_with_config:{uid}:")
+            except Exception:
+                pass
+            try:
+                dbg('SQL', f"[gvg_user.delete_prompt] soft_delete uid={uid} text='{(text or '')[:60]}'")
+            except Exception:
+                pass
             return bool(aff and aff >= 0)
         # Hard delete + limpar filhos
         ids_rows = db_fetch_all(

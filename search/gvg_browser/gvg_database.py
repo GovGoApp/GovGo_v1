@@ -785,6 +785,82 @@ def upsert_user_document(user_id: str, numero_pncp: str, doc_name: str, doc_type
 
 
 # =====================
+# Artefatos por usuário (resumo/doc .md) — batch
+# =====================
+
+def get_artifacts_status(user_id: str, pncp_list: list[str]) -> dict:
+    """Retorna mapa { pncp: {has_summary: bool, has_md: bool} } para um usuário.
+
+    - has_summary: existe registro em public.user_resumos
+    - has_md: existe registro em public.user_documents com doc_type='md' (case-insensitive)
+             OU storage_url terminando em .md
+    Notas:
+    - Não altera schema.
+    - Usa WHERE numero_controle_pncp = ANY(%s) para evitar N queries.
+    """
+    try:
+        user_id = (user_id or '').strip()
+        if not user_id:
+            return {}
+        # Normalizar e deduplicar PNCPs como strings
+        pncp_norm = []
+        seen = set()
+        for p in (pncp_list or []):
+            s = str(p).strip()
+            if not s:
+                continue
+            if s not in seen:
+                pncp_norm.append(s)
+                seen.add(s)
+        if not pncp_norm:
+            return {}
+        # Base de saída (default False)
+        out = {p: {'has_summary': False, 'has_md': False} for p in pncp_norm}
+        # 1) Resumos
+        try:
+            rows = db_fetch_all(
+                """
+                SELECT numero_controle_pncp
+                  FROM public.user_resumos
+                 WHERE user_id = %s AND numero_controle_pncp = ANY(%s::text[])
+                """,
+                (user_id, pncp_norm), as_dict=False, ctx="ART.has_summary"
+            )
+            for r in rows or []:
+                try:
+                    k = str(r[0])
+                except Exception:
+                    continue
+                if k in out:
+                    out[k]['has_summary'] = True
+        except Exception:
+            pass
+        # 2) Documentos MD: considerar existência de qualquer registro em user_documents
+        try:
+            rows = db_fetch_all(
+                """
+                SELECT numero_controle_pncp
+                  FROM public.user_documents
+                 WHERE user_id = %s
+                   AND numero_controle_pncp = ANY(%s::text[])
+                """,
+                (user_id, pncp_norm), as_dict=False, ctx="ART.has_md"
+            )
+            for r in rows or []:
+                try:
+                    k = str(r[0])
+                except Exception:
+                    continue
+                if k in out:
+                    out[k]['has_md'] = True
+        except Exception:
+            pass
+        return out
+    except Exception:
+        return {}
+
+
+# =====================
 # Mensagens do usuário (insert)
 # =====================
 
