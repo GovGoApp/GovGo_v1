@@ -2510,10 +2510,27 @@ def _dedupe_boletins(items):
 @app.callback(
     Output('store-boletins', 'data'),
     Input('store-auth', 'data'),
+    Input('store-app-init', 'data'),
 )
-def load_boletins_on_auth(auth_data):
-    if not auth_data or auth_data.get('status') != 'auth':
+def load_boletins_on_auth(auth_data, init_state):
+    """Carrega boletins somente após a fase de inicialização pós-login.
+
+    - Se usuário não autenticado: limpa lista ([]).
+    - Se autenticado e initializing=True: não atualiza (aguarda hidratação completa).
+    - Se autenticado e initializing=False: busca no BD e popula store.
+    """
+    status = (auth_data or {}).get('status')
+    if status != 'auth':
+        # Logout ou não autenticado: limpar
         return []
+    # Autenticado: aguardar finalizar inicialização para garantir user/token hidratados
+    try:
+        initializing = bool((init_state or {}).get('initializing'))
+    except Exception:
+        initializing = False
+    if initializing:
+        raise PreventUpdate
+    # Agora é seguro buscar boletins do usuário atual
     fetched = fetch_user_boletins() or []
     try:
         dbg('BOLETIM', f"load: fetched={len(fetched)}")
