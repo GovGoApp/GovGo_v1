@@ -13,7 +13,7 @@ import json
 import math
 import argparse
 import datetime as dt
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
 import psycopg2
 from psycopg2.extras import RealDictCursor, execute_values
@@ -74,6 +74,29 @@ def get_conn(max_attempts: int = 3, retry_delay: int = 5):
                 raise
 
 
+def table_has_column(conn, schema: str, table: str, column: str) -> bool:
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1
+                  FROM information_schema.columns
+                 WHERE table_schema = %s AND table_name = %s AND column_name = %s
+                """,
+                (schema, table, column),
+            )
+            return cur.fetchone() is not None
+    except Exception:
+        return False
+
+
+def get_contratacao_emb_capabilities(conn) -> Tuple[bool, bool]:
+    """Retorna (has_vector, has_halfvec) para contratacao_emb."""
+    has_vec = table_has_column(conn, "public", "contratacao_emb", "embeddings")
+    has_hv = table_has_column(conn, "public", "contratacao_emb", "embeddings_hv")
+    return has_vec, has_hv
+
+
 def get_last_embedding_date(conn) -> str:
     try:
         with conn.cursor() as cur:
@@ -117,25 +140,47 @@ def update_last_embedding_date(conn, date_str: str) -> None:
 # Seleção de contratações (por data)
 # ---------------------------------------------------------------------
 
-def get_contratacoes_for_date(conn, date_str: str) -> List[Dict[str, Any]]:
+def get_contratacoes_for_date(conn, date_str: str, want_fill_hv: bool) -> List[Dict[str, Any]]:
     date_formatted = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
-    query = """
-        SELECT 
-            c.numero_controle_pncp,
-            c.objeto_compra,
-            COALESCE(string_agg(COALESCE(i.descricao_item, ''), ' :: '), '') AS itens_concatenados
-        FROM contratacao c
-        LEFT JOIN item_contratacao i
-          ON i.numero_controle_pncp = c.numero_controle_pncp
-        WHERE c.data_publicacao_pncp IS NOT NULL
-          AND DATE(c.data_publicacao_pncp) = %s::date
-          AND NOT EXISTS (
-              SELECT 1 FROM contratacao_emb e
-               WHERE e.numero_controle_pncp = c.numero_controle_pncp
-          )
-        GROUP BY c.numero_controle_pncp, c.objeto_compra
-        ORDER BY c.numero_controle_pncp
-    """
+    # Se want_fill_hv=True, buscamos também registros já inseridos em contratacao_emb mas sem embeddings_hv
+    if want_fill_hv:
+        query = """
+            SELECT 
+                c.numero_controle_pncp,
+                c.objeto_compra,
+                COALESCE(string_agg(COALESCE(i.descricao_item, ''), ' :: '), '') AS itens_concatenados
+            FROM contratacao c
+            LEFT JOIN item_contratacao i
+              ON i.numero_controle_pncp = c.numero_controle_pncp
+            LEFT JOIN contratacao_emb e
+              ON e.numero_controle_pncp = c.numero_controle_pncp
+            WHERE c.data_publicacao_pncp IS NOT NULL
+              AND DATE(c.data_publicacao_pncp) = %s::date
+              AND (
+                    e.numero_controle_pncp IS NULL
+                 OR e.embeddings_hv IS NULL
+              )
+            GROUP BY c.numero_controle_pncp, c.objeto_compra
+            ORDER BY c.numero_controle_pncp
+        """
+    else:
+        query = """
+            SELECT 
+                c.numero_controle_pncp,
+                c.objeto_compra,
+                COALESCE(string_agg(COALESCE(i.descricao_item, ''), ' :: '), '') AS itens_concatenados
+            FROM contratacao c
+            LEFT JOIN item_contratacao i
+              ON i.numero_controle_pncp = c.numero_controle_pncp
+            WHERE c.data_publicacao_pncp IS NOT NULL
+              AND DATE(c.data_publicacao_pncp) = %s::date
+              AND NOT EXISTS (
+                  SELECT 1 FROM contratacao_emb e
+                   WHERE e.numero_controle_pncp = c.numero_controle_pncp
+              )
+            GROUP BY c.numero_controle_pncp, c.objeto_compra
+            ORDER BY c.numero_controle_pncp
+        """
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(query, (date_formatted,))
         rows = cur.fetchall()
@@ -194,30 +239,68 @@ def insert_embeddings(conn, registros: List[Dict[str, Any]], embeddings: List[Li
     if len(registros) != len(embeddings):
         log_line("Mismatch entre registros e embeddings")
         return 0
+    has_vec, has_hv = get_contratacao_emb_capabilities(conn)
+
+    # Monta colunas e template conforme colunas existentes
+    base_cols = ["numero_controle_pncp", "modelo_embedding", "metadata"]
+    value_template_parts = ["%s", "%s", "%s"]
+    extra_values_kind = []  # [('embeddings', 'vector'), ('embeddings_hv','halfvec')]
+    if has_vec:
+        base_cols.append("embeddings")
+        value_template_parts.append("%s::vector")
+        extra_values_kind.append("vector")
+    if has_hv:
+        base_cols.append("embeddings_hv")
+        value_template_parts.append("%s::halfvec(3072)")
+        extra_values_kind.append("halfvec")
+
+    if not has_vec and not has_hv:
+        log_line("Tabela contratacao_emb sem colunas de embedding (nem vector nem halfvec). Abortando lote.")
+        return 0
+
+    cols_sql = ", ".join(base_cols)
+    template_sql = f"({', '.join(value_template_parts)})"
+
+    # ON CONFLICT: se halfvec existir, atualiza embeddings_hv quando NULL; caso contrário, mantém DO NOTHING
+    if has_hv:
+        conflict_sql = """
+            ON CONFLICT (numero_controle_pncp) DO UPDATE
+              SET modelo_embedding = EXCLUDED.modelo_embedding,
+                  metadata = EXCLUDED.metadata,
+                  embeddings_hv = COALESCE(contratacao_emb.embeddings_hv, EXCLUDED.embeddings_hv)
+        """
+    else:
+        conflict_sql = "ON CONFLICT (numero_controle_pncp) DO NOTHING"
+
+    sql = (
+        f"INSERT INTO contratacao_emb ({cols_sql}) VALUES %s "
+        f"{conflict_sql} RETURNING numero_controle_pncp"
+    )
 
     rows = []
     for r, emb in zip(registros, embeddings):
         metadata = json.dumps({"model": OPENAI_MODEL}, ensure_ascii=False)
-        rows.append((r["numero_controle_pncp"], OPENAI_MODEL, metadata, emb))
+        vals = [r["numero_controle_pncp"], OPENAI_MODEL, metadata]
+        if has_vec:
+            vals.append(emb)
+        if has_hv:
+            vals.append(emb)
+        rows.append(tuple(vals))
 
-    sql = (
-        "INSERT INTO contratacao_emb (numero_controle_pncp, modelo_embedding, metadata, embeddings) "
-        "VALUES %s ON CONFLICT (numero_controle_pncp) DO NOTHING RETURNING numero_controle_pncp"
-    )
     with conn.cursor() as cur:
-        execute_values(cur, sql, rows, template='(%s, %s, %s, %s::vector)', page_size=200)
-        inserted_rows = cur.fetchall() or []
+        execute_values(cur, sql, rows, template=template_sql, page_size=200)
+        affected_rows = cur.fetchall() or []
     conn.commit()
-    return len(inserted_rows)
+    return len(affected_rows)
 
 # ---------------------------------------------------------------------
 # Processamento de uma data
 # ---------------------------------------------------------------------
 
-def process_date(conn, date_str: str, batch_size: int) -> int:
+def process_date(conn, date_str: str, batch_size: int, want_fill_hv: bool) -> int:
     log_line("")
     log_line(f"[2/3] Embeddings: processando {date_str} (LED/LPD)")
-    regs = get_contratacoes_for_date(conn, date_str)
+    regs = get_contratacoes_for_date(conn, date_str, want_fill_hv)
     if not regs:
         log_line("Sem contratações pendentes para essa data.")
         return 0
@@ -300,6 +383,9 @@ def main():
 
     conn = get_conn()
     try:
+        has_vec, has_hv = get_contratacao_emb_capabilities(conn)
+        # Se existir coluna halfvec, vamos também preencher registros antigos sem embeddings_hv
+        want_fill_hv = has_hv
         # LED/LPD atuais
         led_cur = get_last_embedding_date(conn)
         lpd_cur = get_last_processed_date(conn)
@@ -315,7 +401,7 @@ def main():
         total = 0
         for d in dates:
             try:
-                inserted = process_date(conn, d, max(1, args.batch))
+                inserted = process_date(conn, d, max(1, args.batch), want_fill_hv=want_fill_hv)
                 total += inserted
                 if not args.test:
                     update_last_embedding_date(conn, d)

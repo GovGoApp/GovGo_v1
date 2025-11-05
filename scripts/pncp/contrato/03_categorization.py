@@ -4,7 +4,7 @@
 Pipeline PNCP – Etapa 03 (CONTRATO): Categorização por similaridade (BDS1)
 - Simples, idempotente e sem dependências extras (apenas psycopg2-binary, python-dotenv)
 - Compatível com execução local e cron do Render
-- Usa embeddings existentes (contrato_emb) e calcula top_k categorias via pgvector
+- Usa embeddings_hv existentes (contrato_emb.embeddings_hv) e calcula top_k categorias via pgvector (halfvec)
 - Logs detalhados apenas com --trace; barra de progresso única por dia sempre visível
 """
 
@@ -60,6 +60,21 @@ def log_line(msg: str) -> None:
 # ---------------------------------------------------------------------
 # Utilidades
 # ---------------------------------------------------------------------
+
+def table_has_column(conn, schema: str, table: str, column: str) -> bool:
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1
+                  FROM information_schema.columns
+                 WHERE table_schema = %s AND table_name = %s AND column_name = %s
+                """,
+                (schema, table, column),
+            )
+            return cur.fetchone() is not None
+    except Exception:
+        return False
 
 def get_conn(max_attempts: int = 3, retry_delay: int = 5):
     attempt = 1
@@ -237,7 +252,7 @@ def get_pending_ids_for_date(conn, date_yyyymmdd: str) -> List[int]:
                 )
             else:
                 # Sem JOIN possível: usa apenas created_at do emb (cobre bases antigas/atípicas)
-                cur.execute(
+                                cur.execute(
                     """
                     SELECT ce.id_contrato_emb
                       FROM contrato_emb ce
@@ -397,6 +412,13 @@ def main():
 
     conn = get_conn()
     try:
+        # Pré-checagem: exigir colunas HV necessárias
+        if not table_has_column(conn, 'public', 'contrato_emb', 'embeddings_hv'):
+            log_line("Erro: public.contrato_emb.embeddings_hv não encontrada. Crie/popule embeddings_hv antes da categorização.")
+            return
+        if not table_has_column(conn, 'public', 'categoria', 'cat_embeddings_hv'):
+            log_line("Erro: public.categoria.cat_embeddings_hv não encontrada. Gere cat_embeddings_hv antes da categorização.")
+            return
         # Ajuste opcional de sessão para performance
         try:
             work_mem = os.getenv("PNCP_CAT_WORK_MEM")

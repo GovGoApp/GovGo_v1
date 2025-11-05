@@ -4,8 +4,8 @@
 02_embeddings (Contrato)
 
 Objetivo
-- Gerar embeddings (OpenAI) para contratos e gravar em public.contrato_emb
-- Somente para contratos que AINDA NÃO têm embedding (NOT EXISTS), espelhando o 02 de contratacao
+- Gerar embeddings (OpenAI) para contratos e gravar em public.contrato_emb.embeddings_hv (halfvec)
+- Selecionar contratos NOVOS (sem linha em contrato_emb) e BACKFILL (linha existe, embeddings_hv NULL)
 - LED: system_config.last_embedded_date_contrato (AAAAMMDD)
 - Data de seleção: contrato.data_atualizacao_global (TEXT ISO: YYYY-MM-DDTHH:MM:SS)
 
@@ -15,11 +15,12 @@ CLI (espelha 01):
 --from AAAAMMDD
 --to   AAAAMMDD
 
-Escolhas alinhadas ao 02 de contratacao:
+Escolhas alinhadas ao 02 de contratacao (HV-first):
 - Modelo: text-embedding-3-large
 - Batch default: 32 (configurável por OPENAI_EMB_BATCH)
 - Texto: objeto_contrato (higienizado e truncado até 8000 chars)
-- Logs simples com percentuais por data (sem Rich)
+- Persistência APENAS em embeddings_hv::halfvec(3072) (campos vector serão descontinuados)
+- Logs simples com percentuais por data (com barra Rich)
 """
 import os
 import sys
@@ -79,19 +80,39 @@ def set_system_config(cur, key: str, value: str):
     )
 
 
+def table_has_column(conn, schema: str, table: str, column: str) -> bool:
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1
+                  FROM information_schema.columns
+                 WHERE table_schema = %s AND table_name = %s AND column_name = %s
+                """,
+                (schema, table, column),
+            )
+            return cur.fetchone() is not None
+    except Exception:
+        return False
+
+
 def get_contratos_for_date(conn, day_str: str) -> List[Dict[str, Any]]:
-    """Seleciona contratos pendentes de embedding no dia informado (AAAAMMDD)."""
+    """Seleciona contratos pendentes de embedding HV (NOVOS + BACKFILL) no dia (AAAAMMDD)."""
     date_from_iso = f"{day_str[:4]}-{day_str[4:6]}-{day_str[6:8]}T00:00:00"
     date_to_iso = (
         datetime.strptime(day_str, "%Y%m%d") + timedelta(days=1)
     ).strftime("%Y-%m-%dT00:00:00")
+    # Seleciona contratos cujo texto existe e:
+    #  - não têm linha em contrato_emb OU
+    #  - têm linha, mas embeddings_hv está NULL (backfill)
     query = (
-        "SELECT c.numero_controle_pncp, c.objeto_contrato "
+        "SELECT c.numero_controle_pncp, c.objeto_contrato, e.embeddings_hv IS NOT NULL AS has_hv "
         "FROM public.contrato c "
+        "LEFT JOIN public.contrato_emb e ON e.numero_controle_pncp = c.numero_controle_pncp "
         "WHERE c.data_atualizacao_global >= %s "
         "  AND c.data_atualizacao_global < %s "
         "  AND COALESCE(NULLIF(c.objeto_contrato, ''), NULL) IS NOT NULL "
-        "  AND NOT EXISTS (SELECT 1 FROM public.contrato_emb e WHERE e.numero_controle_pncp = c.numero_controle_pncp) "
+        "  AND (e.numero_controle_pncp IS NULL OR e.embeddings_hv IS NULL) "
         "ORDER BY c.numero_controle_pncp"
     )
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -164,16 +185,21 @@ def insert_embeddings(cur, registros: List[Dict[str, Any]], embeddings: List[Lis
         emb_str = "[" + ",".join(f"{float(x):.8f}" for x in emb) + "]"
         rows.append((r["numero_controle_pncp"], EMBED_MODEL, metadata, emb_str))
 
+    # Upsert apenas HV; backfill quando já existir a linha
     sql = (
-        "INSERT INTO public.contrato_emb (numero_controle_pncp, modelo_embedding, metadata, embeddings, embeddings_hv) "
-        "VALUES %s ON CONFLICT (numero_controle_pncp) DO NOTHING RETURNING numero_controle_pncp"
+        "INSERT INTO public.contrato_emb (numero_controle_pncp, modelo_embedding, metadata, embeddings_hv) "
+        "VALUES %s "
+        "ON CONFLICT (numero_controle_pncp) DO UPDATE SET "
+        "  modelo_embedding = EXCLUDED.modelo_embedding, "
+        "  metadata = EXCLUDED.metadata, "
+        "  embeddings_hv = COALESCE(public.contrato_emb.embeddings_hv, EXCLUDED.embeddings_hv) "
+        "RETURNING numero_controle_pncp"
     )
     psycopg2.extras.execute_values(
         cur,
         sql,
-        # usa o mesmo vetor para vector e halfvec (cast no SQL)
-        [(ncp, model, meta, emb, emb) for (ncp, model, meta, emb) in rows],
-        template='(%s, %s, %s, %s::vector, %s::halfvec)',
+        [(ncp, model, meta, emb) for (ncp, model, meta, emb) in rows],
+        template='(%s, %s, %s, %s::halfvec(3072))',
         page_size=1000,
     )
     inserted = cur.fetchall() or []
@@ -269,6 +295,10 @@ def main():
 
     # Determinar janela default via LED
     with get_db_conn() as conn:
+        # Pré-checagem: exigir coluna embeddings_hv em contrato_emb
+        if not table_has_column(conn, 'public', 'contrato_emb', 'embeddings_hv'):
+            logging.error("Coluna public.contrato_emb.embeddings_hv não encontrada. Crie a coluna (halfvec) antes de rodar o 02.")
+            sys.exit(2)
         with conn.cursor() as cur:
             led = get_system_config(cur, CFG_LED)
             lpd = get_system_config(cur, CFG_LPD) or today

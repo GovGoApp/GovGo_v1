@@ -70,6 +70,22 @@ def get_conn(max_attempts: int = 3, retry_delay: int = 5):
                 raise
 
 
+def table_has_column(conn, schema: str, table: str, column: str) -> bool:
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1
+                  FROM information_schema.columns
+                 WHERE table_schema = %s AND table_name = %s AND column_name = %s
+                """,
+                (schema, table, column),
+            )
+            return cur.fetchone() is not None
+    except Exception:
+        return False
+
+
 def get_system_dates(conn) -> Tuple[str, str]:
     """Lê LCD e LED do system_config. Defaults seguros se ausentes."""
     lcd = "20200101"
@@ -144,17 +160,18 @@ def get_pending_contracts_for_date(conn, date_yyyymmdd: str) -> List[Dict[str, A
     target = yyyymmdd_to_date_str(date_yyyymmdd)
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Mantida para compatibilidade; consulta vetorial simples (pode ser ajustada no futuro se necessário)
             cur.execute(
                 """
                 SELECT ce.id_contratacao_emb, ce.numero_controle_pncp, ce.embeddings
-                FROM contratacao_emb ce
-                JOIN contratacao c ON c.numero_controle_pncp = ce.numero_controle_pncp
-                WHERE c.data_publicacao_pncp IS NOT NULL
-                  AND DATE(c.data_publicacao_pncp) >= %s::date
-                  AND DATE(c.data_publicacao_pncp) < (%s::date + INTERVAL '1 day')
-                  AND ce.embeddings IS NOT NULL
-                  AND ce.top_categories IS NULL
-                ORDER BY ce.numero_controle_pncp
+                  FROM contratacao_emb ce
+                  JOIN contratacao c ON c.numero_controle_pncp = ce.numero_controle_pncp
+                 WHERE c.data_publicacao_pncp IS NOT NULL
+                   AND DATE(c.data_publicacao_pncp) >= %s::date
+                   AND DATE(c.data_publicacao_pncp) < (%s::date + INTERVAL '1 day')
+                   AND ce.embeddings IS NOT NULL
+                   AND ce.top_categories IS NULL
+                 ORDER BY ce.numero_controle_pncp
                 """,
                 (target, target),
             )
@@ -204,7 +221,10 @@ def get_pending_ids_for_date(conn, date_yyyymmdd: str) -> List[int]:
                  WHERE c.data_publicacao_pncp IS NOT NULL
                    AND DATE(c.data_publicacao_pncp) >= %s::date
                    AND DATE(c.data_publicacao_pncp) < (%s::date + INTERVAL '1 day')
-                   AND ce.embeddings IS NOT NULL
+                   AND (
+                         ce.embeddings_hv IS NOT NULL
+                      OR ce.embeddings IS NOT NULL
+                   )
                    AND ce.top_categories IS NULL
                  ORDER BY ce.id_contratacao_emb
                 """,
@@ -225,20 +245,47 @@ def update_batch_categories_sql(conn, ids: List[int], top_k: int) -> int:
     try:
         with conn.cursor() as cur:
 
-            cur.execute(
-                """
-                WITH pending AS (
+            has_ce_hv = table_has_column(conn, "public", "contratacao_emb", "embeddings_hv")
+            has_cat_hv = table_has_column(conn, "public", "categoria", "cat_embeddings_hv")
+
+            if has_ce_hv and has_cat_hv:
+                sql = """
+                WITH pending_hv AS (
+                    SELECT ce.id_contratacao_emb, ce.embeddings_hv
+                      FROM contratacao_emb ce
+                     WHERE ce.id_contratacao_emb = ANY(%s::int[])
+                       AND ce.top_categories IS NULL
+                       AND ce.embeddings_hv IS NOT NULL
+                ),
+                best_hv AS (
+                    SELECT p.id_contratacao_emb,
+                           array_agg(s.cod_cat ORDER BY s.sim DESC) AS top_categories,
+                           array_agg(s.sim ORDER BY s.sim DESC) AS top_similarities
+                      FROM pending_hv p
+                JOIN LATERAL (
+                     SELECT c.cod_cat,
+                           ROUND((1 - (c.cat_embeddings_hv <=> p.embeddings_hv))::numeric, 4)::double precision AS sim
+                       FROM categoria c
+                      WHERE c.cat_embeddings_hv IS NOT NULL
+                      ORDER BY c.cat_embeddings_hv <=> p.embeddings_hv
+                      LIMIT %s
+                  ) s ON TRUE
+                     GROUP BY p.id_contratacao_emb
+                ),
+                pending_v AS (
                     SELECT ce.id_contratacao_emb, ce.embeddings
                       FROM contratacao_emb ce
                      WHERE ce.id_contratacao_emb = ANY(%s::int[])
                        AND ce.top_categories IS NULL
+                       AND ce.embeddings_hv IS NULL
+                       AND ce.embeddings IS NOT NULL
                 ),
-                best AS (
+                best_v AS (
                     SELECT p.id_contratacao_emb,
                            array_agg(s.cod_cat ORDER BY s.sim DESC) AS top_categories,
                            array_agg(s.sim ORDER BY s.sim DESC) AS top_similarities
-                      FROM pending p
-                  JOIN LATERAL (
+                      FROM pending_v p
+                JOIN LATERAL (
                      SELECT c.cod_cat,
                            ROUND((1 - (c.cat_embeddings <=> p.embeddings))::numeric, 4)::double precision AS sim
                        FROM categoria c
@@ -247,6 +294,11 @@ def update_batch_categories_sql(conn, ids: List[int], top_k: int) -> int:
                       LIMIT %s
                   ) s ON TRUE
                      GROUP BY p.id_contratacao_emb
+                ),
+                best AS (
+                    SELECT * FROM best_hv
+                    UNION ALL
+                    SELECT * FROM best_v
                 ),
                 scored AS (
                     SELECT b.id_contratacao_emb,
@@ -279,9 +331,69 @@ def update_batch_categories_sql(conn, ids: List[int], top_k: int) -> int:
                  WHERE ce.id_contratacao_emb = s.id_contratacao_emb
                    AND ce.top_categories IS NULL
                 RETURNING ce.id_contratacao_emb
-                """,
-                (ids, top_k),
-            )
+                """
+                cur.execute(sql, (ids, top_k, ids, top_k))
+            else:
+                # Fallback totalmente vetorial (estado atual)
+                cur.execute(
+                    """
+                    WITH pending AS (
+                        SELECT ce.id_contratacao_emb, ce.embeddings
+                          FROM contratacao_emb ce
+                         WHERE ce.id_contratacao_emb = ANY(%s::int[])
+                           AND ce.top_categories IS NULL
+                           AND ce.embeddings IS NOT NULL
+                    ),
+                    best AS (
+                        SELECT p.id_contratacao_emb,
+                               array_agg(s.cod_cat ORDER BY s.sim DESC) AS top_categories,
+                               array_agg(s.sim ORDER BY s.sim DESC) AS top_similarities
+                          FROM pending p
+                    JOIN LATERAL (
+                         SELECT c.cod_cat,
+                               ROUND((1 - (c.cat_embeddings <=> p.embeddings))::numeric, 4)::double precision AS sim
+                           FROM categoria c
+                          WHERE c.cat_embeddings IS NOT NULL
+                          ORDER BY c.cat_embeddings <=> p.embeddings
+                          LIMIT %s
+                      ) s ON TRUE
+                         GROUP BY p.id_contratacao_emb
+                    ),
+                    scored AS (
+                        SELECT b.id_contratacao_emb,
+                               b.top_categories,
+                               b.top_similarities,
+                               CASE
+                                 WHEN array_length(b.top_similarities,1) IS NULL
+                                   OR array_length(b.top_similarities,1) < 2
+                                   OR b.top_similarities[1] = 0
+                                   THEN 0.0
+                                 ELSE ROUND(
+                                     (1 - EXP(
+                                         -10 * (
+                                             COALESCE((
+                                                 SELECT SUM((b.top_similarities[1] - s) * (1.0/(i)))
+                                                   FROM unnest(b.top_similarities[2:]) WITH ORDINALITY AS t(s,i)
+                                             ), 0) / b.top_similarities[1]
+                                         )
+                                     ))::numeric,
+                                     4
+                                 )::double precision
+                               END AS confidence
+                          FROM best b
+                    )
+                    UPDATE contratacao_emb ce
+                       SET top_categories   = s.top_categories,
+                           top_similarities = s.top_similarities,
+                           confidence       = s.confidence
+                      FROM scored s
+                     WHERE ce.id_contratacao_emb = s.id_contratacao_emb
+                       AND ce.top_categories IS NULL
+                    RETURNING ce.id_contratacao_emb
+                    """,
+                    (ids, top_k),
+                )
+
             updated_rows = cur.fetchall() or []
             return len(updated_rows)
     except Exception as e:
