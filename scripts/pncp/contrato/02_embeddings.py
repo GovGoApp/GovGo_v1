@@ -165,14 +165,15 @@ def insert_embeddings(cur, registros: List[Dict[str, Any]], embeddings: List[Lis
         rows.append((r["numero_controle_pncp"], EMBED_MODEL, metadata, emb_str))
 
     sql = (
-        "INSERT INTO public.contrato_emb (numero_controle_pncp, modelo_embedding, metadata, embeddings) "
+        "INSERT INTO public.contrato_emb (numero_controle_pncp, modelo_embedding, metadata, embeddings, embeddings_hv) "
         "VALUES %s ON CONFLICT (numero_controle_pncp) DO NOTHING RETURNING numero_controle_pncp"
     )
     psycopg2.extras.execute_values(
         cur,
         sql,
-        rows,
-        template='(%s, %s, %s, %s::vector)',
+        # usa o mesmo vetor para vector e halfvec (cast no SQL)
+        [(ncp, model, meta, emb, emb) for (ncp, model, meta, emb) in rows],
+        template='(%s, %s, %s, %s::vector, %s::halfvec)',
         page_size=1000,
     )
     inserted = cur.fetchall() or []

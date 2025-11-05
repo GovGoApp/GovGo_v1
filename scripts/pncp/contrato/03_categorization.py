@@ -209,7 +209,7 @@ def get_pending_ids_for_date(conn, date_yyyymmdd: str) -> List[int]:
                     SELECT ce.id_contrato_emb
                       FROM contrato_emb ce
                       JOIN contrato c ON c.id_contrato = ce.id_contrato
-                     WHERE ce.embeddings IS NOT NULL
+                     WHERE ce.embeddings_hv IS NOT NULL
                        AND ce.top_categories IS NULL
                        AND (
                             LEFT(COALESCE(NULLIF(c.data_atualizacao_global,''),'') , 10) = %s
@@ -225,7 +225,7 @@ def get_pending_ids_for_date(conn, date_yyyymmdd: str) -> List[int]:
                     SELECT ce.id_contrato_emb
                       FROM contrato_emb ce
                       JOIN contrato c ON c.numero_controle_pncp = ce.numero_controle_pncp
-                     WHERE ce.embeddings IS NOT NULL
+                                                WHERE ce.embeddings_hv IS NOT NULL
                        AND ce.top_categories IS NULL
                        AND (
                             LEFT(COALESCE(NULLIF(c.data_atualizacao_global,''),'') , 10) = %s
@@ -241,7 +241,7 @@ def get_pending_ids_for_date(conn, date_yyyymmdd: str) -> List[int]:
                     """
                     SELECT ce.id_contrato_emb
                       FROM contrato_emb ce
-                     WHERE ce.embeddings IS NOT NULL
+                                                WHERE ce.embeddings_hv IS NOT NULL
                        AND ce.top_categories IS NULL
                        AND LEFT(ce.created_at::text, 10) = %s
                     """,
@@ -267,7 +267,8 @@ def update_batch_categories_sql(conn, ids: List[int], top_k: int) -> int:
             cur.execute(
                 """
                 WITH pending AS (
-                    SELECT ce.id_contrato_emb, ce.embeddings
+                                        SELECT ce.id_contrato_emb,
+                                                     ce.embeddings_hv AS emb_hv
                       FROM contrato_emb ce
                      WHERE ce.id_contrato_emb = ANY(%s::int[])
                        AND ce.top_categories IS NULL
@@ -279,10 +280,10 @@ def update_batch_categories_sql(conn, ids: List[int], top_k: int) -> int:
                       FROM pending p
                   JOIN LATERAL (
                      SELECT c.cod_cat,
-                           ROUND((1 - (c.cat_embeddings_hv <=> p.embeddings::halfvec))::numeric, 4)::double precision AS sim
+                                                     ROUND((1 - (c.cat_embeddings_hv <=> p.emb_hv))::numeric, 4)::double precision AS sim
                        FROM categoria c
                       WHERE c.cat_embeddings_hv IS NOT NULL
-                      ORDER BY c.cat_embeddings_hv <=> p.embeddings::halfvec
+                                            ORDER BY c.cat_embeddings_hv <=> p.emb_hv
                       LIMIT %s
                   ) s ON TRUE
                      GROUP BY p.id_contrato_emb

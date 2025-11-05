@@ -56,6 +56,7 @@ CREATE TABLE public.categoria (
   nom_nv3 text,
   cat_embeddings USER-DEFINED,
   created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+  cat_embeddings_hv USER-DEFINED,
   CONSTRAINT categoria_pkey PRIMARY KEY (id_categoria)
 );
 CREATE TABLE public.contratacao (
@@ -138,7 +139,7 @@ CREATE TABLE public.contratacao_emb (
 CREATE TABLE public.contrato (
   id_contrato bigint NOT NULL DEFAULT nextval('contrato_id_contrato_seq'::regclass),
   numero_controle_pncp_compra text,
-  numero_controle_pncp text,
+  numero_controle_pncp text UNIQUE,
   numero_contrato_empenho text,
   ano_contrato text,
   data_assinatura text,
@@ -177,7 +178,6 @@ CREATE TABLE public.contrato (
 );
 CREATE TABLE public.contrato_emb (
   id_contrato_emb bigint NOT NULL DEFAULT nextval('contrato_emb_id_contrato_emb_seq'::regclass),
-  id_contrato bigint NOT NULL UNIQUE,
   modelo_embedding text,
   confidence numeric,
   metadata jsonb,
@@ -185,8 +185,10 @@ CREATE TABLE public.contrato_emb (
   top_categories ARRAY,
   top_similarities ARRAY,
   embeddings USER-DEFINED,
+  numero_controle_pncp text NOT NULL UNIQUE,
+  embeddings_hv USER-DEFINED,
   CONSTRAINT contrato_emb_pkey PRIMARY KEY (id_contrato_emb),
-  CONSTRAINT contrato_emb_id_contrato_fkey FOREIGN KEY (id_contrato) REFERENCES public.contrato(id_contrato)
+  CONSTRAINT contrato_emb_numero_controle_pncp_fkey FOREIGN KEY (numero_controle_pncp) REFERENCES public.contrato(numero_controle_pncp)
 );
 CREATE TABLE public.item_classificacao (
   id_item_classificacao bigint NOT NULL DEFAULT nextval('item_classificacao_id_item_classificacao_seq1'::regclass),
