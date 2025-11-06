@@ -256,5 +256,29 @@
     "question": "de novo",
     "sql": "SELECT COUNT(*) AS top_categorias_nao_nulas FROM contrato_emb AS e WHERE e.top_categories IS NOT NULL;",
     "timestamp": "31/10/2025 14:15:45"
+  },
+  {
+    "id": "1",
+    "question": "me de a contagem de contratos e de contratos_emb",
+    "sql": "SELECT (SELECT COUNT(*) FROM contrato) AS total_contratos, (SELECT COUNT(*) FROM contrato_emb) AS total_contratos_emb;",
+    "timestamp": "06/11/2025 13:22:43"
+  },
+  {
+    "id": "2",
+    "question": "me de a contagem de contratos, de embeddings e de embeddings_hv, todos not null",
+    "sql": "SELECT (SELECT COUNT(*) FROM contrato) AS total_contratos, (SELECT COUNT(*) FROM contrato_emb WHERE embeddings IS NOT NULL) AS total_embeddings_not_null, (SELECT COUNT(*) FROM contrato_emb WHERE embeddings_hv IS NOT NULL) AS total_embeddings_hv_not_null;",
+    "timestamp": "06/11/2025 13:24:02"
+  },
+  {
+    "id": "3",
+    "question": "de novo",
+    "sql": "SELECT (SELECT COUNT(*) FROM contrato WHERE numero_controle_pncp IS NOT NULL) AS total_contratos, (SELECT COUNT(*) FROM contrato_emb WHERE embeddings IS NOT NULL) AS total_embeddings_not_null, (SELECT COUNT(*) FROM contrato_emb WHERE embeddings_hv IS NOT NULL) AS total_embeddings_hv_not_null;",
+    "timestamp": "06/11/2025 13:55:17"
+  },
+  {
+    "id": "4",
+    "question": "de novo",
+    "sql": "SELECT (SELECT COUNT(*) FROM contrato WHERE numero_controle_pncp IS NOT NULL) AS total_contratos, (SELECT COUNT(*) FROM contrato_emb WHERE embeddings IS NOT NULL) AS total_embeddings_not_null -- No campo chamado embeddings_hv é mencionado nas informações fornecidas ;",
+    "timestamp": "06/11/2025 13:58:18"
   }
 ]

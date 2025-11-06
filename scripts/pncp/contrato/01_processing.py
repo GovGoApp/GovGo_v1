@@ -445,11 +445,7 @@ def main():
         logging.error("Contratos: data inicial é maior que a data final.")
         return
 
-    # Caso nenhum dos dois tenha sido informado e LED seja hoje, não processa
-    if not args.date_from and not args.date_to and (led == today):
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-        logging.info("Contratos: LED (%s) já está no dia atual (%s). Nada a fazer.", led, today)
-        return
+    # Removido o guard de LED==hoje: sempre processar o dia atual quando chamado
 
     if args.tipo == "periodo":
         process_window(date_from, date_to, mode=args.mode)
