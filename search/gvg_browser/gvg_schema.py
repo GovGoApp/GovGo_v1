@@ -80,7 +80,9 @@ CONTRATACAO_FIELDS: Dict[str, FieldMeta] = {
 # Campos da tabela de embeddings (contratacao_emb)
 CONTRATACAO_EMB_FIELDS: Dict[str, FieldMeta] = {
     'numero_controle_pncp': FieldMeta('numero_controle_pncp', 'numero_controle_pncp', 'text', 'FK para contratacao', ['join']),
-    'embeddings': FieldMeta('embeddings', 'embeddings', 'vector', 'Vetor de embedding do processo', ['semantic']),
+    'embeddings': FieldMeta('embeddings', 'embeddings', 'vector', 'Vetor de embedding do processo (LEGADO)', ['semantic']),
+    # Novo campo HV (halfvec) – utilizado nas buscas
+    'embeddings_hv': FieldMeta('embeddings_hv', 'embeddings_hv', 'halfvec', 'Vetor de embedding em halfvec(3072)', ['semantic']),
     'modelo_embedding': FieldMeta('modelo_embedding', 'modelo_embedding', 'text', 'Modelo usado', ['meta']),
     'confidence': FieldMeta('confidence', 'confidence', 'numeric', 'Confiança do embedding', ['meta']),
     'top_categories': FieldMeta('top_categories', 'top_categories', 'array_text', 'Códigos de categorias top', ['category']),
@@ -99,7 +101,9 @@ CATEGORIA_FIELDS: Dict[str, FieldMeta] = {
     'nom_nv2': FieldMeta('nom_nv2', 'nom_nv2', 'text', 'Nome nível 2', ['category']),
     'cod_nv3': FieldMeta('cod_nv3', 'cod_nv3', 'text', 'Código nível 3', ['category']),
     'nom_nv3': FieldMeta('nom_nv3', 'nom_nv3', 'text', 'Nome nível 3', ['category']),
-    'cat_embeddings': FieldMeta('cat_embeddings', 'cat_embeddings', 'vector', 'Vetor embedding da categoria', ['semantic','category']),
+    'cat_embeddings': FieldMeta('cat_embeddings', 'cat_embeddings', 'vector', 'Vetor embedding da categoria (LEGADO)', ['semantic','category']),
+    # Novo campo HV em categorias
+    'cat_embeddings_hv': FieldMeta('cat_embeddings_hv', 'cat_embeddings_hv', 'halfvec', 'Vetor embedding da categoria em halfvec(3072)', ['semantic','category']),
 }
 
 # =============================
@@ -112,8 +116,8 @@ CATEGORIA_TABLE = 'categoria'
 ITEM_CONTRATACAO_TABLE = 'item_contratacao'
 
 PRIMARY_KEY = 'numero_controle_pncp'
-EMB_VECTOR_FIELD = 'embeddings'
-CATEGORY_VECTOR_FIELD = 'cat_embeddings'
+EMB_VECTOR_FIELD = 'embeddings_hv'
+CATEGORY_VECTOR_FIELD = 'cat_embeddings_hv'
 FTS_SOURCE_FIELD = 'objeto_compra'
 
 # Grupo mínimo de colunas para SELECT em buscas (ordem importante para zips atuais)
@@ -148,10 +152,10 @@ def build_semantic_select(embedding_param_placeholder: str = '%s', semantic_alia
     """Retorna trecho base do SELECT semântico (sem WHERE/ORDER) para futura
     montagem em gvg_search_core. Inclui cálculo de similarity.
 
-    A métrica usada: 1 - (ce.embeddings <=> %s::vector)
+    A métrica usada: 1 - (ce.embeddings_hv <=> %s::halfvec(3072))
     """
     select_cols = build_core_select_clause('c')
-    similarity_expr = f"1 - (ce.{EMB_VECTOR_FIELD} <=> {embedding_param_placeholder}::vector) AS similarity"
+    similarity_expr = f"1 - (ce.{EMB_VECTOR_FIELD} <=> {embedding_param_placeholder}::halfvec(3072)) AS similarity"
     return (
         "SELECT\n  " + select_cols + ",\n  " + similarity_expr + "\n"
         f"FROM {CONTRATACAO_TABLE} c\nJOIN {CONTRATACAO_EMB_TABLE} ce ON c.{PRIMARY_KEY} = ce.{PRIMARY_KEY}\n"
@@ -164,7 +168,7 @@ def build_category_similarity_select(embedding_param_placeholder: str = '%s') ->
     return (
         "SELECT id_categoria, cod_cat, nom_cat, cod_nv0, nom_nv0, cod_nv1, nom_nv1, "
         "cod_nv2, nom_nv2, cod_nv3, nom_nv3, "
-        f"1 - ({CATEGORIA_TABLE}.{CATEGORY_VECTOR_FIELD} <=> {embedding_param_placeholder}::vector) AS similarity\n"
+        f"1 - ({CATEGORIA_TABLE}.{CATEGORY_VECTOR_FIELD} <=> {embedding_param_placeholder}::halfvec(3072)) AS similarity\n"
         f"FROM {CATEGORIA_TABLE}\nWHERE {CATEGORIA_TABLE}.{CATEGORY_VECTOR_FIELD} IS NOT NULL\n"
     )
 

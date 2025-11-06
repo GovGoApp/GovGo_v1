@@ -280,5 +280,17 @@
     "question": "de novo",
     "sql": "SELECT (SELECT COUNT(*) FROM contrato WHERE numero_controle_pncp IS NOT NULL) AS total_contratos, (SELECT COUNT(*) FROM contrato_emb WHERE embeddings IS NOT NULL) AS total_embeddings_not_null -- No campo chamado embeddings_hv é mencionado nas informações fornecidas ;",
     "timestamp": "06/11/2025 13:58:18"
+  },
+  {
+    "id": "5",
+    "question": "de novo",
+    "sql": "SELECT (SELECT COUNT(*) FROM contrato WHERE numero_controle_pncp IS NOT NULL) AS total_contratos, (SELECT COUNT(*) FROM contratacao_emb WHERE embeddings IS NOT NULL) AS total_embeddings_not_null;",
+    "timestamp": "06/11/2025 18:34:46"
+  },
+  {
+    "id": "6",
+    "question": "SELECT (SELECT COUNT(*) FROM contrato WHERE numero_controle_pncp IS NOT NULL) AS total_contratos, (SELECT COUNT(*) FROM contrato_emb WHERE embeddings IS NOT NULL) AS total_embeddings_not_null, (SELECT COUNT(*) FROM contrato_emb WHERE embeddings_hv IS NOT NULL) AS total_embeddings_hv_not_null;",
+    "sql": "SELECT (SELECT COUNT(*) FROM contrato WHERE numero_controle_pncp IS NOT NULL) AS total_contratos, (SELECT COUNT(*) FROM contrato_emb WHERE embeddings IS NOT NULL) AS total_embeddings_not_null, (SELECT COUNT(*) FROM contrato_emb WHERE embeddings_hv IS NOT NULL) AS total_embeddings_hv_not_null;",
+    "timestamp": "06/11/2025 18:35:27"
   }
 ]

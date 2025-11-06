@@ -125,6 +125,15 @@ def db_fetch_all(sql: str, params: Optional[Sequence[Any]] = None, *, as_dict: b
     cur = None
     try:
         cur = conn.cursor()
+        # Aplicar ivfflat.probes se definido (sessão atual)
+        try:
+            _probes = os.getenv('IVFFLAT_PROBES', 8)
+            if _probes is not None:
+                _p_int = int(str(_probes).strip())
+                if _p_int > 0:
+                    cur.execute(f"SET ivfflat.probes = {_p_int}")
+        except Exception:
+            pass
         cur.execute(sql, params or None)
         rows = cur.fetchall()
         out = _rows_to_dicts(cur, rows) if as_dict else rows
@@ -163,6 +172,14 @@ def db_fetch_one(sql: str, params: Optional[Sequence[Any]] = None, *, as_dict: b
     cur = None
     try:
         cur = conn.cursor()
+        try:
+            _probes = os.getenv('IVFFLAT_PROBES')
+            if _probes is not None:
+                _p_int = int(str(_probes).strip())
+                if _p_int > 0:
+                    cur.execute(f"SET ivfflat.probes = {_p_int}")
+        except Exception:
+            pass
         cur.execute(sql, params or None)
         row = cur.fetchone()
         ms = int((time.perf_counter() - t0) * 1000)
@@ -209,6 +226,14 @@ def db_execute(sql: str, params: Optional[Sequence[Any]] = None, *, ctx: Optiona
     cur = None
     try:
         cur = conn.cursor()
+        try:
+            _probes = os.getenv('IVFFLAT_PROBES')
+            if _probes is not None:
+                _p_int = int(str(_probes).strip())
+                if _p_int > 0:
+                    cur.execute(f"SET ivfflat.probes = {_p_int}")
+        except Exception:
+            pass
         cur.execute(sql, params or None)
         affected = cur.rowcount if cur.rowcount is not None else 0
         conn.commit()
@@ -256,6 +281,14 @@ def db_execute_many(sql: str, seq_params: Iterable[Sequence[Any]], *, ctx: Optio
     cur = None
     try:
         cur = conn.cursor()
+        try:
+            _probes = os.getenv('IVFFLAT_PROBES')
+            if _probes is not None:
+                _p_int = int(str(_probes).strip())
+                if _p_int > 0:
+                    cur.execute(f"SET ivfflat.probes = {_p_int}")
+        except Exception:
+            pass
         cur.executemany(sql, list(seq_params))
         affected = cur.rowcount if cur.rowcount is not None else 0
         conn.commit()
@@ -304,6 +337,14 @@ def db_execute_returning_one(sql: str, params: Optional[Sequence[Any]] = None, *
     cur = None
     try:
         cur = conn.cursor()
+        try:
+            _probes = os.getenv('IVFFLAT_PROBES', 8)
+            if _probes is not None:
+                _p_int = int(str(_probes).strip())
+                if _p_int > 0:
+                    cur.execute(f"SET ivfflat.probes = {_p_int}")
+        except Exception:
+            pass
         cur.execute(sql, params or None)
         row = cur.fetchone()
         conn.commit()

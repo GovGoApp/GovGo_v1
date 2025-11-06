@@ -347,7 +347,7 @@ def semantic_search(query_text,
 				pre_ids = pre_limit_ids if pre_limit_ids is not None else int(os.getenv("GVG_PRE_ID_LIMIT", "50000"))
 				pre_knn = pre_knn_limit if pre_knn_limit is not None else int(os.getenv("GVG_PRE_KNN_LIMIT", "5000"))
 
-				where_cand = ["ce.embeddings IS NOT NULL"]
+				where_cand = ["ce.embeddings_hv IS NOT NULL"]
 				if filter_expired:
 					where_cand.append("to_date(NULLIF(c.data_encerramento_proposta,''),'YYYY-MM-DD') >= CURRENT_DATE")
 				for cond in sql_conditions_sanitized:
@@ -369,7 +369,7 @@ def semantic_search(query_text,
 					"  LIMIT %s",
 					")",
 					" , base AS (",
-					f"  SELECT ce.{PRIMARY_KEY}, (ce.{EMB_VECTOR_FIELD} <=> %s::vector) AS distance",
+					f"  SELECT ce.{PRIMARY_KEY}, (ce.{EMB_VECTOR_FIELD} <=> %s::halfvec(3072)) AS distance",
 					f"  FROM {CONTRATACAO_EMB_TABLE} ce",
 					f"  JOIN candidatos x ON x.{PRIMARY_KEY} = ce.{PRIMARY_KEY}",
 					"  ORDER BY distance ASC",
@@ -650,10 +650,10 @@ def hybrid_search(query_text, limit=MAX_RESULTS, min_results=MIN_RESULTS,
 		base = [
 			"SELECT",
 			"  " + ",\n  ".join(core_cols) + ",",
-			f"  (1 - (ce.{EMB_VECTOR_FIELD} <=> %s::vector)) AS semantic_score,",
+			f"  (1 - (ce.{EMB_VECTOR_FIELD} <=> %s::halfvec(3072))) AS semantic_score,",
 			f"  COALESCE(ts_rank(to_tsvector('portuguese', {text_field}), to_tsquery('portuguese', %s)),0) AS keyword_score,",
 			f"  COALESCE(ts_rank(to_tsvector('portuguese', {text_field}), to_tsquery('portuguese', %s)),0) AS keyword_prefix_score,",
-			f"  ( %s * (1 - (ce.{EMB_VECTOR_FIELD} <=> %s::vector)) + (1 - %s) * LEAST((0.7 * COALESCE(ts_rank(to_tsvector('portuguese', {text_field}), to_tsquery('portuguese', %s)),0) + 0.3 * COALESCE(ts_rank(to_tsvector('portuguese', {text_field}), to_tsquery('portuguese', %s)),0)) / %s, 1.0) ) AS combined_score",
+			f"  ( %s * (1 - (ce.{EMB_VECTOR_FIELD} <=> %s::halfvec(3072))) + (1 - %s) * LEAST((0.7 * COALESCE(ts_rank(to_tsvector('portuguese', {text_field}), to_tsquery('portuguese', %s)),0) + 0.3 * COALESCE(ts_rank(to_tsvector('portuguese', {text_field}), to_tsquery('portuguese', %s)),0)) / %s, 1.0) ) AS combined_score",
 			f"FROM {CONTRATACAO_TABLE} c",
 			f"JOIN {CONTRATACAO_EMB_TABLE} ce ON c.{PRIMARY_KEY} = ce.{PRIMARY_KEY}",
 			f"WHERE ce.{EMB_VECTOR_FIELD} IS NOT NULL"
