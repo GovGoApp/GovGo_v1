@@ -1,0 +1,7 @@
+# Dependências para scripts em scripts/pncp (contratacao e contrato)
+
+python-dotenv>=1.0.0
+requests>=2.31.0
+psycopg2-binary>=2.9.9
+openai>=1.30.0
+rich>=13.0.0

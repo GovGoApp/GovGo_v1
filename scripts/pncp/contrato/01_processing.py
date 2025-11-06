@@ -240,6 +240,7 @@ def upsert_contratos(cur, contratos: List[Dict[str, Any]]) -> Tuple[int, int]:
                      AND COALESCE(t.numero_contrato_empenho::text,'') = COALESCE(v.numero_contrato_empenho::text,'')
                      AND COALESCE(t.ano_contrato::text,'') = COALESCE(v.ano_contrato::text,''))
          WHERE t.id_contrato IS NULL
+                 ON CONFLICT (numero_controle_pncp) DO NOTHING
          RETURNING 1
     """
     psycopg2.extras.execute_values(cur, insert_sql, values, page_size=1000)
@@ -406,8 +407,8 @@ def process_window(date_from: str, date_to: str, mode: str = "publicacao") -> No
 
 def main():
     parser = argparse.ArgumentParser(description="Pipeline 01 - Contratos (processing)")
-    parser.add_argument("--mode", choices=["publicacao", "atualizacao"], default="publicacao")
-    parser.add_argument("--tipo", choices=["periodo", "diario"], default="periodo", help="Modo de execução: periodo (uma chamada) ou diario (dia-a-dia)")
+    parser.add_argument("--mode", choices=["publicacao", "atualizacao"], default="atualizacao")
+    parser.add_argument("--tipo", choices=["periodo", "diario"], default="diario", help="Modo de execução: periodo (uma chamada) ou diario (dia-a-dia)")
     parser.add_argument("--from", dest="date_from", required=False, help="AAAAMMDD")
     parser.add_argument("--to", dest="date_to", required=False, help="AAAAMMDD")
     args = parser.parse_args()
