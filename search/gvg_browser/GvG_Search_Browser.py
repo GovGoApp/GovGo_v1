@@ -7528,22 +7528,24 @@ def init_favorites(favs):
         return []
 
 @app.callback(
+    Output('header-plan-badge', 'children', allow_duplicate=True),
+    Output('header-plan-badge', 'style', allow_duplicate=True),
     Output('store-planos-data', 'data'),
     Input('store-auth', 'data'),
-    prevent_initial_call=False,
+    prevent_initial_call=True,
 )
 def load_planos_data_on_init(auth_data):
-    """Carrega dados de planos/limites na inicialização (junto com usuário)."""
+    """Inicializa dados de planos e atualiza badge assim que auth estiver disponível.
+    Mudança mínima: apenas adiciona atualização do badge evitando abrir modal.
+    """
     user = (auth_data or {}).get('user') or {}
     uid = user.get('uid') or ''
-    
+
     try:
-        # Buscar planos do sistema
         plans = get_system_plans()
     except Exception:
         plans = []
-    
-    # Fallback se banco falhar
+
     fallback_plans = [
         {'code': 'FREE', 'name': 'Free', 'desc': 'Uso básico para avaliação', 'price_cents': 0, 'limit_consultas_per_day': 5, 'limit_resumos_per_day': 1, 'limit_boletim_per_day': 1, 'limit_favoritos_capacity': 10},
         {'code': 'PLUS', 'name': 'Plus', 'desc': 'Uso individual intensivo', 'price_cents': 4900, 'limit_consultas_per_day': 30, 'limit_resumos_per_day': 40, 'limit_boletim_per_day': 4, 'limit_favoritos_capacity': 200},
@@ -7552,24 +7554,26 @@ def load_planos_data_on_init(auth_data):
     ]
     if not plans:
         plans = fallback_plans
-    
-    # Buscar plano e uso atual do usuário
+
     try:
         settings = get_user_settings(uid)
         current_code = (settings.get('plan_code') or 'FREE').upper()
     except Exception:
         current_code = 'FREE'
-    
-    # Buscar consumo atual
+
     usage = None
     if uid:
         try:
             from gvg_limits import get_usage_status
             usage = get_usage_status(uid)
         except Exception:
-            pass
-    
-    return {
+            usage = None
+
+    badge_style = styles.get(f'plan_badge_{current_code.lower()}', styles.get('plan_badge_free'))
+    # Manter mesma margem lateral inicial do header para não “pular” layout
+    badge_style = {**badge_style, 'marginLeft': '6px'}
+
+    return current_code, badge_style, {
         'plans': plans,
         'current_code': current_code,
         'usage': usage,
