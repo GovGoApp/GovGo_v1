@@ -402,8 +402,16 @@ def run_once(now: Optional[datetime] = None) -> None:
         sort_mode = int(cfg.get('sort_mode', 1))
         max_results = int(cfg.get('max_results', 50))
         top_categories_count = int(cfg.get('top_categories_count', 10))
-        filter_expired = _as_bool(cfg.get('filter_expired'), default=True)
-        negation_emb = bool(cfg.get('negation_emb', True))
+        # Forçar paridade com GSB: negation sempre ativo e filtro de encerrados sempre ligado no Boletim
+        use_v2 = bool(cfg.get('use_search_v2', ENABLE_SEARCH_V2))
+        filter_expired = True
+        negation_emb = True
+
+        # Log de configuração efetiva (snapshot x runtime)
+        try:
+            dbg('BOLETIM', f"sid={sid} use_v2={use_v2} negation={negation_emb} filter_expired={filter_expired} days={(sched_detail or {}).get('days')}")
+        except Exception:
+            pass
 
         # Log dos parâmetros que serão enviados para a busca
         # (Parâmetros omitidos do log para reduzir ruído)
@@ -432,7 +440,7 @@ def run_once(now: Optional[datetime] = None) -> None:
                     pass
                 processor = SearchQueryProcessor()
                 try:
-                    info = processor.process_query_v2(query or '', filters_sql) if ENABLE_SEARCH_V2 else processor.process_query(query or '')
+                    info = processor.process_query_v2(query or '', filters_sql) if use_v2 else processor.process_query(query or '')
                 except Exception:
                     info = {'search_terms': query or '', 'negative_terms': '', 'sql_conditions': filters_sql, 'embeddings': bool((query or '').strip())}
                 if not isinstance(info, dict):
@@ -463,7 +471,10 @@ def run_once(now: Optional[datetime] = None) -> None:
                         if _enc_filter not in sc:
                             sc.append(_enc_filter)
                             info['sql_conditions'] = sc
-                    log_line("Filtro de encerrados aplicado (filter_expired=True)")
+                    try:
+                        dbg('BOLETIM', "Filtro de encerrados aplicado (filter_expired=True)")
+                    except Exception:
+                        pass
                 except Exception:
                     pass
 

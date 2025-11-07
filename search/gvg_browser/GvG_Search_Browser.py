@@ -2448,6 +2448,8 @@ def save_boletim(n, query, freq, slots, dias, channels, s_type, approach, rel, s
         'max_results': max_res,
         'top_categories_count': top_cat,
     'filter_expired': 'filter_expired' in (toggles or []),
+	'negation_emb': True,
+	'use_search_v2': ENABLE_SEARCH_V2,
     }
     boletim_id = create_user_boletim(
         query_text=query.strip(),
