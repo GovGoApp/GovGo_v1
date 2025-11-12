@@ -44,6 +44,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from unidecode import unidecode
 
 # -------------------- Console --------------------
 console = Console(width=96)
@@ -168,6 +169,19 @@ def extract_hq_ibge(company: Optional[dict]) -> Optional[str]:
         return None
 
     return walk(company)
+
+
+def get_company_city_uf(company: Optional[dict]) -> Optional[Tuple[str, str]]:
+    """Extrai (municipio, uf) do JSON do OpenCNPJ, se disponíveis no topo.
+    Retorna (cidade, UF) ou None se faltar.
+    """
+    if not company or not isinstance(company, dict):
+        return None
+    city = company.get('municipio') or company.get('cidade')
+    uf = company.get('uf') or company.get('estado')
+    if city and uf and isinstance(city, str) and isinstance(uf, str):
+        return city.strip(), uf.strip().upper()
+    return None
 
 # -------------------- Embeddings / Vetores --------------------
 
@@ -425,6 +439,42 @@ def load_municipios_coords(conn, ibge_codes: List[Any]) -> Dict[str, Tuple[float
         return out
 
 
+def load_municipio_coord_by_name_uf(conn, city: str, uf_code: str) -> Optional[Tuple[str, float, float]]:
+    """Resolve lat/lon da cidade pelo nome + UF (tabela public.municipios).
+    Retorna (ibge_code, lat, lon) ou None se não achar.
+    """
+    if not city or not uf_code:
+        return None
+    city_clean = unidecode(city).strip().upper()
+    sql = """
+        SELECT municipio::text AS ibge, lat, lon
+        FROM public.municipios
+        WHERE uf_code = %s
+          AND (
+                upper(no_accents) = %s OR upper(name) = %s OR upper(slug_name) = %s
+              )
+        ORDER BY pop_21 DESC NULLS LAST
+        LIMIT 1
+    """
+    params = (uf_code.upper(), city_clean, city_clean, city_clean)
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        if isdbg('SQL'):
+            dbg_sql('municipio by name+uf', sql, list(params), names=['uf','city_noacc','city_name','slug'])
+        cur.execute(sql, params)
+        row = cur.fetchone()
+        if not row:
+            return None
+        ibge = str(row.get('ibge')) if row.get('ibge') is not None else None
+        lat = row.get('lat')
+        lon = row.get('lon')
+        try:
+            if ibge and lat is not None and lon is not None:
+                return ibge, float(lat), float(lon)
+        except Exception:
+            return None
+    return None
+
+
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     R = 6371.0
     phi1 = math.radians(lat1)
@@ -620,10 +670,62 @@ def apply_sort_mode(results: List[dict]) -> List[dict]:
     return results
 
 
+def display_company_panel(company: Optional[dict], stats: Optional[dict]):
+    """Mostra um quadro com informações principais da empresa no topo dos resultados."""
+    if not company or not isinstance(company, dict):
+        return
+    rs = (company.get('razao_social') or '').strip() or '—'
+    cnpj = company.get('cnpj') or ''
+    cnpj_fmt = format_cnpj(cnpj) if cnpj else '—'
+    city = (company.get('municipio') or '').strip()
+    uf = (company.get('uf') or '').strip()
+    loc_txt = f"{city} - {uf}".strip(" -") if (city or uf) else '—'
+    sit = (company.get('situacao_cadastral') or '—').strip()
+    dt_ini = format_date_br(company.get('data_inicio_atividade'))
+    porte = (company.get('porte_empresa') or '—').strip()
+    cnae = (company.get('cnae_principal') or '—')
+    cap = company.get('capital_social')
+    cap_fmt = '—'
+    if isinstance(cap, str) and cap:
+        try:
+            v = float(cap.replace('.', '').replace(',', '.'))
+            cap_fmt = format_currency(v)
+        except Exception:
+            cap_fmt = cap
+    elif isinstance(cap, (int, float)):
+        cap_fmt = format_currency(cap)
+    # Extras do cálculo
+    contr_emb = stats.get('contratos_com_embedding') if stats else None
+    hq_lat = stats.get('hq_lat') if stats else None
+    hq_lon = stats.get('hq_lon') if stats else None
+    hq_ibge = stats.get('hq_ibge') if stats else None
+    extras = []
+    if contr_emb is not None:
+        extras.append(f"Embeddings: {contr_emb}")
+    if hq_lat is not None and hq_lon is not None:
+        extras.append(f"HQ: {city or '—'}-{uf or ''} ({hq_lat:.4f},{hq_lon:.4f}){(' ibge='+str(hq_ibge)) if hq_ibge else ''}")
+    extra_txt = ("\n" + "  • " + " | ".join(extras)) if extras else ""
+
+    text = (
+        f"[bold]Razão Social:[/bold] {rs}\n"
+        f"[bold]CNPJ:[/bold] {cnpj_fmt}\n"
+        f"[bold]Município/UF:[/bold] {loc_txt}\n"
+        f"[bold]Situação:[/bold] {sit}    [bold]Início:[/bold] {dt_ini}\n"
+        f"[bold]Porte:[/bold] {porte}    [bold]CNAE:[/bold] {cnae}    [bold]Capital Social:[/bold] R$ {cap_fmt}"
+        f"{extra_txt}"
+    )
+    console.print(Panel(text, title="Empresa", border_style="cyan", padding=(0,1)))
+
+
 def display_results(results: List[dict]):
     if not results:
         console.print("[yellow]Nenhum resultado para exibir.[/yellow]")
         return
+    # Quadro da empresa (se houver)
+    try:
+        display_company_panel(last_company, last_stats)
+    except Exception:
+        pass
     results = apply_sort_mode(results)
     title_extra = " (geo blend)" if any('final_score' in r for r in results) else ""
     table = Table(title=f"Resultados - Ordenação: {SORT_MODES[current_sort_mode]['name']}{title_extra}", show_header=True, header_style="bold magenta")
@@ -656,29 +758,52 @@ def display_results(results: List[dict]):
         console.print(f"[blue]Geo: centroid=({c_lat:.4f},{c_lon:.4f}) weight={last_geo_stats.get('geo_weight')} tau={last_geo_stats.get('geo_tau')} dist_mean={last_geo_stats.get('dist_mean')} ignorados={last_geo_stats.get('ignored')}/{last_geo_stats.get('count')}")
 
     if os.environ.get("DEBUG", "").lower() in ("1", "true", "yes"):
-        debug_lines = []
+        debug_lines: List[str] = []
         if last_stats:
-            debug_lines.append(f"result_count={last_stats.get('result_count')}")
-            debug_lines.append(f"emb_dim={last_stats.get('embedding_dim')} emb_type={last_stats.get('emb_type')}")
+            rc = last_stats.get('result_count')
+            embd = last_stats.get('embedding_dim')
+            debug_lines.append(f"result_count={rc}")
+            debug_lines.append(f"emb_dim={embd} emb_type={last_stats.get('emb_type')}")
             if last_stats.get('sem_ms') is not None:
-                debug_lines.append(f"sem_ms={last_stats.get('sem_ms')}")
+                debug_lines.append(f"sem_ms={round(last_stats.get('sem_ms',0),1)}ms")
+            # timings
             if last_stats.get('coords_contr_ms') is not None:
-                debug_lines.append(f"coords_contr_ms={last_stats.get('coords_contr_ms')} coords_cand_ms={last_stats.get('coords_cand_ms')} enrich_ms={last_stats.get('enrich_ms')} median_all_ms={last_stats.get('median_all_ms')}")
-            if last_stats.get('median_lat') is not None and last_stats.get('median_lon') is not None:
-                debug_lines.append(f"median_pos=({last_stats.get('median_lat'):.6f},{last_stats.get('median_lon'):.6f})")
-            if last_stats.get('hq_ibge'):
-                debug_lines.append(f"hq_ibge={last_stats.get('hq_ibge')} hq=({last_stats.get('hq_lat')},{last_stats.get('hq_lon')})")
-            if last_stats.get('d_hq_med') is not None:
-                debug_lines.append(f"d_hq_med={last_stats.get('d_hq_med'):.2f}km d_disp={last_stats.get('d_disp'):.2f}km L={last_stats.get('L'):.4f} geo_weight_eff={last_stats.get('geo_weight_eff'):.4f}")
+                debug_lines.append(
+                    f"coords_contr_ms={round(last_stats.get('coords_contr_ms',0),1)}ms  "
+                    f"coords_cand_ms={round(last_stats.get('coords_cand_ms',0),1)}ms  "
+                    f"enrich_ms={round(last_stats.get('enrich_ms',0),1)}ms  "
+                    f"median_all_ms={round(last_stats.get('median_all_ms',0),1)}ms"
+                )
+            # Posições e HQ
+            med_lat = last_stats.get('median_lat')
+            med_lon = last_stats.get('median_lon')
+            cen_lat = last_stats.get('centroid_lat')
+            cen_lon = last_stats.get('centroid_lon')
+            if med_lat is not None and med_lon is not None:
+                if cen_lat is not None and cen_lon is not None:
+                    debug_lines.append(f"median=({med_lat:.4f},{med_lon:.4f}) centroid=({cen_lat:.4f},{cen_lon:.4f})")
+                else:
+                    debug_lines.append(f"median=({med_lat:.4f},{med_lon:.4f})")
+            if last_stats.get('hq_lat') is not None and last_stats.get('hq_lon') is not None:
+                debug_lines.append(f"hq_ibge={last_stats.get('hq_ibge')} hq=({last_stats.get('hq_lat'):.4f},{last_stats.get('hq_lon'):.4f})")
+            # Adaptativo
+            if last_stats.get('geo_weight_eff') is not None and last_stats.get('L') is not None:
+                base_w = (last_geo_stats.get('geo_weight') if last_geo_stats else last_stats.get('geo_weight'))
+                debug_lines.append(f"W={base_w} -> W_eff={last_stats.get('geo_weight_eff')} (L={last_stats.get('L')})")
+            if last_stats.get('d_hq_med') is not None and last_stats.get('d_disp') is not None:
+                debug_lines.append(f"d_hq_med={last_stats.get('d_hq_med')}km d_disp={last_stats.get('d_disp')}km")
         if last_geo_stats:
-            debug_lines.append(f"geo_weight={last_geo_stats.get('geo_weight')} geo_tau={last_geo_stats.get('geo_tau')}")
-            debug_lines.append(f"dist_min={last_geo_stats.get('dist_min')} dist_mean={last_geo_stats.get('dist_mean')} dist_max={last_geo_stats.get('dist_max')}")
+            gw = last_geo_stats.get('geo_weight')
+            gt = last_geo_stats.get('geo_tau')
+            dmin = last_geo_stats.get('dist_min')
+            dmean = last_geo_stats.get('dist_mean')
+            dmax = last_geo_stats.get('dist_max')
+            debug_lines.append(f"geo_weight={gw} geo_tau={gt}")
+            if dmin is not None and dmean is not None and dmax is not None:
+                debug_lines.append(f"dist_min={dmin:.1f} dist_mean={dmean:.1f} dist_max={dmax:.1f}")
             debug_lines.append(f"ignored={last_geo_stats.get('ignored')} count={last_geo_stats.get('count')} loop_ms={last_geo_stats.get('loop_ms')} sort_ms={last_geo_stats.get('sort_ms')}")
-            if last_geo_stats.get('centroid'):
-                clat, clon = last_geo_stats['centroid']
-                debug_lines.append(f"centroid=({clat:.6f},{clon:.6f})")
         if debug_lines:
-            console.print(Panel("\n".join(debug_lines), title="DEBUG", border_style="yellow", padding=(0,1)))
+            console.print(Panel("\n".join(debug_lines), title="DEBUG (resumo)", border_style="yellow", padding=(0,1)))
     console.print("\n[bold magenta]Detalhes dos resultados:[/bold magenta]\n")
     limit = min(DISPLAY_ROWS, len(results))
     for i in range(1, limit + 1):
@@ -771,38 +896,49 @@ def run_search(cnpj14: str, cfg: Dict[str, Any]) -> Tuple[Optional[dict], dict, 
                 median_pos = compute_median_coord(coords_all)
                 med_all_ms = (perf_counter() - t_med_all_start) * 1000
                 logging.info("Mediana geográfica (todos contratos): %s (coords=%s) tempo=%.1fms", median_pos, len(coords_all), med_all_ms)
-                # Adaptativo
+                # HQ (preferência: municipio+UF da API) e Adaptativo
                 geo_weight_eff = cfg['geo_weight']
                 L_factor = 1.0
                 d_hq_med = None
                 d_disp = None
-                hq_ibge = extract_hq_ibge(company) if cfg['geo_adapt'] else None
+                hq_ibge = None
                 hq_lat = hq_lon = None
-                if cfg['geo_adapt'] and hq_ibge and median_pos:
-                    hq_coords_map = load_municipios_coords(conn, [hq_ibge])
-                    if hq_ibge in hq_coords_map:
-                        hq_lat, hq_lon = hq_coords_map[hq_ibge]
-                        try:
-                            d_hq_med = haversine_km(hq_lat, hq_lon, median_pos[0], median_pos[1])
-                        except Exception:
-                            d_hq_med = None
-                        # Dispersão
-                        dist_list = []
-                        if median_pos and coords_all:
-                            for coord in coords_all:
-                                if coord and coord[0] is not None and coord[1] is not None:
-                                    try:
-                                        dist_list.append(haversine_km(median_pos[0], median_pos[1], coord[0], coord[1]))
-                                    except Exception:
-                                        pass
-                        if dist_list:
-                            d_disp = sum(dist_list)/len(dist_list)
-                        if d_hq_med is not None and d_disp is not None:
-                            L_factor = math.exp(-d_hq_med / cfg['tau_hq']) * math.exp(-d_disp / cfg['tau_disp'])
-                            geo_weight_eff = cfg['geo_weight'] * L_factor
-                            logging.info("Geo adapt: hq_ibge=%s d_hq_med=%.2f d_disp=%.2f L=%.4f geo_weight_eff=%.4f", hq_ibge, d_hq_med, d_disp, L_factor, geo_weight_eff)
-                        else:
-                            logging.info("Geo adapt: insuficiente para cálculo (hq=%s d_hq_med=%s d_disp=%s)", hq_ibge, d_hq_med, d_disp)
+                # 1) Tenta por municipio+UF (OpenCNPJ)
+                city_uf = get_company_city_uf(company)
+                if city_uf:
+                    ibge_hit = load_municipio_coord_by_name_uf(conn, city_uf[0], city_uf[1])
+                    if ibge_hit:
+                        hq_ibge, hq_lat, hq_lon = ibge_hit
+                # 2) Fallback: tenta extrair código IBGE (se existir no JSON)
+                if (hq_lat is None or hq_lon is None) and not hq_ibge:
+                    hq_ibge = extract_hq_ibge(company)
+                    if hq_ibge:
+                        hq_coords_map = load_municipios_coords(conn, [hq_ibge])
+                        if hq_ibge in hq_coords_map:
+                            hq_lat, hq_lon = hq_coords_map[hq_ibge]
+                # Se adaptativo ON e temos HQ + mediana, calcular fatores
+                if cfg['geo_adapt'] and hq_lat is not None and hq_lon is not None and median_pos:
+                    try:
+                        d_hq_med = haversine_km(hq_lat, hq_lon, median_pos[0], median_pos[1])
+                    except Exception:
+                        d_hq_med = None
+                    # Dispersão
+                    dist_list = []
+                    if median_pos and coords_all:
+                        for coord in coords_all:
+                            if coord and coord[0] is not None and coord[1] is not None:
+                                try:
+                                    dist_list.append(haversine_km(median_pos[0], median_pos[1], coord[0], coord[1]))
+                                except Exception:
+                                    pass
+                    if dist_list:
+                        d_disp = sum(dist_list)/len(dist_list)
+                    if d_hq_med is not None and d_disp is not None:
+                        L_factor = math.exp(-d_hq_med / cfg['tau_hq']) * math.exp(-d_disp / cfg['tau_disp'])
+                        geo_weight_eff = cfg['geo_weight'] * L_factor
+                        logging.info("Geo adapt: hq_ibge=%s d_hq_med=%.1f d_disp=%.1f L=%.4f geo_weight_eff=%.4f", hq_ibge, d_hq_med, d_disp, L_factor, geo_weight_eff)
+                    else:
+                        logging.info("Geo adapt: insuficiente para cálculo (hq=%s d_hq_med=%s d_disp=%s)", hq_ibge, d_hq_med, d_disp)
                 # Carrega coords candidatos
                 ibges_candidatos = [str(r.get('unidade_orgao_codigo_ibge')) for r in results if r.get('unidade_orgao_codigo_ibge') is not None]
                 t_coords_cand_start = perf_counter()
@@ -825,16 +961,18 @@ def run_search(cnpj14: str, cfg: Dict[str, Any]) -> Tuple[Optional[dict], dict, 
                 stats['enrich_ms'] = round(enrich_ms, 1)
                 stats['median_all_ms'] = round(med_all_ms, 1)
                 # Adapt extra stats
-                if cfg['geo_adapt']:
+                # Sempre anexamos HQ se disponível; adapt extras se ON
+                if hq_ibge:
                     stats['hq_ibge'] = hq_ibge
                     stats['hq_lat'] = hq_lat
                     stats['hq_lon'] = hq_lon
+                if cfg['geo_adapt']:
                     if d_hq_med is not None:
-                        stats['d_hq_med'] = round(d_hq_med, 3)
+                        stats['d_hq_med'] = round(d_hq_med, 1)
                     if d_disp is not None:
-                        stats['d_disp'] = round(d_disp, 3)
-                    stats['L'] = round(L_factor, 6)
-                    stats['geo_weight_eff'] = round(geo_weight_eff, 6)
+                        stats['d_disp'] = round(d_disp, 1)
+                    stats['L'] = round(L_factor, 4)
+                    stats['geo_weight_eff'] = round(geo_weight_eff, 4)
             else:
                 stats['geo_active'] = False
             return company, stats, results, geo_stats
@@ -860,12 +998,12 @@ def parametros_menu(cfg: Dict[str, Any]):
             {"key": "width", "label": "width", "desc": "Largura console", "type": int, "default": 96},
             {"key": "geo_weight", "label": "geo-weight", "desc": "Peso geográfico base", "type": float, "default": 0.25},
             {"key": "geo_tau", "label": "geo-tau", "desc": "Tau (km) decaimento distância", "type": float, "default": 300.0},
-            {"key": "geo_adapt", "label": "geo-adapt", "desc": "Ativa peso adaptativo (toggle)", "type": bool, "default": False},
+            {"key": "geo_adapt", "label": "geo-adapt", "desc": "Ativa peso adaptativo (toggle)", "type": bool, "default": True},
             {"key": "tau_hq", "label": "tau-hq", "desc": "Tau distância HQ→mediana", "type": float, "default": 400.0},
             {"key": "tau_disp", "label": "tau-disp", "desc": "Tau dispersão geográfica", "type": float, "default": 800.0},
-            {"key": "use_geo", "label": "pos", "desc": "Ativa blending geográfico base (toggle)", "type": bool, "default": False},
+            {"key": "use_geo", "label": "pos", "desc": "Ativa blending geográfico base (toggle)", "type": bool, "default": True},
             {"key": "filter_expired", "label": "filter-expired", "desc": "Filtrar processos expirados (toggle)", "type": bool, "default": True},
-            {"key": "debug_flag", "label": "debug", "desc": "Ativa painel/log DEBUG (toggle)", "type": bool, "default": False},
+            {"key": "debug_flag", "label": "debug", "desc": "Ativa painel/log DEBUG (toggle)", "type": bool, "default": True},
         ]
         for idx, p in enumerate(params_def, 1):
             val = cfg[p['key']]
@@ -1008,18 +1146,31 @@ def main():
     parser.add_argument("--load-json", help="Caminho JSON pré-gerado (somente apresentação)")
     parser.add_argument("--width", type=int, default=96, help="Largura console (default=96)")
     parser.add_argument("--debug", action="store_true", help="Ativa logs detalhados")
+    parser.add_argument("--no-debug", action="store_true", help="Força DEBUG off")
     # Geografia base
     parser.add_argument("--pos", action="store_true", help="Ativa blending geográfico base")
+    parser.add_argument("--no-pos", action="store_true", help="Desativa blending geográfico base")
     parser.add_argument("--geo-weight", type=float, default=0.25, help="Peso geográfico base (default=0.25)")
     parser.add_argument("--geo-tau", type=float, default=300.0, help="Tau (km) decaimento distância (default=300)")
     # Adaptativo
     parser.add_argument("--geo-adapt", action="store_true", help="Ativa ponderação geográfica adaptativa")
+    parser.add_argument("--no-geo-adapt", action="store_true", help="Desativa ponderação geográfica adaptativa")
     parser.add_argument("--tau-hq", type=float, default=400.0, help="Tau distância HQ→mediana (default=400)")
     parser.add_argument("--tau-disp", type=float, default=800.0, help="Tau dispersão geográfica (default=800)")
     parser.add_argument("--no-filter-expired", action="store_true", help="Desativa filtro de processos expirados")
     args = parser.parse_args()
 
     # Config dinâmica
+    # Defaults internos: geo_adapt / use_geo / debug ligados se não houver flags de desligar
+    use_geo_default = True if not args.no_pos else False
+    geo_adapt_default = True if not args.no_geo_adapt else False
+    debug_default = True if not args.no_debug else False
+    if args.pos:
+        use_geo_default = True
+    if args.geo_adapt:
+        geo_adapt_default = True
+    if args.debug:
+        debug_default = True
     cfg = {
         'top_k': args.top_k,
         'top_candidates': args.top_candidates,
@@ -1030,11 +1181,11 @@ def main():
         'width': args.width,
         'geo_weight': args.geo_weight,
         'geo_tau': args.geo_tau,
-        'use_geo': args.pos,
-        'geo_adapt': args.geo_adapt,
+        'use_geo': use_geo_default,
+        'geo_adapt': geo_adapt_default,
         'tau_hq': args.tau_hq,
         'tau_disp': args.tau_disp,
-        'debug_flag': args.debug,
+        'debug_flag': debug_default,
         'filter_expired': (not args.no_filter_expired),
     }
 
@@ -1055,6 +1206,8 @@ def main():
     if cfg['debug_flag']:
         os.environ['DEBUG'] = '1'
         logging.getLogger().setLevel(logging.INFO)
+    else:
+        os.environ['DEBUG'] = '0'
     if os.environ.get("DEBUG", "").lower() in ("1", "true", "yes"):
         logging.getLogger().setLevel(logging.INFO)
 
