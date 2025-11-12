@@ -328,5 +328,29 @@
     "question": "nao, eu queo a saida dos top 100 fornecdores por contragem de contratos seja no seguinte formato string: {\"empresa\": {{nome_razao_social_fornecedor}}; \"cnpj\": {{ni_fornecedor}}}",
     "sql": "SELECT STRING_AGG('{\"empresa\": \"' || ct.nome_razao_social_fornecedor || '\", \"cnpj\": \"' || ct.ni_fornecedor || '\"}', ', ') AS fornecedores_string FROM (SELECT ct.nome_razao_social_fornecedor, ct.ni_fornecedor FROM contrato AS ct GROUP BY ct.ni_fornecedor, ct.nome_razao_social_fornecedor ORDER BY COUNT(ct.numero_contrato_empenho) DESC LIMIT 100) AS subquery;",
     "timestamp": "07/11/2025 17:51:25"
+  },
+  {
+    "id": "1",
+    "question": "me de a lista de cnpj de fornecedores (ni_fornecedor e razao_social) dos contratos por numero de contrato desc",
+    "sql": "SELECT ct.numero_contrato_empenho, ct.ni_fornecedor, ct.nome_razao_social_fornecedor FROM contrato AS ct ORDER BY ct.numero_contrato_empenho DESC LIMIT 1000;",
+    "timestamp": "07/11/2025 18:24:25"
+  },
+  {
+    "id": "2",
+    "question": "me de a lista de cnpj de fornecedores (ni_fornecedor e razao_social) dos contratos por contagem do numero de contrato desc limite 20000",
+    "sql": "SELECT ct.ni_fornecedor, ct.nome_razao_social_fornecedor, COUNT(ct.numero_contrato_empenho) AS contrato_count FROM contrato AS ct GROUP BY ct.ni_fornecedor, ct.nome_razao_social_fornecedor ORDER BY contrato_count DESC LIMIT 20000;",
+    "timestamp": "07/11/2025 18:26:16"
+  },
+  {
+    "id": "1",
+    "question": "me de a lista de contrato desse fornecedor cnpj 48566347000122",
+    "sql": "SELECT numero_controle_pncp, numero_contrato_empenho, nome_razao_social_fornecedor, valor_global FROM contrato AS ct WHERE ni_fornecedor = '48566347000122' ORDER BY data_atualizacao_global DESC LIMIT 1000;",
+    "timestamp": "11/11/2025 15:09:47"
+  },
+  {
+    "id": "2",
+    "question": "me de uma lista randomica de 10 contratos do  fornecedor cnpj 48566347000122",
+    "sql": "SELECT numero_controle_pncp, numero_contrato_empenho, nome_razao_social_fornecedor, valor_global FROM contrato AS ct WHERE ni_fornecedor = '48566347000122' ORDER BY RANDOM() LIMIT 10;",
+    "timestamp": "11/11/2025 15:13:39"
   }
 ]

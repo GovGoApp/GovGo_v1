@@ -134,6 +134,7 @@ CREATE TABLE public.contratacao_emb (
   top_categories ARRAY,
   top_similarities ARRAY,
   embeddings USER-DEFINED,
+  embeddings_hv USER-DEFINED,
   CONSTRAINT contratacao_emb_pkey PRIMARY KEY (id_contratacao_emb)
 );
 CREATE TABLE public.contrato (
@@ -189,6 +190,15 @@ CREATE TABLE public.contrato_emb (
   embeddings_hv USER-DEFINED,
   CONSTRAINT contrato_emb_pkey PRIMARY KEY (id_contrato_emb),
   CONSTRAINT contrato_emb_numero_controle_pncp_fkey FOREIGN KEY (numero_controle_pncp) REFERENCES public.contrato(numero_controle_pncp)
+);
+CREATE TABLE public.empresa (
+  id_empresa bigint NOT NULL DEFAULT nextval('empresa_id_empresa_seq'::regclass),
+  cnpj text NOT NULL UNIQUE,
+  razao_social text,
+  api_json jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT empresa_pkey PRIMARY KEY (id_empresa)
 );
 CREATE TABLE public.item_classificacao (
   id_item_classificacao bigint NOT NULL DEFAULT nextval('item_classificacao_id_item_classificacao_seq1'::regclass),
@@ -290,6 +300,15 @@ CREATE TABLE public.pca_emb (
   CONSTRAINT pca_emb_pkey PRIMARY KEY (id_pca_emb),
   CONSTRAINT pca_emb_id_pca_pncp_fkey FOREIGN KEY (id_pca_pncp) REFERENCES public.pca(numero_controle_pca_pncp)
 );
+CREATE TABLE public.pipeline_run_stats (
+  id bigint NOT NULL DEFAULT nextval('pipeline_run_stats_id_seq'::regclass),
+  ts_run timestamp with time zone NOT NULL DEFAULT now(),
+  stage text NOT NULL,
+  date_ref text NOT NULL,
+  inserted_contratacoes integer NOT NULL DEFAULT 0,
+  inserted_itens integer NOT NULL DEFAULT 0,
+  CONSTRAINT pipeline_run_stats_pkey PRIMARY KEY (id)
+);
 CREATE TABLE public.system_config (
   key character varying NOT NULL,
   value text NOT NULL,
@@ -312,6 +331,74 @@ CREATE TABLE public.system_plans (
   stripe_product_id text UNIQUE,
   stripe_price_id text UNIQUE,
   CONSTRAINT system_plans_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.test_categoria (
+  id_categoria bigint NOT NULL DEFAULT nextval('categoria_id_categoria_seq'::regclass),
+  cod_cat text NOT NULL UNIQUE,
+  nom_cat text,
+  cod_nv0 text,
+  nom_nv0 text,
+  cod_nv1 text,
+  nom_nv1 text,
+  cod_nv2 text,
+  nom_nv2 text,
+  cod_nv3 text,
+  nom_nv3 text,
+  cat_embeddings_3072 USER-DEFINED,
+  created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+  cat_embeddings_1536 USER-DEFINED,
+  cat_embedding_3072_hv USER-DEFINED,
+  cat_embeddings_1536_hv USER-DEFINED,
+  cat_embedding_3072_hv_ivf USER-DEFINED,
+  cat_3072_hv_hnsw_h USER-DEFINED,
+  cat_3072_hv_ivf_i USER-DEFINED,
+  CONSTRAINT test_categoria_pkey PRIMARY KEY (id_categoria)
+);
+CREATE TABLE public.test_contrato_emb (
+  id_contrato_emb bigint NOT NULL DEFAULT nextval('contrato_emb_id_contrato_emb_seq'::regclass),
+  modelo_embedding text,
+  confidence numeric,
+  metadata jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  top_categories ARRAY,
+  top_similarities ARRAY,
+  embeddings_3072 USER-DEFINED,
+  numero_controle_pncp text NOT NULL UNIQUE,
+  embedding_3072_2 USER-DEFINED,
+  embedding_1536 USER-DEFINED,
+  embedding_3072_hv USER-DEFINED,
+  top_categories_a ARRAY,
+  top_similarities_a ARRAY,
+  confidence_a numeric,
+  top_categories_b ARRAY,
+  top_similarities_b ARRAY,
+  confidence_b numeric,
+  top_categories_c ARRAY,
+  top_similarities_c ARRAY,
+  confidence_c numeric,
+  embedding_3072_hv_ivf USER-DEFINED,
+  top_categories_d ARRAY,
+  top_similarities_d ARRAY,
+  confidence_d numeric,
+  embedding_objctx_1536 USER-DEFINED,
+  embedding_objctx_3072_hv USER-DEFINED,
+  embedding_objctx_3072_hv_ivf USER-DEFINED,
+  top_categories_e ARRAY,
+  top_similarities_e ARRAY,
+  confidence_e numeric,
+  top_categories_f ARRAY,
+  top_similarities_f ARRAY,
+  confidence_f numeric,
+  top_categories_g ARRAY,
+  top_similarities_g ARRAY,
+  confidence_g numeric,
+  top_categories_h ARRAY,
+  top_similarities_h ARRAY,
+  confidence_h numeric,
+  top_categories_i ARRAY,
+  top_similarities_i ARRAY,
+  confidence_i numeric,
+  CONSTRAINT test_contrato_emb_pkey PRIMARY KEY (id_contrato_emb)
 );
 CREATE TABLE public.user_boletim (
   id bigint NOT NULL DEFAULT nextval('user_boletim_id_seq'::regclass),
