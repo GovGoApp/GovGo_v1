@@ -106,6 +106,44 @@ def format_cnpj(cnpj14: str) -> str:
         return cnpj14 or ""
     return f"{cnpj14[0:2]}.{cnpj14[2:5]}.{cnpj14[5:8]}/{cnpj14[8:12]}-{cnpj14[12:14]}"
 
+
+def normalize_cnae_code(raw: Any) -> Optional[str]:
+    if raw is None:
+        return None
+    digits = re.sub(r"\D", "", str(raw))
+    if not digits:
+        return None
+    if len(digits) < 7:
+        digits = digits.zfill(7)
+    return digits[:7]
+
+
+def extract_company_cnaes(company: Optional[dict]) -> Tuple[Optional[str], List[str]]:
+    principal = None
+    secundarios: List[str] = []
+    if not company or not isinstance(company, dict):
+        return principal, secundarios
+    raw_principal = company.get('cnae_principal') or company.get('cnaePrincipal')
+    if isinstance(raw_principal, dict):
+        raw_principal = raw_principal.get('codigo') or raw_principal.get('code') or raw_principal.get('cod')
+    principal = normalize_cnae_code(raw_principal)
+
+    raw_secundarios = company.get('cnaes_secundarios') or company.get('cnae_secundarios') or []
+    if isinstance(raw_secundarios, (list, tuple)):
+        for item in raw_secundarios:
+            code_val = item
+            if isinstance(item, dict):
+                code_val = item.get('codigo') or item.get('code') or item.get('cod')
+            code = normalize_cnae_code(code_val)
+            if code and code not in secundarios:
+                secundarios.append(code)
+    elif isinstance(raw_secundarios, str):
+        for part in re.split(r"[;,]", raw_secundarios):
+            code = normalize_cnae_code(part)
+            if code and code not in secundarios:
+                secundarios.append(code)
+    return principal, secundarios
+
 # -------------------- HTTP / OpenCNPJ --------------------
 
 def build_session() -> requests.Session:
@@ -285,6 +323,77 @@ def mean_vector(vectors: List[List[float]]) -> Optional[List[float]]:
 
 def to_vector_literal(vec: List[float]) -> str:
     return "[" + ",".join(f"{x:.6f}" for x in vec) + "]"
+
+
+def get_cnae_embeddings(conn, codes: List[str]) -> Dict[str, List[float]]:
+    if not codes:
+        return {}
+    unique_codes = list(dict.fromkeys([c for c in codes if c]))
+    if not unique_codes:
+        return {}
+    sql = """
+        SELECT cod_nv4, cnae_emb::text AS emb
+        FROM public.cnae
+        WHERE cod_nv4 = ANY(%s) AND cnae_emb IS NOT NULL
+    """
+    out: Dict[str, List[float]] = {}
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        if isdbg('SQL'):
+            dbg_sql('cnae->emb', sql, [unique_codes], names=['codes'])
+        cur.execute(sql, (unique_codes,))
+        rows = cur.fetchall() or []
+        for row in rows:
+            code = row.get('cod_nv4')
+            vec = parse_vector_text(row.get('emb'))
+            if code and vec:
+                out[str(code)] = vec
+    return out
+
+
+def combine_weighted_vectors(components: List[Tuple[List[float], float]]) -> Optional[List[float]]:
+    if not components:
+        return None
+    dim = len(components[0][0])
+    acc = [0.0] * dim
+    total_weight = 0.0
+    for vec, weight in components:
+        if not vec or len(vec) != dim or weight <= 0:
+            continue
+        for i in range(dim):
+            acc[i] += vec[i] * weight
+        total_weight += weight
+    if total_weight <= 0:
+        return None
+    return [x / total_weight for x in acc]
+
+
+def build_cnae_embedding(conn, company: Optional[dict]) -> Optional[List[float]]:
+    principal_code, secundary_codes = extract_company_cnaes(company)
+    codes = [c for c in [principal_code] + secundary_codes if c]
+    if not codes:
+        return None
+    weight_primary = os.environ.get('CNAE_EMB_WEIGHT_PRIMARY', '0.6')
+    try:
+        weight_primary_f = float(weight_primary)
+    except Exception:
+        weight_primary_f = 0.6
+    weight_primary_f = max(0.0, min(1.0, weight_primary_f))
+    embeddings_map = get_cnae_embeddings(conn, codes)
+    principal_vec = embeddings_map.get(principal_code) if principal_code else None
+    secondary_vecs = [embeddings_map.get(code) for code in secundary_codes if embeddings_map.get(code)]
+    components: List[Tuple[List[float], float]] = []
+    if principal_vec is not None:
+        components.append((principal_vec, weight_primary_f))
+    remaining_weight = 1.0 - (weight_primary_f if principal_vec is not None else 0.0)
+    if secondary_vecs:
+        share = remaining_weight / len(secondary_vecs) if remaining_weight > 0 else (1.0 / len(secondary_vecs))
+        for vec in secondary_vecs:
+            components.append((vec, share))
+    if not components and principal_vec is None and secondary_vecs:
+        share = 1.0 / len(secondary_vecs)
+        for vec in secondary_vecs:
+            components.append((vec, share))
+    return combine_weighted_vectors(components)
 
 # -------------------- Similaridade semântica principal --------------------
 
@@ -854,15 +963,22 @@ def run_search(cnpj14: str, cfg: Dict[str, Any]) -> Tuple[Optional[dict], dict, 
             emb_list, ibges_contratos = get_contrato_embeddings_sampled(conn, cnpj14, max(1, int(cfg['sample_contratos'])))
             logging.info("Embeddings amostrados: %s (limite=%s)", len(emb_list), cfg['sample_contratos'])
             emb_mean = mean_vector(emb_list)
+            emb_source = 'contratos'
             if not emb_mean:
-                stats = {
-                    "cnpj": cnpj14,
-                    "contratos_com_embedding": len(emb_list),
-                    "mensagem": "Sem embeddings para gerar perfil",
-                    "embedding_dim": 0,
-                    "emb_type": "halfvec",
-                }
-                return company, stats, [], None
+                logging.info("Sem embeddings de contratos; tentando fallback via CNAE")
+                emb_mean = build_cnae_embedding(conn, company)
+                if emb_mean:
+                    emb_source = 'cnae'
+                else:
+                    stats = {
+                        "cnpj": cnpj14,
+                        "contratos_com_embedding": len(emb_list),
+                        "mensagem": "Sem embeddings de contratos ou CNAE",
+                        "embedding_dim": 0,
+                        "emb_type": "halfvec",
+                        "emb_source": 'none',
+                    }
+                    return company, stats, [], None
             vec_lit = to_vector_literal(emb_mean)
             t_sem_start = perf_counter()
             # Limita candidatos para evitar sobrecarga (no máx. ~3x o top_k)
@@ -876,6 +992,7 @@ def run_search(cnpj14: str, cfg: Dict[str, Any]) -> Tuple[Optional[dict], dict, 
                 "contratos_com_embedding": len(emb_list),
                 "embedding_dim": len(emb_mean),
                 "emb_type": "halfvec",
+                "emb_source": emb_source,
                 "result_count": len(results),
                 "sem_ms": round(sem_ms, 1),
             }
@@ -916,6 +1033,9 @@ def run_search(cnpj14: str, cfg: Dict[str, Any]) -> Tuple[Optional[dict], dict, 
                         hq_coords_map = load_municipios_coords(conn, [hq_ibge])
                         if hq_ibge in hq_coords_map:
                             hq_lat, hq_lon = hq_coords_map[hq_ibge]
+                if centroid is None and hq_lat is not None and hq_lon is not None:
+                    centroid = (hq_lat, hq_lon)
+                    logging.info("Sem centroid por contratos; usando HQ (%s) como referência geográfica", hq_ibge or 'cidade informada')
                 # Se adaptativo ON e temos HQ + mediana, calcular fatores
                 if cfg['geo_adapt'] and hq_lat is not None and hq_lon is not None and median_pos:
                     try:

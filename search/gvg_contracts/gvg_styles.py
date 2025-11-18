@@ -87,16 +87,17 @@ styles = {
     'transform': 'translateY(0.5px)'
     },
     'tabs_content': {
-        'backgroundColor': 'transparent'
+        'backgroundColor': 'transparent',
+        'marginTop': '8px'
     },
     'controls_group': {
-        'padding': '10px',
+        'padding': '6px',
         'backgroundColor': 'white',
         'borderRadius': '15px',
         'display': 'flex',
         'flexDirection': 'column',
-        'gap': '8px',
-        'marginTop': '8px',
+        'gap': '4px',
+        'marginTop': '4px',
     },
     'submit_button': {
         'backgroundColor': _COLOR_PRIMARY,
@@ -495,6 +496,35 @@ styles = {
     },
 }
 
+# Variante compacta para cards (Parâmetros/Dados Sommelier)
+styles['result_card_compact'] = {
+    **styles['result_card'],
+    'padding': '10px',
+    'marginBottom': '8px',
+    'marginTop': '8px',
+}
+
+# Util: aplicar mesma distância vertical usada entre cards (marginBottom) como espaçamento superior
+styles['mt_same_card_gap'] = {
+    'marginTop': '8px'
+}
+
+# === Dados da empresa (Sommelier) ===
+styles['data_table'] = {
+    'display': 'flex', 'flexDirection': 'column', 'gap': '4px',
+    'fontSize': '11px'
+}
+styles['data_row'] = {
+    'display': 'flex', 'justifyContent': 'space-between',
+    'borderBottom': '1px solid #E0EAF9', 'padding': '2px 0'
+}
+styles['data_label'] = {
+    'fontWeight': '600', 'color': '#444', 'flex': '0 0 42%', 'paddingRight': '6px'
+}
+styles['data_value'] = {
+    'color': '#222', 'flex': '1', 'textAlign': 'right', 'whiteSpace': 'normal', 'wordBreak': 'break-word'
+}
+
 # --- User menu (avatar popover) ---
 styles['user_menu'] = {
     'display': 'flex', 'flexDirection': 'column', 'gap': '4px',
@@ -855,6 +885,19 @@ BASE_CSS = """
 .gvg-controls .gvg-form-label { width: 110px; min-width: 110px; font-size: 12px; color: #003A70; margin: 0; font-weight: 600; }
 .gvg-controls .gvg-form-row > *:last-child { flex: 1; }
 
+/* Card de parâmetros: dividir linha em 50%/50% (label/campo) */
+.params-card .gvg-form-label {
+    width: 50%;
+    min-width: 0;
+    max-width: 50%;
+    flex: 0 0 50%;
+}
+.params-card .gvg-form-row > *:last-child {
+    flex: 0 0 50%;
+    max-width: 50%;
+}
+.params-card .gvg-form-row { gap: 4px; }
+
 /* History row hover: show delete button */
 .history-item-row .delete-btn { opacity: 0; transition: opacity 0.15s ease-in-out; }
 .history-item-row:hover .delete-btn { opacity: 1; }
@@ -893,6 +936,30 @@ BASE_CSS = """
 
 /* Espaçamento padrão entre botões (ações) e a janela tripla */
 .gvg-panel-wrapper { margin-top: 50px; }
+
+/* === Abas (Tabs) com topo curvo e base reta === */
+.gvg-tabs { border-bottom: none; background: transparent; }
+/* Abas inativas: fundo cinza claro, texto cinza escuro */
+.gvg-tab, .gvg-tabs .tab {
+    background: #f1f3f4 !important;
+    color: #444 !important;
+    border: 2px solid #D0D7E2 !important;
+    border-top-left-radius: 16px !important;
+    border-top-right-radius: 16px !important;
+    border-bottom-left-radius: 16px !important;
+    border-bottom-right-radius: 16px !important;
+    padding: 6px 12px !important;
+    margin-right: 6px !important;
+    box-shadow: none !important;
+}
+
+/* Aba ativa: fundo branco, texto laranja, borda laranja */
+.gvg-tab-selected, .gvg-tabs .tab--selected {
+    background: #FFFFFF !important;
+    color: #FF5722 !important;
+    border: 2px solid #FF5722 !important;
+    box-shadow: none !important;
+}
 
 /* MODO MOBILE (≤ 992px): slider horizontal com scroll-snap, zero-JS */
 @media (max-width: 992px) {
