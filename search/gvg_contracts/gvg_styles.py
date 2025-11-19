@@ -524,6 +524,19 @@ styles['data_label'] = {
 styles['data_value'] = {
     'color': '#222', 'flex': '1', 'textAlign': 'right', 'whiteSpace': 'normal', 'wordBreak': 'break-word'
 }
+styles['data_json'] = {
+    'fontFamily': 'Consolas, "Courier New", monospace',
+    'fontSize': '11px',
+    'color': '#1F2933',
+    'backgroundColor': '#F8FAFF',
+    'border': '1px solid #E0EAF9',
+    'borderRadius': '8px',
+    'padding': '6px',
+    'marginTop': '2px',
+    'whiteSpace': 'pre-wrap',
+    'wordBreak': 'break-word',
+    'textAlign': 'left'
+}
 
 # --- User menu (avatar popover) ---
 styles['user_menu'] = {

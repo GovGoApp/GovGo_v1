@@ -9,13 +9,30 @@ import os
 import sys
 import io
 import argparse
+import json
 import math
 import random
-from typing import Any, Dict, List, Optional, Tuple
+import logging
+import types
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+if 'pandas' not in sys.modules:
+	try:
+		import pandas as _pandas_check  # type: ignore
+	except Exception:
+		pandas_stub = types.ModuleType('pandas')
+		pandas_stub.NaT = object()
+		sys.modules['pandas'] = pandas_stub
 
 import dash
 import dash_bootstrap_components as dbc
-from dash import html, dcc, dash_table, Input, Output, State
+from dash import html, dcc, dash_table, Input, Output, State, ALL
+from dash.development.base_component import Component
+try:
+	from psycopg2.extras import Json
+except Exception:  # pragma: no cover
+	Json = None  # type: ignore
 
 # Import robusto dos estilos para funcionar tanto como módulo quanto como script direto
 
@@ -50,11 +67,20 @@ except NameError:
 
 LOGO_PATH = "https://hemztmtbejcbhgfmsvfq.supabase.co/storage/v1/object/public/govgo/LOGO/LOGO_TEXTO_GOvGO_TRIM_v3.png"
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s", force=True)
+logger = logging.getLogger('GvG_Sommelier_v2')
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
+
 external_stylesheets = [dbc.themes.BOOTSTRAP]
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 app.title = "Sommelier v2"
 MAP_VIEW_MODE = (os.environ.get('VIEW_MAP') or 'v2').lower()
 CLUSTER_MODE = False
+_CNAE_DESC_CACHE: Dict[str, str] = {}
+
+# Mock simples até autenticação real chegar ao Sommelier.
+# Trocar por user_id real quando o fluxo de login estiver disponível.
+MOCK_USER_ID = "00000000-0000-0000-0000-000000000001"
 
 app.index_string = (
     """
@@ -142,6 +168,27 @@ def left_panel():
 		)
 	], style={**styles['result_card_compact'], **styles['mt_same_card_gap']})
 
+	history_card = html.Div([
+		html.Div([
+			html.Button([
+				html.Div([
+					html.I(className='fas fa-history', style=styles['section_icon']),
+					html.Div('Histórico', style=styles['card_title'])
+				], style=styles['section_header_left']),
+				html.I(className='fas fa-chevron-down')
+			], id='history-cnpj-toggle-btn', title='Mostrar/ocultar histórico', style=styles['section_header_button'])
+		], style=styles['row_header']),
+		dbc.Collapse(
+			html.Div(
+				html.Div('Nenhum histórico disponível.', style=styles['muted_text']),
+				id='history-cnpj-card',
+				style=styles['controls_group']
+			),
+			id='history-cnpj-collapse',
+			is_open=True
+		)
+	], style={**styles['result_card_compact'], **styles['mt_same_card_gap']})
+
 	return html.Div([
 		# Campo CNPJ + botão
 		html.Div([
@@ -151,12 +198,17 @@ def left_panel():
 			], style=styles['input_container'])
 		], className="gvg-controls"),
 		param_card,
-		# Card Dados
-		html.Div([
-			html.Div("Dados", style=styles['card_title']),
-			html.Div("Nenhum dado para mostrar.", id="company-data")
-		], style={**styles['result_card_compact'], **styles['mt_same_card_gap']}),
+		history_card,
 	], style=styles['left_panel'])
+
+def tab_company():
+	return html.Div([
+		html.Div(
+			id='company-tab-content',
+			children=html.Div('Nenhum dado para mostrar.', style=styles['muted_text']),
+			style=styles['result_card']
+		)
+	])
 
 
 def tab_contratos():
@@ -251,6 +303,13 @@ def right_panel():
 			},
 			children=[
 				dcc.Tab(
+					label="Empresa",
+					value="tab-company",
+					className="gvg-tab",
+					selected_className="gvg-tab-selected",
+					children=[html.Div(tab_company(), style=styles['tabs_content'])]
+				),
+				dcc.Tab(
 					label="Contratos",
 					value="tab-contratos",
 					className="gvg-tab",
@@ -290,6 +349,8 @@ app.layout = html.Div([
 	html.Div([
 		# Stores (dados em memória)
 		dcc.Store(id='store-company'),
+		dcc.Store(id='store-cnpj-history', data=[]),
+		dcc.Store(id='store-cnpj-selected', data=None),
 		dcc.Store(id='store-contratos'),
 		dcc.Store(id='store-editais'),
 		dcc.Store(id='store-stats'),
@@ -313,6 +374,7 @@ app.layout = html.Div([
 
 		dcc.Store(id='processing-state', data=False),
 		dcc.Store(id='search-trigger'),
+		dcc.Interval(id='history-cnpj-load-trigger', interval=500, n_intervals=0, max_intervals=1),
 		html.Div(left_panel(), className="gvg-slide"),
 		html.Div(right_panel(), className="gvg-slide"),
 	], id="gvg-main-panels", style=styles['container'])
@@ -381,6 +443,518 @@ def format_cnae_display(v: Optional[str]) -> str:
 	return str(v)
 
 
+def _format_capital_social(value: Optional[Any]) -> str:
+	if value in (None, "", 0):
+		return "-"
+	cleaned = value
+	if isinstance(cleaned, str):
+		cleaned = cleaned.replace('.', '').replace(',', '.')
+	try:
+		return f"R$ {format_currency(float(cleaned))}"
+	except Exception:
+		return f"R$ {format_currency(value)}" if value else "-"
+
+
+def _format_choice(value: Optional[Any]) -> str:
+	if value is None:
+		return "-"
+	text = str(value).strip()
+	upper = text.upper()
+	if upper in ("S", "SIM"):
+		return "Sim"
+	if upper in ("N", "NAO", "NÃO"):
+		return "Não"
+	return text
+
+
+def _format_phone_list(phones: Optional[Any]) -> List[str]:
+	items: List[str] = []
+	if isinstance(phones, (list, tuple)):
+		for phone in phones:
+			if not isinstance(phone, dict):
+				continue
+			ddd = phone.get('ddd') or ''
+			numero = phone.get('numero') or ''
+			if not (ddd or numero):
+				continue
+			label = f"({ddd}) {numero}" if ddd else numero
+			if phone.get('is_fax'):
+				label += " • Fax"
+			items.append(label)
+	return items or ["Não informado"]
+
+
+def _format_qsa_list(qsa: Optional[Any]) -> List[str]:
+	items: List[str] = []
+	if isinstance(qsa, (list, tuple)):
+		for socio in qsa:
+			if not isinstance(socio, dict):
+				continue
+			nome = socio.get('nome_socio') or 'Sócio'
+			qualificacao = socio.get('qualificacao_socio') or '-'
+			ident = socio.get('identificador_socio') or ''
+			entrada = socio.get('data_entrada_sociedade')
+			cnpjcpf = socio.get('cnpj_cpf_socio')
+			parts = [f"{nome} — {qualificacao}"]
+			if ident:
+				parts.append(ident)
+			if entrada and entrada not in ('0000-00-00', ''):
+				parts.append(f"Entrada: {format_date_br(entrada)}")
+			if cnpjcpf:
+				parts.append(f"Documento: {cnpjcpf}")
+			items.append(' • '.join(parts))
+	return items or ["Não informado"]
+
+
+def _render_value_component(value: Any) -> Component:
+	if isinstance(value, Component):
+		return value
+	if isinstance(value, dict):
+		try:
+			serialized = json.dumps(value, ensure_ascii=False, indent=2, default=str)
+		except TypeError:
+			serialized = str(value)
+		return html.Pre(serialized, style=styles['data_json'])
+	if isinstance(value, (list, tuple)):
+		if not value:
+			return html.Span('-', style=styles['data_value'])
+		if any(isinstance(item, (dict, list, tuple)) for item in value):
+			try:
+				serialized = json.dumps(value, ensure_ascii=False, indent=2, default=str)
+			except TypeError:
+				serialized = str(value)
+			return html.Pre(serialized, style=styles['data_json'])
+		return html.Div([
+			html.Div(str(item), style=styles['data_value'])
+			for item in value
+		], style=styles['column'])
+	if value in (None, ''):
+		return html.Span('-', style=styles['data_value'])
+	return html.Span(str(value), style=styles['data_value'])
+
+
+def _company_info_rows(rows: List[Tuple[str, Any]]) -> List[Component]:
+	items: List[Component] = []
+	for label, value in rows:
+		items.append(
+			html.Div([
+				html.Span(label, style=styles['data_label']),
+				_render_value_component(value)
+			], style=styles['data_row'])
+		)
+	return items
+
+
+def _company_section(title: str, rows: List[Tuple[str, Any]], *, with_margin: bool = True) -> Component:
+	container_style: Dict[str, Any] = dict(styles.get('column', {}))
+	if with_margin:
+		container_style.update(styles.get('mt_same_card_gap', {}))
+	return html.Div([
+		html.Div(title, style=styles['card_title']),
+		html.Div(_company_info_rows(rows), style=styles['data_table'])
+	], style=container_style)
+
+
+def _format_field_label(key: Optional[str]) -> str:
+	if not key:
+		return 'Campo'
+	label = str(key).replace('_', ' ').strip()
+	if not label:
+		return 'Campo'
+	if label.isupper():
+		return label
+	return label[0].upper() + label[1:]
+
+
+def _format_cnae_label(raw: Any, desc_map: Optional[Dict[str, str]]) -> str:
+	if raw in (None, ''):
+		return '-'
+	description = None
+	code_value: Any = raw
+	if isinstance(raw, dict):
+		code_value = (
+			raw.get('code')
+			or raw.get('codigo')
+			or raw.get('cod')
+			or raw.get('cod_cnae')
+			or raw.get('cod_nv4')
+		)
+		description = (
+			raw.get('descricao')
+			or raw.get('descricao_cnae')
+			or raw.get('description')
+			or raw.get('nom_nv4')
+		)
+	if isinstance(code_value, (list, tuple)):
+		code_value = code_value[0] if code_value else None
+	norm = normalize_cnae_code(code_value)
+	display_code = format_cnae_display(norm or code_value)
+	if display_code == '-' and code_value:
+		display_code = str(code_value)
+	lookup_desc = (desc_map or {}).get(norm or '')
+	final_desc = lookup_desc or (description.strip() if isinstance(description, str) else description)
+	if final_desc:
+		return f"{display_code} — {final_desc}"
+	return display_code
+
+
+def _format_history_timestamp(value: Optional[str]) -> str:
+	if not value:
+		return ''
+	try:
+		dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+		return dt.strftime('%d/%m/%Y %H:%M')
+	except Exception:
+		return value
+
+
+def _build_row_key(prompt_id: Optional[int], cnpj: Optional[str], timestamp_iso: Optional[str]) -> str:
+	if prompt_id:
+		return f"prompt-{prompt_id}"
+	cnpj_digits = _only_digits(cnpj or '') or 'cnpj'
+	if timestamp_iso:
+		return f"local-{cnpj_digits}-{timestamp_iso}"
+	return f"local-{cnpj_digits}"
+
+
+def _map_prompt_row(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+	if not row:
+		return None
+	dados = row.get('dados') or {}
+	cnpj_val = row.get('cnpj') or dados.get('cnpj')
+	raw_ts = row.get('updated_at') or row.get('created_at') or dados.get('timestamp')
+	return {
+		'id_prompt': row.get('id_prompt'),
+		'cnpj': cnpj_val,
+		'razao_social': dados.get('razao_social'),
+		'municipio': dados.get('municipio'),
+		'uf': dados.get('uf'),
+		'ultima_consulta': _format_history_timestamp(raw_ts),
+		'timestamp_iso': raw_ts,
+		'row_key': _build_row_key(row.get('id_prompt'), cnpj_val, raw_ts),
+	}
+
+
+def _local_history_entry(cnpj: str, snapshot: Dict[str, Any]) -> Dict[str, Any]:
+	raw_ts = snapshot.get('timestamp')
+	return {
+		'id_prompt': None,
+		'cnpj': cnpj,
+		'razao_social': snapshot.get('razao_social'),
+		'municipio': snapshot.get('municipio'),
+		'uf': snapshot.get('uf'),
+		'ultima_consulta': _format_history_timestamp(raw_ts),
+		'timestamp_iso': raw_ts,
+		'row_key': _build_row_key(None, cnpj, raw_ts),
+	}
+
+
+def _company_layout(company: Optional[Dict[str, Any]]) -> Component:
+	if not company:
+		return html.Div('Nenhum dado para mostrar.', style=styles['muted_text'])
+	company_data = dict(company)
+	cnpj_display = format_cnpj_display(company_data.get('cnpj')) if company_data.get('cnpj') else '-'
+	desc_map = company_data.get('cnae_descriptions') if isinstance(company_data.get('cnae_descriptions'), dict) else {}
+	primary_norm = company_data.get('cnae_principal_normalized')
+	sec_norms = company_data.get('cnaes_secundarios_normalized') or []
+	if not primary_norm or not sec_norms:
+		recalc_principal, recalc_secs = extract_cnae_codes(company_data.get('cnae_principal'), company_data.get('cnaes_secundarios'))
+		primary_norm = primary_norm or recalc_principal
+		if not sec_norms:
+			sec_norms = recalc_secs or []
+	cnae_principal = _format_cnae_label(primary_norm or company_data.get('cnae_principal'), desc_map)
+	sec_values: List[str] = []
+	raw_sec = company_data.get('cnaes_secundarios')
+	if isinstance(raw_sec, (list, tuple)):
+		for item in raw_sec:
+			label = _format_cnae_label(item, desc_map)
+			if label and label != '-':
+				sec_values.append(label)
+	elif isinstance(raw_sec, str):
+		for part in raw_sec.split(','):
+			label = _format_cnae_label(part.strip(), desc_map)
+			if label and label != '-':
+				sec_values.append(label)
+	if not sec_values:
+		for code in sec_norms:
+			label = _format_cnae_label(code, desc_map)
+			if label and label != '-':
+				sec_values.append(label)
+	if not sec_values:
+		sec_values = ['Não informado']
+	phones = _format_phone_list(company_data.get('telefones'))
+	qsa_items = _format_qsa_list(company_data.get('QSA'))
+	sections: List[Component] = []
+	displayed_keys: Set[str] = set()
+
+	def _mark(*keys: str) -> None:
+		for key in keys:
+			if key:
+				displayed_keys.add(key)
+
+	sections.append(_company_section('Identificação', [
+		('Razão social', company_data.get('razao_social') or '-'),
+		('Nome fantasia', company_data.get('nome_fantasia') or '-'),
+		('CNPJ', cnpj_display),
+		('Natureza jurídica', company_data.get('natureza_juridica') or '-'),
+		('Matriz/Filial', company_data.get('matriz_filial') or '-'),
+		('Porte', company_data.get('porte_empresa') or '-')
+	], with_margin=False))
+	_mark('razao_social', 'nome_fantasia', 'cnpj', 'natureza_juridica', 'matriz_filial', 'porte_empresa')
+
+	sections.append(_company_section('Situação cadastral', [
+		('Situação', company_data.get('situacao_cadastral') or '-'),
+		('Data da situação', format_date_br(company_data.get('data_situacao_cadastral')) if company_data.get('data_situacao_cadastral') else '-'),
+		('Início de atividade', format_date_br(company_data.get('data_inicio_atividade')) if company_data.get('data_inicio_atividade') else '-')
+	]))
+	_mark('situacao_cadastral', 'data_situacao_cadastral', 'data_inicio_atividade')
+
+	sections.append(_company_section('Localização', [
+		('Logradouro', company_data.get('logradouro') or '-'),
+		('Número', company_data.get('numero') or '-'),
+		('Complemento', company_data.get('complemento') or '-'),
+		('Bairro', company_data.get('bairro') or '-'),
+		('Município', company_data.get('municipio') or '-'),
+		('UF', company_data.get('uf') or '-'),
+		('CEP', company_data.get('cep') or '-')
+	]))
+	_mark('logradouro', 'numero', 'complemento', 'bairro', 'municipio', 'uf', 'cep')
+
+	sections.append(_company_section('Contatos', [
+		('E-mail', company_data.get('email') or '-'),
+		('Telefones', phones)
+	]))
+	_mark('email', 'telefones')
+
+	sections.append(_company_section('Atividades econômicas', [
+		('CNAE principal', cnae_principal),
+		('CNAEs secundários', sec_values or ['Não informado'])
+	]))
+	_mark('cnae_principal', 'cnaes_secundarios', 'cnae_principal_normalized', 'cnaes_secundarios_normalized', 'cnae_descriptions')
+
+	sections.append(_company_section('Regime e capital', [
+		('Capital social', _format_capital_social(company_data.get('capital_social'))),
+		('Opção Simples', _format_choice(company_data.get('opcao_simples'))),
+		('Data opção Simples', format_date_br(company_data.get('data_opcao_simples')) if company_data.get('data_opcao_simples') else '-'),
+		('Opção MEI', _format_choice(company_data.get('opcao_mei'))),
+		('Data opção MEI', format_date_br(company_data.get('data_opcao_mei')) if company_data.get('data_opcao_mei') else '-')
+	]))
+	_mark('capital_social', 'opcao_simples', 'data_opcao_simples', 'opcao_mei', 'data_opcao_mei')
+
+	sections.append(_company_section('Quadro societário (QSA)', [
+		('Sócios e administradores', qsa_items)
+	]))
+	_mark('QSA')
+
+	extra_rows: List[Tuple[str, Any]] = []
+	for key in sorted(company_data.keys()):
+		if key in displayed_keys:
+			continue
+		extra_rows.append((_format_field_label(key), company_data.get(key)))
+	if extra_rows:
+		sections.append(_company_section('Campos adicionais', extra_rows))
+
+	return html.Div(sections, style=styles['column'])
+
+
+def fetch_cnpj_history(limit: int = 20) -> List[Dict[str, Any]]:
+	if not get_db_conn:
+		logger.warning('get_db_conn indisponível; histórico não será carregado')
+		return []
+	conn = get_db_conn()
+	if not conn:
+		logger.warning('Falha ao criar conexão com o banco; histórico não será carregado')
+		return []
+	try:
+		with conn:
+			with conn.cursor() as cur:
+				cur.execute(
+					"""
+						SELECT id_prompt, cnpj, dados, created_at, updated_at
+						FROM sommelier.prompt
+						WHERE user_id = %s
+						ORDER BY created_at DESC
+						LIMIT %s
+					""",
+					(MOCK_USER_ID, max(1, int(limit or 20)))
+				)
+				rows = cur.fetchall() or []
+				cols = [desc[0] for desc in cur.description]
+		entries: List[Dict[str, Any]] = []
+		for row in rows:
+			mapped = _map_prompt_row(dict(zip(cols, row)))
+			if mapped:
+				entries.append(mapped)
+		logger.info('Histórico carregado: %s entradas', len(entries))
+		return entries
+	except Exception:
+		logger.exception('Histórico via DB falhou')
+		return []
+	finally:
+		try:
+			conn.close()
+		except Exception:
+			pass
+
+
+def insert_cnpj_prompt(cnpj: str, snapshot: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+	if not get_db_conn:
+		logger.warning('get_db_conn indisponível; não será possível salvar o histórico')
+		return None
+	conn = get_db_conn()
+	if not conn:
+		logger.warning('Falha ao criar conexão com o banco; não será possível salvar o histórico')
+		return None
+	logger.info('Inserindo histórico para CNPJ %s', cnpj)
+	try:
+		with conn:
+			with conn.cursor() as cur:
+				cur.execute(
+					"""
+						SELECT id_prompt
+						FROM sommelier.prompt
+						WHERE user_id = %s AND cnpj = %s
+						ORDER BY updated_at DESC
+						LIMIT 1
+					""",
+					(MOCK_USER_ID, cnpj)
+				)
+				existing = cur.fetchone()
+				if existing:
+					logger.info('Atualizando histórico existente para CNPJ %s (id %s)', cnpj, existing[0])
+					cur.execute(
+						"""
+							UPDATE sommelier.prompt
+							SET dados = %s, updated_at = NOW()
+							WHERE id_prompt = %s
+							RETURNING id_prompt, cnpj, dados, created_at, updated_at
+						""",
+						(Json(snapshot) if Json else json.dumps(snapshot), existing[0])
+					)
+				else:
+					logger.info('Criando histórico para CNPJ %s', cnpj)
+					cur.execute(
+						"""
+							INSERT INTO sommelier.prompt (user_id, cnpj, dados)
+							VALUES (%s, %s, %s)
+							RETURNING id_prompt, cnpj, dados, created_at, updated_at
+						""",
+						(MOCK_USER_ID, cnpj, Json(snapshot) if Json else json.dumps(snapshot))
+					)
+				row = cur.fetchone()
+				if not row:
+					logger.warning('Persistência retornou vazio para CNPJ %s', cnpj)
+					return None
+				cols = [desc[0] for desc in cur.description]
+				mapped = _map_prompt_row(dict(zip(cols, row)))
+				logger.info('Histórico sincronizado com id %s', (mapped or {}).get('id_prompt'))
+				return mapped
+	except Exception:
+		logger.exception('Insert so_prompt falhou')
+		return None
+	finally:
+		try:
+			conn.close()
+		except Exception:
+			pass
+
+
+def delete_cnpj_prompt(prompt_id: Optional[int]) -> None:
+	if not prompt_id or not get_db_conn:
+		return
+	conn = get_db_conn()
+	if not conn:
+		return
+	logger.info('Removendo histórico id %s', prompt_id)
+	try:
+		with conn:
+			with conn.cursor() as cur:
+				cur.execute(
+					"""
+						DELETE FROM sommelier.prompt
+						WHERE id_prompt = %s AND user_id = %s
+					""",
+					(prompt_id, MOCK_USER_ID)
+				)
+	except Exception:
+		logger.exception('Delete so_prompt falhou')
+	finally:
+		try:
+			conn.close()
+		except Exception:
+			pass
+
+
+def upsert_history_entries(current: Optional[List[Dict[str, Any]]], entry: Dict[str, Any], max_items: int = 20) -> List[Dict[str, Any]]:
+	items = list(current or [])
+	key = entry.get('row_key')
+	new_cnpj_digits = _only_digits(entry.get('cnpj') or '')
+	def _row_matches(row: Dict[str, Any]) -> bool:
+		if key and row.get('row_key') == key:
+			return True
+		if new_cnpj_digits and _only_digits(row.get('cnpj') or '') == new_cnpj_digits:
+			return True
+		return False
+	items = [row for row in items if not _row_matches(row)]
+	items.insert(0, entry)
+	return items[:max_items]
+
+
+def remove_history_entry(current: Optional[List[Dict[str, Any]]], row_key: str) -> List[Dict[str, Any]]:
+	if not current:
+		return []
+	return [row for row in current if row.get('row_key') != row_key]
+
+
+def find_history_entry(current: Optional[List[Dict[str, Any]]], row_key: Optional[str]) -> Optional[Dict[str, Any]]:
+	if not current or not row_key:
+		return None
+	for row in current:
+		if row.get('row_key') == row_key:
+			return row
+	return None
+
+
+def ensure_history_snapshot(company_data: Optional[Dict[str, Any]], cnpj: str, display_data: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+	if not cnpj:
+		return None
+	base: Dict[str, Any] = {}
+	if isinstance(company_data, dict):
+		base = dict(company_data)
+	meta = display_data if isinstance(display_data, dict) else {}
+	def _fallback(key: str, default: Any = '-') -> Any:
+		return meta.get(key) or base.get(key) or default
+	base.setdefault('cnpj', cnpj)
+	base['timestamp'] = datetime.utcnow().isoformat()
+	base.setdefault('razao_social', _fallback('razao_social'))
+	base.setdefault('municipio', _fallback('municipio'))
+	base.setdefault('uf', _fallback('uf'))
+	return base
+
+
+def save_history_entry(cnpj: str, company_full: Optional[Dict[str, Any]], display_data: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+	snapshot = ensure_history_snapshot(company_full, cnpj, display_data)
+	if not snapshot:
+		logger.warning('Snapshot inválido; histórico não será salvo')
+		return None
+	logger.info('Solicitando persistência do histórico para %s', cnpj)
+	created = insert_cnpj_prompt(cnpj, snapshot)
+	if not created:
+		logger.info('Persistência falhou; usando histórico local para %s', cnpj)
+	return created or _local_history_entry(cnpj, snapshot)
+
+
+def _extract_triggered_id() -> Optional[Dict[str, Any]]:
+	ctx = dash.callback_context
+	if not ctx.triggered:
+		return None
+	prop_id = ctx.triggered[0]['prop_id'].split('.')[0]
+	try:
+		return json.loads(prop_id)
+	except Exception:
+		return None
+
+
 def normalize_cnae_code(raw: Optional[Any]) -> Optional[str]:
 	"""Remove pontuação e retorna o CNAE com 7 dígitos (zero-fill se necessário)."""
 	if raw is None:
@@ -413,30 +987,42 @@ def extract_cnae_codes(principal: Any, secundarios: Any) -> Tuple[Optional[str],
 	return principal_code, sec_codes
 
 
-def fetch_cnae_descriptions(codes: List[str]) -> Dict[str, str]:
-	if not codes or not get_db_conn:
+def fetch_cnae_descriptions(codes: List[Optional[str]]) -> Dict[str, str]:
+	normalized: List[str] = []
+	for code in codes:
+		norm = normalize_cnae_code(code)
+		if norm and norm not in normalized:
+			normalized.append(norm)
+	if not normalized:
 		return {}
-	codes_unique = list(dict.fromkeys(codes))
-	query = "SELECT cod_nv4, nom_nv4 FROM public.cnae WHERE cod_nv4 = ANY(%s)"
-	conn = get_db_conn()
-	try:
-		with conn:
-			with conn.cursor() as cur:
-				cur.execute(query, (codes_unique,))
-				rows = cur.fetchall() or []
-		return {str(code): desc for code, desc in rows if code}
-	finally:
-		try:
-			conn.close()
-		except Exception:
-			pass
-
-
-def format_cnae_with_desc(code: Optional[str], desc_map: Dict[str, str]) -> Optional[str]:
-	if not code:
-		return None
-	desc = desc_map.get(code) or 'Descrição indisponível'
-	return f"{code} - {desc}"
+	missing = [code for code in normalized if code not in _CNAE_DESC_CACHE]
+	if missing and get_db_conn:
+		conn = get_db_conn()
+		if conn:
+			try:
+				with conn:
+					with conn.cursor() as cur:
+						cur.execute(
+							"""
+								SELECT cod_nv4, nom_nv4
+								FROM public.cnae
+								WHERE cod_nv4 = ANY(%s)
+							""",
+							(missing,)
+						)
+						for row in cur.fetchall() or []:
+							code_raw, desc = row
+							norm_code = normalize_cnae_code(code_raw)
+							if norm_code:
+								_CNAE_DESC_CACHE[norm_code] = (desc or '').strip()
+			except Exception:
+				logger.exception('Falha ao carregar descrições de CNAE')
+			finally:
+				try:
+					conn.close()
+				except Exception:
+					pass
+	return {code: _CNAE_DESC_CACHE.get(code) for code in normalized if code in _CNAE_DESC_CACHE}
 
 
 def fetch_contratos_fornecedor(cnpj14: str) -> List[Dict[str, Any]]:
@@ -500,23 +1086,24 @@ def start_search(n_clicks, n_submit, cnpj_input):
 	Output('store-editais', 'data'),
 	Output('store-stats', 'data'),
 	Output('store-geo-stats', 'data'),
-	Output('company-data', 'children'),
 	Output('processing-state', 'data', allow_duplicate=True),
+	Output('store-cnpj-history', 'data', allow_duplicate=True),
 	Input('search-trigger', 'data'),
 	State('processing-state', 'data'),
 	State('store-params', 'data'),
+	State('store-cnpj-history', 'data'),
 	prevent_initial_call=True
 )
 
-def perform_search(trigger, processing, params):
+def perform_search(trigger, processing, params, history_store):
 	if not trigger or not processing:
 		raise dash.exceptions.PreventUpdate
 	cnpj14 = trigger.get('cnpj')
 	if not cnpj14:
 		return (dash.no_update, dash.no_update, dash.no_update,
-			dash.no_update, dash.no_update, 'Informe um CNPJ válido.', False)
+			dash.no_update, dash.no_update, 'Informe um CNPJ válido.', False, dash.no_update)
 	if not run_search:
-		return None, None, None, None, None, 'Dependência indisponível.', False
+		return None, None, None, None, None, 'Dependência indisponível.', False, dash.no_update
 	cfg = dict(params or {})
 	try:
 		cfg['top_k'] = max(1, int(cfg.get('top_k', 30)))
@@ -527,11 +1114,33 @@ def perform_search(trigger, processing, params):
 	except Exception:
 		cfg['top_candidates'] = 300
 	company, stats, editais, geo_stats = run_search(cnpj14, cfg)
+	company = dict(company) if isinstance(company, dict) else {}
+	principal_code, sec_codes = extract_cnae_codes(company.get('cnae_principal'), company.get('cnaes_secundarios'))
+	if principal_code or sec_codes:
+		desc_map = fetch_cnae_descriptions([principal_code, *sec_codes])
+		if principal_code:
+			company['cnae_principal_normalized'] = principal_code
+		if sec_codes:
+			company['cnaes_secundarios_normalized'] = sec_codes
+		if desc_map:
+			company['cnae_descriptions'] = desc_map
 	top_limit = int(cfg.get('top_k', 30))
 	editais = (editais or [])[:top_limit]
 	contratos = fetch_contratos_fornecedor(cnpj14)
+	comp: Dict[str, Any] = {
+		'razao_social': '-',
+		'cnpj': cnpj14,
+		'municipio': '-',
+		'uf': '-',
+		'situacao_cadastral': None,
+		'data_inicio_atividade': None,
+		'porte_empresa': None,
+		'cnae_principal': None,
+		'cnaes_secundarios': [],
+		'capital_social': None,
+	}
 	try:
-		comp = {
+		comp.update({
 			'razao_social': (company or {}).get('razao_social') or '-',
 			'cnpj': (company or {}).get('cnpj') or cnpj14,
 			'municipio': (company or {}).get('municipio') or '-',
@@ -542,37 +1151,15 @@ def perform_search(trigger, processing, params):
 			'cnae_principal': (company or {}).get('cnae_principal'),
 			'cnaes_secundarios': (company or {}).get('cnaes_secundarios') or [],
 			'capital_social': (company or {}).get('capital_social'),
-		}
-		principal_code, secondary_codes = extract_cnae_codes(comp.get('cnae_principal'), comp.get('cnaes_secundarios'))
-		lookup_codes = [code for code in ([principal_code] + secondary_codes) if code]
-		desc_map = fetch_cnae_descriptions(lookup_codes)
-		principal_display = format_cnae_with_desc(principal_code, desc_map)
-		secondary_display_list = [format_cnae_with_desc(code, desc_map) for code in secondary_codes]
-		secondary_display = '; '.join([item for item in secondary_display_list if item])
-		# Renderização lista neutra (sem cabeçalho azul) usando estilos centrais data_*.
-		rows = [
-			('Razão social', comp.get('razao_social') or '-'),
-			('CNPJ', format_cnpj_display(comp.get('cnpj') or cnpj14)),
-			('Município/UF', f"{comp.get('municipio') or '-'} / {comp.get('uf') or '-'}"),
-			('Situação', comp.get('situacao_cadastral') or '-'),
-			('Início atividade', format_date_br(comp.get('data_inicio_atividade')) if comp.get('data_inicio_atividade') else '-'),
-			('Porte', comp.get('porte_empresa') or '-'),
-			('CNAE principal', principal_display or '-'),
-			('CNAEs secundários', secondary_display or '-'),
-			('Capital social', f"R$ {format_currency(comp.get('capital_social'))}" if comp.get('capital_social') else '-'),
-		]
-		company_text = html.Div([
-			html.Div([
-				html.Div([
-					html.Span(label, style=styles['data_label']),
-					html.Span(str(value), style=styles['data_value'])
-				], style=styles['data_row'])
-				for (label, value) in rows
-			])
-		], style=styles['data_table'])
+		})
 	except Exception:
-		company_text = '—'
-	return company, contratos, editais, stats, geo_stats, company_text, False
+		pass
+	history_entry = save_history_entry(cnpj14, company, comp)
+	if history_entry:
+		updated_history = upsert_history_entries(history_store or [], history_entry)
+	else:
+		updated_history = dash.no_update
+	return company, contratos, editais, stats, geo_stats, False, updated_history
 
 
 # Callback 3: atualiza botão (spinner / seta)
@@ -600,6 +1187,141 @@ def toggle_params(n, is_open):
 	if not n:
 		raise dash.exceptions.PreventUpdate
 	return not bool(is_open)
+
+# Toggle do card de Histórico de CNPJ
+@app.callback(
+	Output('history-cnpj-collapse', 'is_open'),
+	Input('history-cnpj-toggle-btn', 'n_clicks'),
+	State('history-cnpj-collapse', 'is_open'),
+	prevent_initial_call=True
+)
+def toggle_history_cnpj(n, is_open):
+	if not n:
+		raise dash.exceptions.PreventUpdate
+	return not bool(is_open)
+
+
+@app.callback(
+	Output('company-tab-content', 'children'),
+	Input('store-company', 'data')
+)
+def render_company_tab(company_store):
+	if not isinstance(company_store, dict):
+		return html.Div('Nenhum dado para mostrar.', style=styles['muted_text'])
+	return _company_layout(company_store)
+
+
+@app.callback(
+	Output('history-cnpj-card', 'children'),
+	Input('store-cnpj-history', 'data'),
+	Input('store-cnpj-selected', 'data')
+)
+def render_cnpj_history_list(history_items, selected_data):
+	items = history_items or []
+	if not isinstance(items, list) or not items:
+		return html.Div('Nenhum histórico disponível.', style=styles['muted_text'])
+	selected_key = (selected_data or {}).get('row_key')
+	rows = []
+	for raw in items:
+		entry = raw or {}
+		cnpj_txt = format_cnpj_display(entry.get('cnpj')) if entry.get('cnpj') else '—'
+		ra_raw = entry.get('razao_social') or entry.get('nome')
+		razao_social = str(ra_raw).strip() if ra_raw else ''
+		mun_raw = entry.get('municipio')
+		municipio = str(mun_raw).strip() if mun_raw else ''
+		uf_raw = entry.get('uf')
+		uf = str(uf_raw).strip() if uf_raw else ''
+		last_seen = entry.get('ultima_consulta') or ''
+		subtitle_parts = []
+		if razao_social:
+			subtitle_parts.append(razao_social)
+		loc = ' / '.join([part for part in [municipio, uf] if part])
+		if loc:
+			subtitle_parts.append(loc)
+		if last_seen:
+			subtitle_parts.append(f"Última: {last_seen}")
+		line1 = html.Div(cnpj_txt, style=styles['history_prompt'])
+		line2_text = ' • '.join(subtitle_parts) if subtitle_parts else 'Sem detalhes adicionais.'
+		line2 = html.Div(line2_text, style=styles['history_config'])
+		row_key = entry.get('row_key') or f"history-row-{cnpj_txt}"
+		btn_style = dict(styles['history_item_button'])
+		if row_key == selected_key:
+			btn_style = {
+				**btn_style,
+				'border': f"2px solid {_gvg_styles._COLOR_PRIMARY}",
+				'backgroundColor': '#FFF4EE'
+			}
+		main_button = html.Button(
+			html.Div([line1, line2]),
+			id={'type': 'history-cnpj-item', 'key': row_key},
+			style=btn_style,
+			title=cnpj_txt
+		)
+		actions = html.Div([
+			html.Button(
+				html.I(className='fas fa-trash'),
+				id={'type': 'history-cnpj-delete', 'key': row_key},
+				title='Remover deste histórico',
+				style=styles['history_delete_btn'],
+				className='delete-btn'
+			)
+		], style=styles['history_actions_col'])
+		rows.append(html.Div([main_button, actions], className='history-item-row', style=styles['history_item_row']))
+	return html.Div(rows, style=styles['column'])
+
+
+@app.callback(
+	Output('store-cnpj-history', 'data', allow_duplicate=True),
+	Input('history-cnpj-load-trigger', 'n_intervals'),
+	prevent_initial_call=True
+)
+def load_cnpj_history_once(n_intervals):
+	if not n_intervals:
+		raise dash.exceptions.PreventUpdate
+	return fetch_cnpj_history()
+
+
+@app.callback(
+	Output('input-cnpj', 'value'),
+	Output('store-cnpj-selected', 'data'),
+	Input({'type': 'history-cnpj-item', 'key': ALL}, 'n_clicks'),
+	State('store-cnpj-history', 'data'),
+	prevent_initial_call=True
+)
+def handle_history_click(_n_clicks, history_items):
+	trigger = _extract_triggered_id()
+	if not trigger or trigger.get('type') != 'history-cnpj-item':
+		raise dash.exceptions.PreventUpdate
+	entry = find_history_entry(history_items, trigger.get('key'))
+	if not entry or not entry.get('cnpj'):
+		raise dash.exceptions.PreventUpdate
+	return format_cnpj_display(entry.get('cnpj')), {'row_key': entry.get('row_key')}
+
+
+@app.callback(
+	Output('store-cnpj-history', 'data', allow_duplicate=True),
+	Input({'type': 'history-cnpj-delete', 'key': ALL}, 'n_clicks'),
+	State('store-cnpj-history', 'data'),
+	prevent_initial_call=True
+)
+def handle_history_delete(_n_clicks, history_items):
+	ctx = dash.callback_context
+	if not ctx.triggered:
+		raise dash.exceptions.PreventUpdate
+	trigger_value = ctx.triggered[0].get('value')
+	if not trigger_value:
+		raise dash.exceptions.PreventUpdate
+	trigger = _extract_triggered_id()
+	if not trigger or trigger.get('type') != 'history-cnpj-delete':
+		raise dash.exceptions.PreventUpdate
+	entry = find_history_entry(history_items, trigger.get('key'))
+	if not entry:
+		raise dash.exceptions.PreventUpdate
+	try:
+		delete_cnpj_prompt(entry.get('id_prompt'))
+	except Exception:
+		pass
+	return remove_history_entry(history_items, entry.get('row_key'))
 
 # Callback parâmetros: atualizar store-params quando qualquer input mudar
 @app.callback(
