@@ -14,8 +14,24 @@ import math
 import random
 import logging
 import types
-from datetime import datetime
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, Dict, List, Optional, Set, Tuple
+def _normalize_for_json(value: Any) -> Any:
+	if isinstance(value, dict):
+		return {k: _normalize_for_json(v) for k, v in value.items()}
+	if isinstance(value, list):
+		return [_normalize_for_json(item) for item in value]
+	if isinstance(value, tuple):
+		return [_normalize_for_json(item) for item in value]
+	if isinstance(value, Decimal):
+		try:
+			return float(value)
+		except Exception:
+			return None
+	if isinstance(value, datetime):
+		return value.astimezone(timezone.utc).isoformat()
+	return value
 
 if 'pandas' not in sys.modules:
 	try:
@@ -38,6 +54,53 @@ except Exception:  # pragma: no cover
 
 import gvg_styles as _gvg_styles  # type: ignore
 styles, CSS_ALL = _gvg_styles.styles, _gvg_styles.CSS_ALL
+
+DEFAULT_SIMILARITY_COLOR_STOPS: List[Dict[str, Any]] = [
+	{
+		'id': 'gte90',
+		'label': '≥ 0.90',
+		'min': 0.90,
+		'max': None,
+		'folium': 'darkred',
+		'hex': '#7f0000',
+	},
+	{
+		'id': '80_90',
+		'label': '0.80–0.90',
+		'min': 0.80,
+		'max': 0.90,
+		'folium': 'red',
+		'hex': '#d32f2f',
+	},
+	{
+		'id': '70_80',
+		'label': '0.70–0.80',
+		'min': 0.70,
+		'max': 0.80,
+		'folium': 'lightred',
+		'hex': '#ef5350',
+	},
+	{
+		'id': '60_70',
+		'label': '0.60–0.70',
+		'min': 0.60,
+		'max': 0.70,
+		'folium': 'orange',
+		'hex': '#fb8c00',
+	},
+	{
+		'id': 'lt60',
+		'label': '< 0.60',
+		'min': None,
+		'max': 0.60,
+		'folium': 'beige',
+		'hex': '#f5e5c9',
+	},
+]
+
+SIMILARITY_COLOR_STOPS = getattr(_gvg_styles, 'SIMILARITY_COLOR_STOPS', DEFAULT_SIMILARITY_COLOR_STOPS)
+if not SIMILARITY_COLOR_STOPS:
+	SIMILARITY_COLOR_STOPS = DEFAULT_SIMILARITY_COLOR_STOPS
 	
 
 # --- Caminho para importar o motor v1_3 ---
@@ -632,7 +695,35 @@ def _build_row_key(prompt_id: Optional[int], cnpj: Optional[str], timestamp_iso:
 def _map_prompt_row(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 	if not row:
 		return None
-	dados = row.get('dados') or {}
+	dados_raw = row.get('dados') or {}
+	stats_meta = None
+	geo_stats_meta = None
+	if isinstance(dados_raw, str):
+		try:
+			dados = json.loads(dados_raw)
+		except Exception:
+			dados = {}
+	else:
+		dados = dict(dados_raw) if isinstance(dados_raw, dict) else {}
+	if isinstance(dados, dict):
+		stats_meta = dados.pop('_snapshot_stats', None)
+		geo_stats_meta = dados.pop('_snapshot_geo_stats', None)
+	contratos_raw = row.get('contratos') or []
+	if isinstance(contratos_raw, str):
+		try:
+			contratos_data = json.loads(contratos_raw)
+		except Exception:
+			contratos_data = []
+	else:
+		contratos_data = list(contratos_raw) if isinstance(contratos_raw, (list, tuple)) else []
+	editais_raw = row.get('editais') or []
+	if isinstance(editais_raw, str):
+		try:
+			editais_data = json.loads(editais_raw)
+		except Exception:
+			editais_data = []
+	else:
+		editais_data = list(editais_raw) if isinstance(editais_raw, (list, tuple)) else []
 	cnpj_val = row.get('cnpj') or dados.get('cnpj')
 	raw_ts = row.get('updated_at') or row.get('created_at') or dados.get('timestamp')
 	return {
@@ -644,10 +735,22 @@ def _map_prompt_row(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 		'ultima_consulta': _format_history_timestamp(raw_ts),
 		'timestamp_iso': raw_ts,
 		'row_key': _build_row_key(row.get('id_prompt'), cnpj_val, raw_ts),
+		'snapshot_company': dados,
+		'snapshot_contratos': contratos_data,
+		'snapshot_editais': editais_data,
+		'snapshot_stats': stats_meta,
+		'snapshot_geo_stats': geo_stats_meta,
 	}
 
 
-def _local_history_entry(cnpj: str, snapshot: Dict[str, Any]) -> Dict[str, Any]:
+def _local_history_entry(
+	cnpj: str,
+	snapshot: Dict[str, Any],
+	contratos: Optional[List[Dict[str, Any]]] = None,
+	editais: Optional[List[Dict[str, Any]]] = None,
+	stats: Optional[Any] = None,
+	geo_stats: Optional[Any] = None,
+) -> Dict[str, Any]:
 	raw_ts = snapshot.get('timestamp')
 	return {
 		'id_prompt': None,
@@ -658,7 +761,109 @@ def _local_history_entry(cnpj: str, snapshot: Dict[str, Any]) -> Dict[str, Any]:
 		'ultima_consulta': _format_history_timestamp(raw_ts),
 		'timestamp_iso': raw_ts,
 		'row_key': _build_row_key(None, cnpj, raw_ts),
+		'snapshot_company': dict(snapshot),
+		'snapshot_contratos': list(contratos or []),
+		'snapshot_editais': list(editais or []),
+		'snapshot_stats': stats,
+		'snapshot_geo_stats': geo_stats,
 	}
+
+
+def _extract_snapshot_payload(entry: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+	if not entry:
+		return None
+	company_raw = entry.get('snapshot_company')
+	company = dict(company_raw) if isinstance(company_raw, dict) else None
+	contratos_raw = entry.get('snapshot_contratos')
+	contratos = list(contratos_raw) if isinstance(contratos_raw, list) else None
+	editais_raw = entry.get('snapshot_editais')
+	editais = list(editais_raw) if isinstance(editais_raw, list) else None
+	stats_raw = entry.get('snapshot_stats')
+	if isinstance(stats_raw, dict):
+		stats = dict(stats_raw)
+	elif isinstance(stats_raw, list):
+		stats = list(stats_raw)
+	else:
+		stats = stats_raw
+	geo_stats_raw = entry.get('snapshot_geo_stats')
+	if isinstance(geo_stats_raw, dict):
+		geo_stats = dict(geo_stats_raw)
+	elif isinstance(geo_stats_raw, list):
+		geo_stats = list(geo_stats_raw)
+	else:
+		geo_stats = geo_stats_raw
+	if contratos or editais:
+		_ensure_coordinates(contratos, editais)
+	return {
+		'company': company,
+		'contratos': contratos,
+		'editais': editais,
+		'stats': stats,
+		'geo_stats': geo_stats,
+	}
+
+
+_IBGE_KEYS = (
+	'ibge',
+	'unidade_orgao_codigo_ibge',
+	'codigo_ibge_municipio',
+	'municipio_codigo_ibge',
+)
+
+
+def _extract_ibge_code(row: Dict[str, Any]) -> Optional[str]:
+	for key in _IBGE_KEYS:
+		value = row.get(key)
+		if value not in (None, '', '0'):
+			return str(value)
+	return None
+
+
+def _ensure_coordinates(*lists: Optional[List[Dict[str, Any]]]) -> None:
+	rows: List[Dict[str, Any]] = []
+	for lst in lists:
+		for item in lst or []:
+			if isinstance(item, dict):
+				rows.append(item)
+	if not rows or not load_municipios_coords or not get_db_conn:
+		return
+	missing_codes: List[str] = []
+	for row in rows:
+		lat = row.get('lat')
+		lon = row.get('lon')
+		if lat not in (None, '') and lon not in (None, ''):
+			continue
+		code = _extract_ibge_code(row)
+		if code and code not in missing_codes:
+			missing_codes.append(code)
+	if not missing_codes:
+		return
+	conn = get_db_conn()
+	if not conn:
+		return
+	coords_map: Dict[str, Tuple[float, float]] = {}
+	try:
+		with conn:
+			coords_map = load_municipios_coords(conn, missing_codes) or {}
+	finally:
+		try:
+			conn.close()
+		except Exception:
+			pass
+	if not coords_map:
+		return
+	for row in rows:
+		lat = row.get('lat')
+		lon = row.get('lon')
+		if lat not in (None, '') and lon not in (None, ''):
+			continue
+		code = _extract_ibge_code(row)
+		if not code:
+			continue
+		coords = coords_map.get(code)
+		if not coords:
+			continue
+		row['lat'], row['lon'] = coords
 
 
 def _company_layout(company: Optional[Dict[str, Any]]) -> Component:
@@ -782,7 +987,7 @@ def fetch_cnpj_history(limit: int = 20) -> List[Dict[str, Any]]:
 			with conn.cursor() as cur:
 				cur.execute(
 					"""
-						SELECT id_prompt, cnpj, dados, created_at, updated_at
+						SELECT id_prompt, cnpj, dados, contratos, editais, created_at, updated_at
 						FROM sommelier.prompt
 						WHERE user_id = %s
 						ORDER BY created_at DESC
@@ -809,7 +1014,47 @@ def fetch_cnpj_history(limit: int = 20) -> List[Dict[str, Any]]:
 			pass
 
 
-def insert_cnpj_prompt(cnpj: str, snapshot: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def fetch_prompt_snapshot(cnpj: Optional[str]) -> Optional[Dict[str, Any]]:
+	cnpj_digits = normalize_cnpj(cnpj)
+	if not cnpj_digits or not get_db_conn:
+		return None
+	conn = get_db_conn()
+	if not conn:
+		return None
+	try:
+		with conn:
+			with conn.cursor() as cur:
+				cur.execute(
+					"""
+						SELECT id_prompt, cnpj, dados, contratos, editais, created_at, updated_at
+						FROM sommelier.prompt
+						WHERE user_id = %s AND cnpj = %s
+						ORDER BY updated_at DESC
+						LIMIT 1
+					""",
+					(MOCK_USER_ID, cnpj_digits)
+				)
+				row = cur.fetchone()
+				if not row:
+					return None
+				cols = [desc[0] for desc in cur.description]
+				return _map_prompt_row(dict(zip(cols, row)))
+	except Exception:
+		logger.exception('Snapshot direto falhou para %s', cnpj_digits)
+		return None
+	finally:
+		try:
+			conn.close()
+		except Exception:
+			pass
+
+
+def insert_cnpj_prompt(
+	cnpj: str,
+	snapshot: Dict[str, Any],
+	contratos: Optional[List[Dict[str, Any]]] = None,
+	editais: Optional[List[Dict[str, Any]]] = None,
+) -> Optional[Dict[str, Any]]:
 	if not get_db_conn:
 		logger.warning('get_db_conn indisponível; não será possível salvar o histórico')
 		return None
@@ -818,6 +1063,9 @@ def insert_cnpj_prompt(cnpj: str, snapshot: Dict[str, Any]) -> Optional[Dict[str
 		logger.warning('Falha ao criar conexão com o banco; não será possível salvar o histórico')
 		return None
 	logger.info('Inserindo histórico para CNPJ %s', cnpj)
+	contratos_payload = _normalize_for_json(list(contratos or []))
+	editais_payload = _normalize_for_json(list(editais or []))
+	snapshot_payload = _normalize_for_json(snapshot)
 	try:
 		with conn:
 			with conn.cursor() as cur:
@@ -837,21 +1085,35 @@ def insert_cnpj_prompt(cnpj: str, snapshot: Dict[str, Any]) -> Optional[Dict[str
 					cur.execute(
 						"""
 							UPDATE sommelier.prompt
-							SET dados = %s, updated_at = NOW()
+							SET dados = %s,
+								contratos = %s,
+								editais = %s,
+								updated_at = NOW()
 							WHERE id_prompt = %s
-							RETURNING id_prompt, cnpj, dados, created_at, updated_at
+							RETURNING id_prompt, cnpj, dados, contratos, editais, created_at, updated_at
 						""",
-						(Json(snapshot) if Json else json.dumps(snapshot), existing[0])
+						(
+							Json(snapshot_payload) if Json else json.dumps(snapshot_payload),
+							Json(contratos_payload) if Json else json.dumps(contratos_payload),
+							Json(editais_payload) if Json else json.dumps(editais_payload),
+							existing[0]
+						)
 					)
 				else:
 					logger.info('Criando histórico para CNPJ %s', cnpj)
 					cur.execute(
 						"""
-							INSERT INTO sommelier.prompt (user_id, cnpj, dados)
-							VALUES (%s, %s, %s)
-							RETURNING id_prompt, cnpj, dados, created_at, updated_at
+							INSERT INTO sommelier.prompt (user_id, cnpj, dados, contratos, editais)
+							VALUES (%s, %s, %s, %s, %s)
+							RETURNING id_prompt, cnpj, dados, contratos, editais, created_at, updated_at
 						""",
-						(MOCK_USER_ID, cnpj, Json(snapshot) if Json else json.dumps(snapshot))
+						(
+							MOCK_USER_ID,
+							cnpj,
+							Json(snapshot_payload) if Json else json.dumps(snapshot_payload),
+							Json(contratos_payload) if Json else json.dumps(contratos_payload),
+							Json(editais_payload) if Json else json.dumps(editais_payload)
+						)
 					)
 				row = cur.fetchone()
 				if not row:
@@ -937,23 +1199,40 @@ def ensure_history_snapshot(company_data: Optional[Dict[str, Any]], cnpj: str, d
 	def _fallback(key: str, default: Any = '-') -> Any:
 		return meta.get(key) or base.get(key) or default
 	base.setdefault('cnpj', cnpj)
-	base['timestamp'] = datetime.utcnow().isoformat()
+	base['timestamp'] = datetime.now(timezone.utc).isoformat()
 	base.setdefault('razao_social', _fallback('razao_social'))
 	base.setdefault('municipio', _fallback('municipio'))
 	base.setdefault('uf', _fallback('uf'))
 	return base
 
 
-def save_history_entry(cnpj: str, company_full: Optional[Dict[str, Any]], display_data: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+def save_history_entry(
+	cnpj: str,
+	company_full: Optional[Dict[str, Any]],
+	display_data: Optional[Dict[str, Any]] = None,
+	contratos: Optional[List[Dict[str, Any]]] = None,
+	editais: Optional[List[Dict[str, Any]]] = None,
+	stats: Optional[Any] = None,
+	geo_stats: Optional[Any] = None,
+) -> Optional[Dict[str, Any]]:
 	snapshot = ensure_history_snapshot(company_full, cnpj, display_data)
 	if not snapshot:
 		logger.warning('Snapshot inválido; histórico não será salvo')
 		return None
+	contratos_payload = _normalize_for_json(list(contratos or []))
+	editais_payload = _normalize_for_json(list(editais or []))
+	snapshot_payload = _normalize_for_json(snapshot)
+	stats_payload = _normalize_for_json(stats) if stats is not None else None
+	geo_stats_payload = _normalize_for_json(geo_stats) if geo_stats is not None else None
+	if stats_payload is not None:
+		snapshot_payload['_snapshot_stats'] = stats_payload
+	if geo_stats_payload is not None:
+		snapshot_payload['_snapshot_geo_stats'] = geo_stats_payload
 	logger.info('Solicitando persistência do histórico para %s', cnpj)
-	created = insert_cnpj_prompt(cnpj, snapshot)
+	created = insert_cnpj_prompt(cnpj, snapshot_payload, contratos_payload, editais_payload)
 	if not created:
 		logger.info('Persistência falhou; usando histórico local para %s', cnpj)
-	return created or _local_history_entry(cnpj, snapshot)
+	return created or _local_history_entry(cnpj, snapshot_payload, contratos_payload, editais_payload, stats_payload, geo_stats_payload)
 
 
 def _extract_triggered_id() -> Optional[Dict[str, Any]]:
@@ -1093,11 +1372,11 @@ def start_search(n_clicks, n_submit, cnpj_input):
 
 # Callback 2: executa busca quando processing-state=True e search-trigger atualizado
 @app.callback(
-	Output('store-company', 'data'),
-	Output('store-contratos', 'data'),
-	Output('store-editais', 'data'),
-	Output('store-stats', 'data'),
-	Output('store-geo-stats', 'data'),
+	Output('store-company', 'data', allow_duplicate=True),
+	Output('store-contratos', 'data', allow_duplicate=True),
+	Output('store-editais', 'data', allow_duplicate=True),
+	Output('store-stats', 'data', allow_duplicate=True),
+	Output('store-geo-stats', 'data', allow_duplicate=True),
 	Output('processing-state', 'data', allow_duplicate=True),
 	Output('store-cnpj-history', 'data', allow_duplicate=True),
 	Input('search-trigger', 'data'),
@@ -1139,6 +1418,7 @@ def perform_search(trigger, processing, params, history_store):
 	top_limit = int(cfg.get('top_k', 30))
 	editais = (editais or [])[:top_limit]
 	contratos = fetch_contratos_fornecedor(cnpj14)
+	_ensure_coordinates(contratos, editais)
 	comp: Dict[str, Any] = {
 		'razao_social': '-',
 		'cnpj': cnpj14,
@@ -1166,7 +1446,7 @@ def perform_search(trigger, processing, params, history_store):
 		})
 	except Exception:
 		pass
-	history_entry = save_history_entry(cnpj14, company, comp)
+	history_entry = save_history_entry(cnpj14, company, comp, contratos, editais, stats, geo_stats)
 	if history_entry:
 		updated_history = upsert_history_entries(history_store or [], history_entry)
 	else:
@@ -1320,6 +1600,11 @@ def handle_history_click(_n_clicks, history_items):
 @app.callback(
 	Output('input-cnpj', 'value', allow_duplicate=True),
 	Output('store-cnpj-selected', 'data', allow_duplicate=True),
+	Output('store-company', 'data', allow_duplicate=True),
+	Output('store-contratos', 'data', allow_duplicate=True),
+	Output('store-editais', 'data', allow_duplicate=True),
+	Output('store-stats', 'data', allow_duplicate=True),
+	Output('store-geo-stats', 'data', allow_duplicate=True),
 	Output('processing-state', 'data', allow_duplicate=True),
 	Output('search-trigger', 'data', allow_duplicate=True),
 	Input({'type': 'history-cnpj-replay', 'key': ALL}, 'n_clicks'),
@@ -1346,12 +1631,28 @@ def handle_history_replay(_n_clicks, history_items):
 	if not cnpj_digits:
 		raise dash.exceptions.PreventUpdate
 	display_value = format_cnpj_display(entry.get('cnpj'))
-	timestamp_marker = datetime.utcnow().timestamp()
+	payload = _extract_snapshot_payload(entry)
+	if not payload:
+		# tenta buscar diretamente no banco se o histórico local estiver desatualizado
+		fresh_entry = fetch_prompt_snapshot(cnpj_digits)
+		payload = _extract_snapshot_payload(fresh_entry)
+	if not payload:
+		raise dash.exceptions.PreventUpdate
+	company_data = payload.get('company') if payload.get('company') is not None else dash.no_update
+	contratos_data = payload.get('contratos') if payload.get('contratos') is not None else []
+	editais_data = payload.get('editais') if payload.get('editais') is not None else []
+	stats_data = payload.get('stats')
+	geo_stats_data = payload.get('geo_stats')
 	return (
 		display_value,
 		{'row_key': entry.get('row_key')},
-		True,
-		{'cnpj': cnpj_digits, 'ts': timestamp_marker}
+		company_data,
+		contratos_data,
+		editais_data,
+		stats_data,
+		geo_stats_data,
+		False,
+		dash.no_update
 	)
 
 
@@ -1598,6 +1899,20 @@ def render_map(contratos, editais, company, stats):
 	if not contratos and not editais:
 		return html.Div('Sem dados para mapear.')
 
+	similarity_stops: List[Dict[str, Any]] = SIMILARITY_COLOR_STOPS or DEFAULT_SIMILARITY_COLOR_STOPS
+	if not similarity_stops:
+		similarity_stops = DEFAULT_SIMILARITY_COLOR_STOPS
+
+	def _resolve_similarity_stop(value: float) -> Dict[str, Any]:
+		for stop in similarity_stops:
+			min_v = stop.get('min')
+			max_v = stop.get('max')
+			min_ok = True if min_v is None else value >= float(min_v)
+			max_ok = True if max_v is None else value < float(max_v)
+			if min_ok and max_ok:
+				return stop
+		return similarity_stops[-1]
+
 	def _get_ibge(row: Dict[str, Any]) -> Optional[str]:
 		for k in ('ibge', 'unidade_orgao_codigo_ibge', 'codigo_ibge_municipio', 'municipio_codigo_ibge'):
 			v = row.get(k)
@@ -1613,17 +1928,10 @@ def render_map(contratos, editais, company, stats):
 			return 0.0
 
 	def edital_color(sim: float) -> str:
-		# Faixas de cor nomeadas do Folium.Icon (opção B)
-		if sim >= 0.90:
-			return 'darkred'
-		elif sim >= 0.80:
+		if MAP_VIEW_MODE == 'v1':
 			return 'red'
-		elif sim >= 0.70:
-			return 'lightred'
-		elif sim >= 0.60:
-			return 'orange'
-		else:
-			return 'beige'
+		stop = _resolve_similarity_stop(sim)
+		return str(stop.get('folium') or 'red')
 
 	ibges: List[str] = []
 	for lst in (contratos or []):
@@ -1658,13 +1966,28 @@ def render_map(contratos, editais, company, stats):
 	if use_cluster:
 		cluster_root = MarkerCluster(name='Clusters').add_to(m)
 		contratos_group = FeatureGroupSubGroup(cluster_root, 'Contratos'); m.add_child(contratos_group)
-		editais_group = FeatureGroupSubGroup(cluster_root, 'Editais'); m.add_child(editais_group)
 		hq_group = FeatureGroupSubGroup(cluster_root, 'Matriz'); m.add_child(hq_group)
 	else:
 		# Fallback sem clustering se plugins indisponíveis
 		contratos_group = folium.FeatureGroup(name='Contratos', show=True).add_to(m)
-		editais_group = folium.FeatureGroup(name='Editais', show=True).add_to(m)
 		hq_group = folium.FeatureGroup(name='Matriz', show=True).add_to(m)
+
+	editais_layer_map: Dict[str, Dict[str, Any]] = {}
+	for idx, stop in enumerate(similarity_stops):
+		stop_id = str(stop.get('id') or f'range_{idx}')
+		label_suffix = str(stop.get('label') or '').strip()
+		layer_label = f"Editais {label_suffix}" if label_suffix else 'Editais'
+		if use_cluster:
+			layer_obj = FeatureGroupSubGroup(cluster_root, layer_label); m.add_child(layer_obj)
+		else:
+			layer_obj = folium.FeatureGroup(name=layer_label, show=True).add_to(m)
+		checkbox_id = f"legend-toggle-editais-{stop_id}"
+		editais_layer_map[stop_id] = {
+			'stop': stop,
+			'layer': layer_obj,
+			'checkbox_id': checkbox_id,
+		}
+	editais_layer_entries = list(editais_layer_map.values())
 
 	# Jitter (500m–1km) apenas quando sem cluster para reduzir sobreposição
 	apply_jitter = not use_cluster
@@ -1706,6 +2029,17 @@ def render_map(contratos, editais, company, stats):
 		).add_to(contratos_group)
 
 	# Editais: cor por similaridade (v2) ou cor fixa (v1) + popup largo sem similaridade
+	def _layer_for_stop(stop_conf: Dict[str, Any]) -> Optional[folium.map.FeatureGroup]:
+		if not editais_layer_map:
+			return None
+		stop_id = str(stop_conf.get('id') or '')
+		if stop_id and stop_id in editais_layer_map:
+			return editais_layer_map[stop_id]['layer']
+		fallback = next(iter(editais_layer_map.values()), None)
+		if fallback:
+			return fallback['layer']
+		return None
+
 	for r in (editais or []):
 		k = _get_ibge(r)
 		latlon = coords_map.get(k) if k else None
@@ -1718,7 +2052,9 @@ def render_map(contratos, editais, company, stats):
 		lon_list.append(lon)
 		sim = _to_float(r.get('similarity') or r.get('similaridade') or 0.0)
 		score = _to_float(r.get('final_score') or r.get('similarity') or 0.0)
-		color = 'red' if (MAP_VIEW_MODE == 'v1') else edital_color(score)
+		stop_conf = _resolve_similarity_stop(score)
+		layer_obj = _layer_for_stop(stop_conf)
+		color = edital_color(score)
 		obj_e = r.get('objeto_compra') or r.get('objeto') or ''
 		popup_html_e = (
 			f"<b>Órgão:</b> {r.get('orgao_entidade_razao_social') or r.get('orgao','-')}<br>"
@@ -1733,7 +2069,7 @@ def render_map(contratos, editais, company, stats):
 			[lat, lon],
 			popup=popup_e,
 			icon=folium.Icon(color=color, icon='info', prefix='fa', icon_color='white')
-		).add_to(editais_group)
+		).add_to(layer_obj or m)
 
 	# Popup da Matriz com dados do card da empresa
 	comp = company if isinstance(company, dict) else {}
@@ -1789,19 +2125,43 @@ def render_map(contratos, editais, company, stats):
 	  </label>
 		"""
 	else:
-		legend_editais_block = """
+		child_rows: List[str] = []
+		for entry in editais_layer_entries:
+			stop = entry.get('stop') or {}
+			hex_color = stop.get('hex') or '#cccccc'
+			label = stop.get('label') or 'Faixa'
+			checkbox_id = entry.get('checkbox_id') or ''
+			child_rows.append(
+				f"    <label style='display:flex; align-items:center; gap:6px;'>"
+				f"<input type='checkbox' id='{checkbox_id}' checked />"
+				f"<span style='display:inline-block;width:12px;height:12px;background:{hex_color}; border-radius:2px;'></span>"
+				f"<span>{label}</span>"
+				"</label>"
+			)
+		child_rows_html = "\n".join(child_rows)
+		legend_editais_block = f"""
 	  <label style='display:flex; align-items:center; gap:6px; margin:2px 0;'>
 	    <input type='checkbox' id='legend-toggle-editais' checked />
-		    <span> Editais (score final) </span>
+	    <span>Editais</span>
 	  </label>
-	  <div style='margin:4px 0 6px 20px; display:flex; flex-direction:column; gap:2px;'>
-	    <div><span style='display:inline-block;width:12px;height:12px;background:#7f0000; border-radius:2px; margin-right:6px;'></span>≥ 0.90</div>
-	    <div><span style='display:inline-block;width:12px;height:12px;background:#d32f2f; border-radius:2px; margin-right:6px;'></span>0.80–0.90</div>
-	    <div><span style='display:inline-block;width:12px;height:12px;background:#ef5350; border-radius:2px; margin-right:6px;'></span>0.70–0.80</div>
-	    <div><span style='display:inline-block;width:12px;height:12px;background:#fb8c00; border-radius:2px; margin-right:6px;'></span>0.60–0.70</div>
-	    <div><span style='display:inline-block;width:12px;height:12px;background:#f5e5c9; border-radius:2px; margin-right:6px;'></span>< 0.60</div>
+	  <div style='margin:4px 0 6px 20px; display:flex; flex-direction:column; gap:4px;'>
+{child_rows_html}
 	  </div>
 		"""
+
+	editais_child_layers_js = ",\n          ".join(
+		f"'{entry['checkbox_id']}': {entry['layer'].get_name()}" for entry in editais_layer_entries if entry.get('checkbox_id')
+	)
+	if editais_child_layers_js:
+		editais_child_layers_js = "{\n          " + editais_child_layers_js + "\n        }"
+	else:
+		editais_child_layers_js = "{}"
+
+	editais_layers_all_js = ", ".join(entry['layer'].get_name() for entry in editais_layer_entries)
+	if editais_layers_all_js:
+		editais_layers_all_js = f"[{editais_layers_all_js}]"
+	else:
+		editais_layers_all_js = "[]"
 
 	legend_html = f"""
 	<div style='position: fixed; top: 10px; left: 10px; z-index:9999; background: white; padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:12px; line-height:16px;'>
@@ -1824,24 +2184,67 @@ def render_map(contratos, editais, company, stats):
 	      try {{
 	        var mapRef = {m.get_name()};
 	        var layerContratos = {contratos_group.get_name()};
-	        var layerEditais = {editais_group.get_name()};
+	        var editaisLayerList = {editais_layers_all_js};
+	        var editaisChildLayerMap = {editais_child_layers_js};
 	        var layerHQ = {hq_group.get_name()};
-	        function bindToggle(id, layer) {{
+	        function bindToggle(id, layers) {{
 	          var cb = document.getElementById(id);
-	          if (!cb) return;
-	          function apply() {{
-	            if (cb.checked) {{
-	              if (!mapRef.hasLayer(layer)) mapRef.addLayer(layer);
-	            }} else {{
-	              if (mapRef.hasLayer(layer)) mapRef.removeLayer(layer);
+	          if (!cb) return null;
+	          var layerList = Array.isArray(layers) ? layers : [layers];
+	          function apply(forceState) {{
+	            var state = typeof forceState === 'boolean' ? forceState : cb.checked;
+	            if (typeof forceState === 'boolean') {{
+	              cb.checked = state;
 	            }}
+	            layerList.forEach(function(layer) {{
+	              if (!layer) return;
+	              if (state) {{
+	                if (!mapRef.hasLayer(layer)) mapRef.addLayer(layer);
+	              }} else if (mapRef.hasLayer(layer)) {{
+	                mapRef.removeLayer(layer);
+	              }}
+	            }});
 	          }}
-	          cb.addEventListener('change', apply);
+	          cb.addEventListener('change', function() {{
+	            apply();
+	          }});
 	          apply();
+	          return {{ checkbox: cb, setState: apply }};
 	        }}
 	        bindToggle('legend-toggle-contratos', layerContratos);
-	        bindToggle('legend-toggle-editais', layerEditais);
 	        bindToggle('legend-toggle-hq', layerHQ);
+	        var childKeys = Object.keys(editaisChildLayerMap || {{}});
+	        var editaisChildBinders = childKeys.map(function(key) {{
+	          return bindToggle(key, editaisChildLayerMap[key]);
+	        }}).filter(function(entry) {{ return !!entry; }});
+	        if (editaisChildBinders.length) {{
+	          var parentCheckbox = document.getElementById('legend-toggle-editais');
+	          if (parentCheckbox) {{
+	            parentCheckbox.addEventListener('change', function() {{
+	              var targetState = parentCheckbox.checked;
+	              editaisChildBinders.forEach(function(binder) {{
+	                binder.setState(targetState);
+	              }});
+	            }});
+	            editaisChildBinders.forEach(function(binder) {{
+	              binder.checkbox.addEventListener('change', function() {{
+	                if (!binder.checkbox.checked) {{
+	                  parentCheckbox.checked = false;
+	                }} else {{
+	                  var allChecked = editaisChildBinders.every(function(item) {{
+	                    return item.checkbox.checked;
+	                  }});
+	                  parentCheckbox.checked = allChecked;
+	                }}
+	              }});
+	            }});
+	            parentCheckbox.checked = editaisChildBinders.every(function(item) {{
+	              return item.checkbox.checked;
+	            }});
+	          }}
+	        }} else {{
+	          bindToggle('legend-toggle-editais', editaisLayerList);
+	        }}
 	        // Reposiciona controles de zoom (desativados no Map inicial)
 	        if (!mapRef._zoomControl) {{
 	          L.control.zoom({{position:'topright'}}).addTo(mapRef);
