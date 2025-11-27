@@ -54,3 +54,9 @@ Campos adicionais podem ser preservados contanto que permaneçam serializáveis 
 2. **Repetir** apenas carrega o snapshot existente (sem chamar `run_search`), preenche `store-company`, `store-contratos`, `store-editais` e re-renderiza as abas/mapas imediatamente.
 
 Dessa forma, tanto o histórico local quanto o banco mantêm uma única entrada por `(user_id, cnpj)` com dados completos para reuso instantâneo.
+
+## Configuração de ambiente local
+
+- O app carrega automaticamente o arquivo `.env` desta pasta (`search/gvg_select/.env`).
+- Esse arquivo precisa conter todas as variáveis `SUPABASE_*`, chaves da OpenAI e demais parâmetros usados pelo `gvg_cnpj_search`.
+- Em produção (ex.: Render), replique esses valores nas variáveis de ambiente do serviço; o `.env` local serve apenas para desenvolvimento.

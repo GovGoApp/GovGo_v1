@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-cnpj_search_v1_3
+gvg_cnpj_search
 
 Extensão da versão v1_2 adicionando:
 - Peso geográfico adaptativo (--geo-adapt) calculado a partir de:
@@ -74,16 +74,26 @@ except Exception:
             return None
 
 API_BASE = "https://api.opencnpj.org"
+_ENV_LOADED = False
 
 # -------------------- Ambiente --------------------
 
-def load_env():
-    env_path = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".env"))
-    load_dotenv(env_path)
-    dbg('SEARCH', 'ENV carregado de', env_path)
+def load_env(force: bool = False) -> None:
+    """Carrega variáveis do .env local apenas uma vez por processo."""
+    global _ENV_LOADED
+    if _ENV_LOADED and not force:
+        return
+    env_path = os.path.normpath(os.path.join(os.path.dirname(__file__), ".env"))
+    if os.path.exists(env_path):
+        load_dotenv(env_path, override=False)
+        dbg('SEARCH', 'ENV carregado de', env_path)
+    else:
+        logging.warning("Arquivo .env não encontrado em %s", env_path)
+    _ENV_LOADED = True
 
 
 def get_db_conn():
+    load_env()
     return psycopg2.connect(
         host=os.environ.get("SUPABASE_HOST"),
         port=int(os.environ.get("SUPABASE_PORT", "6543")),
@@ -91,6 +101,9 @@ def get_db_conn():
         user=os.environ.get("SUPABASE_USER"),
         password=os.environ.get("SUPABASE_PASSWORD"),
     )
+
+
+load_env()
 
 # -------------------- Util CNPJ --------------------
 
@@ -1227,7 +1240,7 @@ def interactive_loop(default_cnpj: Optional[str], cfg: Dict[str, Any]):
                 "config": cfg,
             }
             os.makedirs(os.path.join("scripts", "logs"), exist_ok=True)
-            out_path = os.path.join("scripts", "logs", "cnpj_search_v1_3_LAST.json")
+            out_path = os.path.join("scripts", "logs", "gvg_cnpj_search_LAST.json")
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(out, f, ensure_ascii=False, default=str, indent=2)
             console.print(f"[green]JSON exportado em: {out_path}[green]")

@@ -36,7 +36,7 @@ if CNPJ_PATH not in sys.path:
 	sys.path.insert(0, CNPJ_PATH)
 
 try:
-	from cnpj_search_v1_3 import (
+	from gvg_cnpj_search import (
 		run_search,
 		get_db_conn,
 		load_municipios_coords,
@@ -771,8 +771,8 @@ def render_map(contratos, editais, company, stats):
 	<script>
 	  (function(){{
 	    function ready(){{
-	      try {{
-	        var mapRef = {m.get_name()};
+		try:
+			from gvg_cnpj_search import (
 	        var layerContratos = {contratos_group.get_name()};
 	        var layerEditais = {editais_group.get_name()};
 	        var layerHQ = {hq_group.get_name()};
@@ -780,7 +780,7 @@ def render_map(contratos, editais, company, stats):
 	          var cb = document.getElementById(id);
 	          if (!cb) return;
 	          function apply() {{
-	            if (cb.checked) {{
+			logging.exception('Falha ao importar gvg_cnpj_search')
 	              if (!mapRef.hasLayer(layer)) mapRef.addLayer(layer);
 	            }} else {{
 	              if (mapRef.hasLayer(layer)) mapRef.removeLayer(layer);
