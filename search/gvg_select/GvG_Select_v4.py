@@ -1,4 +1,4 @@
-r"""GvG Select v3 — Editais coloridos por similaridade (Folium.Icon)
+r"""GvG Select v4 — Editais coloridos por similaridade (Folium.Icon)
 
 Observação:
 - Mantém a estrutura da versão anterior, com FeatureGroups e legenda interativa.
@@ -110,7 +110,7 @@ if CNPJ_PATH not in sys.path:
 	sys.path.insert(0, CNPJ_PATH)
 
 try:
-	from gvg_cnpj_search import (
+	from gvg_cnpj_search_v2 import (
 		run_search,
 		get_db_conn,
 		load_municipios_coords,
@@ -118,11 +118,21 @@ try:
 		normalize_cnpj as engine_normalize_cnpj,
 	)
 except Exception:  # pragma: no cover
-	logging.exception('Falha ao importar gvg_cnpj_search')
-	run_search = None  # type: ignore
-	get_db_conn = None  # type: ignore
-	load_municipios_coords = None  # type: ignore
-	extract_hq_ibge = None  # type: ignore
+	logging.exception('Falha ao importar gvg_cnpj_search_v2; tentando fallback legada')
+	try:
+		from gvg_cnpj_search import (
+			run_search,
+			get_db_conn,
+			load_municipios_coords,
+			extract_hq_ibge,
+			normalize_cnpj as engine_normalize_cnpj,
+		)
+	except Exception:  # pragma: no cover
+		logging.exception('Falha ao importar gvg_cnpj_search legado')
+		run_search = None  # type: ignore
+		get_db_conn = None  # type: ignore
+		load_municipios_coords = None  # type: ignore
+		extract_hq_ibge = None  # type: ignore
 try:
 	engine_normalize_cnpj
 except NameError:
@@ -137,7 +147,7 @@ logging.getLogger('werkzeug').setLevel(logging.WARNING)
 
 external_stylesheets = [dbc.themes.BOOTSTRAP]
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
-app.title = "GvG Select v3"
+app.title = "GvG Select v4"
 server = app.server
 MAP_VIEW_MODE = (os.environ.get('VIEW_MAP') or 'v2').lower()
 CLUSTER_MODE = False
@@ -153,7 +163,7 @@ app.index_string = (
 <html>
   <head>
     {%metas%}
-	<title>GvG Select v3</title>
+	<title>GvG Select v4</title>
     {%favicon%}
     {%css%}
     <link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css\" />
@@ -411,7 +421,7 @@ app.layout = html.Div([
 	html.Div([
 		html.Div([
 			html.Img(src=LOGO_PATH, style=styles['header_logo']),
-			html.Div("GvG Select v3", style=styles['header_title'], className="gvg-header-title")
+			html.Div("GvG Select v4", style=styles['header_title'], className="gvg-header-title")
 		], style=styles['header_left']),
 		html.Div([], style=styles['header_right'])
 	], style=styles['header']),
@@ -2273,7 +2283,7 @@ def render_map(contratos, editais, company, stats):
 
 
 if __name__ == "__main__":
-	parser = argparse.ArgumentParser(description="GvG Select v3")
+	parser = argparse.ArgumentParser(description="GvG Select v4")
 	parser.add_argument("--view_map", choices=["v1", "v2"], default=os.environ.get("VIEW_MAP", MAP_VIEW_MODE))
 	parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8051")))
 	parser.add_argument("--cluster", action="store_true", help="Habilita clusters no mapa")

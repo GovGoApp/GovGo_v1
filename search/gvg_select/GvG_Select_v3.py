@@ -103,11 +103,6 @@ if not SIMILARITY_COLOR_STOPS:
 	SIMILARITY_COLOR_STOPS = DEFAULT_SIMILARITY_COLOR_STOPS
 	
 
-# --- Caminho para importar o motor v1_3 ---
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-CNPJ_PATH = os.path.join(ROOT, 'scripts', 'cnpj_search')
-if CNPJ_PATH not in sys.path:
-	sys.path.insert(0, CNPJ_PATH)
 
 try:
 	from gvg_cnpj_search import (
