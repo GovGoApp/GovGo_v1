@@ -118,6 +118,7 @@ try:
 		normalize_cnpj as engine_normalize_cnpj,
 	)
 except Exception:  # pragma: no cover
+	logging.exception('Falha ao importar cnpj_search_v1_3')
 	run_search = None  # type: ignore
 	get_db_conn = None  # type: ignore
 	load_municipios_coords = None  # type: ignore
