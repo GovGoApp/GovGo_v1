@@ -137,6 +137,7 @@ logging.getLogger('werkzeug').setLevel(logging.WARNING)
 external_stylesheets = [dbc.themes.BOOTSTRAP]
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 app.title = "GvG Select v3"
+server = app.server
 MAP_VIEW_MODE = (os.environ.get('VIEW_MAP') or 'v2').lower()
 CLUSTER_MODE = False
 _CNAE_DESC_CACHE: Dict[str, str] = {}
