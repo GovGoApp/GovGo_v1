@@ -89,7 +89,6 @@ styles = {
         'width': '100%',
         'height': '100%',
         'position': 'relative',
-        'overflow': 'hidden',
         'gap': '0px'
     },
     'panels_indicators': {
@@ -990,6 +989,7 @@ BASE_CSS = """
 .gvg-indicator-dot:focus-visible { outline: 2px solid #003A70; outline-offset: 2px; }
 .gvg-indicator-dot--active { background: #FF5722; transform: scale(1.1); }
 .gvg-indicator-snake { position: absolute; bottom: 0; left: 0; height: 4px; width: 12px; border-radius: 999px; background: #FF5722; opacity: 0.7; transition: transform 0.25s ease, width 0.25s ease; pointer-events: none; z-index: 1; }
+.gvg-panels-dragging { cursor: grabbing !important; }
 
 /* Header title font-size enforcement (desktop and general) */
 .gvg-header-title { font-size: 24px !important; }
@@ -1140,7 +1140,8 @@ BASE_CSS = """
 /* MODO MOBILE (≤ 992px): slider horizontal com scroll-snap, zero-JS */
 @media (max-width: 992px) {
     :root { --gvg-left-slide-width: 100vw; --gvg-right-slide-width: 100vw; }
-    #gvg-panels-track { overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
+    #gvg-panels-track { overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; cursor: grab; scrollbar-width: none; }
+    #gvg-panels-track::-webkit-scrollbar { display: none; }
     #gvg-panels-track > .gvg-slide { flex: 0 0 100vw; scroll-snap-align: start; }
     .gvg-panels-indicators { display: flex; }
     .gvg-header-title { display: none;}

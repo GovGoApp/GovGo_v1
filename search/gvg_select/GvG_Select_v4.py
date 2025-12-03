@@ -461,7 +461,7 @@ app.layout = html.Div([
 			html.Div(right_panel(), className="gvg-slide", id="gvg-slide-right"),
 		], id="gvg-panels-track", className="gvg-panels-track", style=styles['panels_track']),
 		html.Div([
-			html.Button('', id='gvg-indicator-left', className='gvg-indicator-dot', type='button', **{'aria-label': 'Painel de consulta', 'title': 'Painel de consulta', 'data-index': '0'}),
+			html.Button('', id='gvg-indicator-left', className='gvg-indicator-dot gvg-indicator-dot--active', type='button', **{'aria-label': 'Painel de consulta', 'title': 'Painel de consulta', 'data-index': '0'}),
 			html.Button('', id='gvg-indicator-right', className='gvg-indicator-dot', type='button', **{'aria-label': 'Painel de resultados', 'title': 'Painel de resultados', 'data-index': '1'}),
 			html.Span(className='gvg-indicator-snake')
 		], id="gvg-panels-indicators", className="gvg-panels-indicators", style=styles['panels_indicators'])
@@ -480,6 +480,10 @@ app.layout = html.Div([
     if (!dots.length || !snake) { return; }
     track.dataset.govgoCarousel = '1';
     let activeIndex = 0;
+		let isMouseDragging = false;
+		let dragPointerId = null;
+		let dragStartX = 0;
+		let dragScrollStart = 0;
     const isMobile = () => window.matchMedia('(max-width: 992px)').matches;
     const moveSnake = (target) => {
       if (!target || !snake.parentElement) { return; }
@@ -489,6 +493,13 @@ app.layout = html.Div([
       snake.style.width = rect.width + 'px';
       snake.style.transform = 'translateX(' + left + 'px)';
     };
+		const setDraggingState = (flag) => {
+			if (flag) {
+				track.classList.add('gvg-panels-dragging');
+			} else {
+				track.classList.remove('gvg-panels-dragging');
+			}
+		};
     const scrollToIndex = (idx) => {
       const width = track.clientWidth;
       track.scrollTo({ left: idx * width, behavior: 'smooth' });
@@ -520,6 +531,34 @@ app.layout = html.Div([
         }
       }, 50);
     });
+		track.addEventListener('pointerdown', (evt) => {
+			if (!isMobile() || evt.pointerType !== 'mouse') { return; }
+			isMouseDragging = true;
+			dragPointerId = evt.pointerId;
+			dragStartX = evt.clientX;
+			dragScrollStart = track.scrollLeft;
+			try { track.setPointerCapture(evt.pointerId); } catch (e) {}
+			setDraggingState(true);
+			evt.preventDefault();
+		});
+		track.addEventListener('pointermove', (evt) => {
+			if (!isMouseDragging || evt.pointerId !== dragPointerId) { return; }
+			const deltaX = dragStartX - evt.clientX;
+			track.scrollLeft = dragScrollStart + deltaX;
+		});
+		const endDrag = (evt) => {
+			if (!isMouseDragging || (evt && evt.pointerId !== dragPointerId)) { return; }
+			isMouseDragging = false;
+			const width = track.clientWidth || 1;
+			const idx = Math.round(track.scrollLeft / width);
+			setActive(idx, true);
+			setDraggingState(false);
+			try { track.releasePointerCapture(dragPointerId); } catch (e) {}
+			dragPointerId = null;
+		};
+		track.addEventListener('pointerup', endDrag);
+		track.addEventListener('pointerleave', endDrag);
+		track.addEventListener('pointercancel', endDrag);
     window.addEventListener('resize', () => moveSnake(dots[activeIndex]));
     requestAnimationFrame(() => setActive(0, true));
   }
