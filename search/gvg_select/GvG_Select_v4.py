@@ -456,9 +456,80 @@ app.layout = html.Div([
 		dcc.Store(id='processing-state', data=False),
 		dcc.Store(id='search-trigger'),
 		dcc.Interval(id='history-cnpj-load-trigger', interval=500, n_intervals=0, max_intervals=1),
-		html.Div(left_panel(), className="gvg-slide"),
-		html.Div(right_panel(), className="gvg-slide"),
-	], id="gvg-main-panels", style=styles['container'])
+		html.Div([
+			html.Div(left_panel(), className="gvg-slide", id="gvg-slide-left"),
+			html.Div(right_panel(), className="gvg-slide", id="gvg-slide-right"),
+		], id="gvg-panels-track", className="gvg-panels-track", style=styles['panels_track']),
+		html.Div([
+			html.Button('', id='gvg-indicator-left', className='gvg-indicator-dot', type='button', **{'aria-label': 'Painel de consulta', 'title': 'Painel de consulta', 'data-index': '0'}),
+			html.Button('', id='gvg-indicator-right', className='gvg-indicator-dot', type='button', **{'aria-label': 'Painel de resultados', 'title': 'Painel de resultados', 'data-index': '1'}),
+			html.Span(className='gvg-indicator-snake')
+		], id="gvg-panels-indicators", className="gvg-panels-indicators", style=styles['panels_indicators'])
+	], id="gvg-main-panels", style={**styles['container'], 'flexDirection': 'column'}),
+
+	html.Script("""
+(function(){
+  const TRACK_ID = 'gvg-panels-track';
+  const DOT_SELECTOR = '.gvg-indicator-dot';
+  const ACTIVE_CLASS = 'gvg-indicator-dot--active';
+  function ready(){
+    const track = document.getElementById(TRACK_ID);
+    if (!track || track.dataset.govgoCarousel === '1') { return; }
+    const dots = Array.prototype.slice.call(document.querySelectorAll(DOT_SELECTOR));
+    const snake = document.querySelector('.gvg-indicator-snake');
+    if (!dots.length || !snake) { return; }
+    track.dataset.govgoCarousel = '1';
+    let activeIndex = 0;
+    const isMobile = () => window.matchMedia('(max-width: 992px)').matches;
+    const moveSnake = (target) => {
+      if (!target || !snake.parentElement) { return; }
+      const parentRect = snake.parentElement.getBoundingClientRect();
+      const rect = target.getBoundingClientRect();
+      const left = rect.left - parentRect.left;
+      snake.style.width = rect.width + 'px';
+      snake.style.transform = 'translateX(' + left + 'px)';
+    };
+    const scrollToIndex = (idx) => {
+      const width = track.clientWidth;
+      track.scrollTo({ left: idx * width, behavior: 'smooth' });
+    };
+    const setActive = (idx, fromScroll) => {
+      if (idx < 0) { idx = 0; }
+      if (idx >= dots.length) { idx = dots.length - 1; }
+      activeIndex = idx;
+      dots.forEach((btn, i) => btn.classList.toggle(ACTIVE_CLASS, i === idx));
+      moveSnake(dots[idx]);
+      if (!fromScroll && isMobile()) {
+        scrollToIndex(idx);
+      }
+    };
+    dots.forEach((btn, idx) => {
+      btn.addEventListener('click', () => setActive(idx, false));
+    });
+    let scrollTimeout;
+    track.addEventListener('scroll', () => {
+      if (!isMobile()) { return; }
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        const width = track.clientWidth || 1;
+        const idx = Math.round(track.scrollLeft / width);
+        if (idx !== activeIndex) {
+          setActive(idx, true);
+        } else {
+          moveSnake(dots[idx]);
+        }
+      }, 50);
+    });
+    window.addEventListener('resize', () => moveSnake(dots[activeIndex]));
+    requestAnimationFrame(() => setActive(0, true));
+  }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(ready, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', ready);
+  }
+})();
+""", id="gvg-panels-script")
 ])
 
 

@@ -83,6 +83,20 @@ styles = {
         'marginTop': '60px',
         'padding': '5px',
     },
+    'panels_track': {
+        'display': 'flex',
+        'flex': '1 1 auto',
+        'width': '100%',
+        'height': '100%',
+        'position': 'relative',
+        'overflow': 'hidden',
+        'gap': '0px'
+    },
+    'panels_indicators': {
+        'width': '100%',
+        'padding': '6px 0',
+        'position': 'relative'
+    },
     'left_panel': {
     'width': '100%',  ### controle de largura via wrapper/CSS var
         'backgroundColor': _COLOR_BACKGROUND,
@@ -964,10 +978,18 @@ BASE_CSS = """
 :root { --gvg-left-slide-width: 30%; --gvg-right-slide-width: 70%; }
 
 /* Wrappers dos painéis (desktop: respeita 30/70; mobile: vira slider) */
-#gvg-main-panels > .gvg-slide { display: flex; }
-#gvg-main-panels > .gvg-slide:first-child { width: var(--gvg-left-slide-width); }
-#gvg-main-panels > .gvg-slide:last-child { width: var(--gvg-right-slide-width); }
-#gvg-main-panels > .gvg-slide > div { width: 100%; }
+#gvg-main-panels { display: flex; flex-direction: column; }
+#gvg-panels-track { display: flex; flex: 1 1 auto; width: 100%; height: 100%; position: relative; overflow: hidden; }
+#gvg-panels-track > .gvg-slide { display: flex; }
+#gvg-panels-track > .gvg-slide:first-child { width: var(--gvg-left-slide-width); }
+#gvg-panels-track > .gvg-slide:last-child { width: var(--gvg-right-slide-width); }
+#gvg-panels-track > .gvg-slide > div { width: 100%; }
+
+.gvg-panels-indicators { display: none; align-items: center; justify-content: center; gap: 16px; position: relative; width: 100%; }
+.gvg-indicator-dot { width: 12px; height: 12px; border-radius: 50%; border: none; background: #D0D7E2; cursor: pointer; padding: 0; position: relative; z-index: 2; transition: background 0.2s ease, transform 0.2s ease; }
+.gvg-indicator-dot:focus-visible { outline: 2px solid #003A70; outline-offset: 2px; }
+.gvg-indicator-dot--active { background: #FF5722; transform: scale(1.1); }
+.gvg-indicator-snake { position: absolute; bottom: 0; left: 0; height: 4px; width: 12px; border-radius: 999px; background: #FF5722; opacity: 0.7; transition: transform 0.25s ease, width 0.25s ease; pointer-events: none; z-index: 1; }
 
 /* Header title font-size enforcement (desktop and general) */
 .gvg-header-title { font-size: 24px !important; }
@@ -1108,11 +1130,19 @@ BASE_CSS = """
     box-shadow: none !important;
 }
 
+@media (max-width: 768px) {
+    .gvg-tabs-parent .tab-list { overflow-x: auto; }
+    .gvg-tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+    .gvg-tabs::-webkit-scrollbar { display: none; }
+    .gvg-tab, .gvg-tabs .tab { flex: 0 0 auto !important; min-width: 140px !important; }
+}
+
 /* MODO MOBILE (≤ 992px): slider horizontal com scroll-snap, zero-JS */
 @media (max-width: 992px) {
     :root { --gvg-left-slide-width: 100vw; --gvg-right-slide-width: 100vw; }
-    #gvg-main-panels { overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
-    #gvg-main-panels > .gvg-slide { flex: 0 0 100vw; scroll-snap-align: start; }
+    #gvg-panels-track { overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
+    #gvg-panels-track > .gvg-slide { flex: 0 0 100vw; scroll-snap-align: start; }
+    .gvg-panels-indicators { display: flex; }
     .gvg-header-title { display: none;}
     /* Detalhes acima, janelas (Itens/Docs/Resumo) abaixo */
     .gvg-details-row { flex-direction: column !important; gap: 8px !important; }
