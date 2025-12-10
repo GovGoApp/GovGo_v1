@@ -456,119 +456,9 @@ app.layout = html.Div([
 		dcc.Store(id='processing-state', data=False),
 		dcc.Store(id='search-trigger'),
 		dcc.Interval(id='history-cnpj-load-trigger', interval=500, n_intervals=0, max_intervals=1),
-		html.Div([
-			html.Div(left_panel(), className="gvg-slide", id="gvg-slide-left"),
-			html.Div(right_panel(), className="gvg-slide", id="gvg-slide-right"),
-		], id="gvg-panels-track", className="gvg-panels-track", style=styles['panels_track']),
-		html.Div([
-			html.Button('', id='gvg-indicator-left', className='gvg-indicator-dot gvg-indicator-dot--active', type='button', **{'aria-label': 'Painel de consulta', 'title': 'Painel de consulta', 'data-index': '0'}),
-			html.Button('', id='gvg-indicator-right', className='gvg-indicator-dot', type='button', **{'aria-label': 'Painel de resultados', 'title': 'Painel de resultados', 'data-index': '1'}),
-			html.Span(className='gvg-indicator-snake')
-		], id="gvg-panels-indicators", className="gvg-panels-indicators", style=styles['panels_indicators'])
-	], id="gvg-main-panels", style={**styles['container'], 'flexDirection': 'column'}),
-
-	html.Script("""
-(function(){
-  const TRACK_ID = 'gvg-panels-track';
-  const DOT_SELECTOR = '.gvg-indicator-dot';
-  const ACTIVE_CLASS = 'gvg-indicator-dot--active';
-  function ready(){
-    const track = document.getElementById(TRACK_ID);
-    if (!track || track.dataset.govgoCarousel === '1') { return; }
-    const dots = Array.prototype.slice.call(document.querySelectorAll(DOT_SELECTOR));
-    const snake = document.querySelector('.gvg-indicator-snake');
-    if (!dots.length || !snake) { return; }
-    track.dataset.govgoCarousel = '1';
-    let activeIndex = 0;
-		let isMouseDragging = false;
-		let dragPointerId = null;
-		let dragStartX = 0;
-		let dragScrollStart = 0;
-    const isMobile = () => window.matchMedia('(max-width: 992px)').matches;
-    const moveSnake = (target) => {
-      if (!target || !snake.parentElement) { return; }
-      const parentRect = snake.parentElement.getBoundingClientRect();
-      const rect = target.getBoundingClientRect();
-      const left = rect.left - parentRect.left;
-      snake.style.width = rect.width + 'px';
-      snake.style.transform = 'translateX(' + left + 'px)';
-    };
-		const setDraggingState = (flag) => {
-			if (flag) {
-				track.classList.add('gvg-panels-dragging');
-			} else {
-				track.classList.remove('gvg-panels-dragging');
-			}
-		};
-    const scrollToIndex = (idx) => {
-      const width = track.clientWidth;
-      track.scrollTo({ left: idx * width, behavior: 'smooth' });
-    };
-    const setActive = (idx, fromScroll) => {
-      if (idx < 0) { idx = 0; }
-      if (idx >= dots.length) { idx = dots.length - 1; }
-      activeIndex = idx;
-      dots.forEach((btn, i) => btn.classList.toggle(ACTIVE_CLASS, i === idx));
-      moveSnake(dots[idx]);
-      if (!fromScroll && isMobile()) {
-        scrollToIndex(idx);
-      }
-    };
-    dots.forEach((btn, idx) => {
-      btn.addEventListener('click', () => setActive(idx, false));
-    });
-    let scrollTimeout;
-    track.addEventListener('scroll', () => {
-      if (!isMobile()) { return; }
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => {
-        const width = track.clientWidth || 1;
-        const idx = Math.round(track.scrollLeft / width);
-        if (idx !== activeIndex) {
-          setActive(idx, true);
-        } else {
-          moveSnake(dots[idx]);
-        }
-      }, 50);
-    });
-		track.addEventListener('pointerdown', (evt) => {
-			if (!isMobile() || evt.pointerType !== 'mouse') { return; }
-			isMouseDragging = true;
-			dragPointerId = evt.pointerId;
-			dragStartX = evt.clientX;
-			dragScrollStart = track.scrollLeft;
-			try { track.setPointerCapture(evt.pointerId); } catch (e) {}
-			setDraggingState(true);
-			evt.preventDefault();
-		});
-		track.addEventListener('pointermove', (evt) => {
-			if (!isMouseDragging || evt.pointerId !== dragPointerId) { return; }
-			const deltaX = dragStartX - evt.clientX;
-			track.scrollLeft = dragScrollStart + deltaX;
-		});
-		const endDrag = (evt) => {
-			if (!isMouseDragging || (evt && evt.pointerId !== dragPointerId)) { return; }
-			isMouseDragging = false;
-			const width = track.clientWidth || 1;
-			const idx = Math.round(track.scrollLeft / width);
-			setActive(idx, true);
-			setDraggingState(false);
-			try { track.releasePointerCapture(dragPointerId); } catch (e) {}
-			dragPointerId = null;
-		};
-		track.addEventListener('pointerup', endDrag);
-		track.addEventListener('pointerleave', endDrag);
-		track.addEventListener('pointercancel', endDrag);
-    window.addEventListener('resize', () => moveSnake(dots[activeIndex]));
-    requestAnimationFrame(() => setActive(0, true));
-  }
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    setTimeout(ready, 0);
-  } else {
-    document.addEventListener('DOMContentLoaded', ready);
-  }
-})();
-""", id="gvg-panels-script")
+		html.Div(left_panel(), className="gvg-slide"),
+		html.Div(right_panel(), className="gvg-slide"),
+	], id="gvg-main-panels", style=styles['container'])
 ])
 
 
@@ -925,6 +815,38 @@ def _extract_snapshot_payload(entry: Optional[Dict[str, Any]]) -> Optional[Dict[
 	}
 
 
+def _snapshot_has_substance(
+	snapshot: Optional[Dict[str, Any]],
+	contratos: Optional[List[Dict[str, Any]]] = None,
+	editais: Optional[List[Dict[str, Any]]] = None,
+) -> bool:
+	def _has_text(value: Any) -> bool:
+		if value is None:
+			return False
+		if isinstance(value, str):
+			text = value.strip()
+			if not text:
+				return False
+			if text in {'-', 'Não informado', 'NA', 'N/A'}:
+				return False
+		return True
+	key_fields = ('razao_social', 'nome_fantasia', 'municipio', 'uf', 'situacao_cadastral')
+	if isinstance(snapshot, dict):
+		for key in key_fields:
+			if _has_text(snapshot.get(key)):
+				return True
+		if snapshot.get('cnaes_secundarios') or snapshot.get('QSA'):
+			return True
+	for dataset in (contratos, editais):
+		if not isinstance(dataset, list):
+			continue
+		for row in dataset:
+			if isinstance(row, dict):
+				if _has_text(row.get('orgao_entidade_razao_social')) or _has_text(row.get('numero_controle_pncp')):
+					return True
+	return False
+
+
 _IBGE_KEYS = (
 	'ibge',
 	'unidade_orgao_codigo_ibge',
@@ -1191,9 +1113,12 @@ def insert_cnpj_prompt(
 	try:
 		with conn:
 			with conn.cursor() as cur:
+				existing_entry: Optional[Dict[str, Any]] = None
+				existing_id: Optional[int] = None
+				existing_has_data = False
 				cur.execute(
 					"""
-						SELECT id_prompt
+						SELECT id_prompt, cnpj, dados, contratos, editais, created_at, updated_at
 						FROM sommelier.prompt
 						WHERE user_id = %s AND cnpj = %s
 						ORDER BY updated_at DESC
@@ -1201,9 +1126,24 @@ def insert_cnpj_prompt(
 					""",
 					(MOCK_USER_ID, cnpj)
 				)
-				existing = cur.fetchone()
-				if existing:
-					logger.info('Atualizando histórico existente para CNPJ %s (id %s)', cnpj, existing[0])
+				existing_row = cur.fetchone()
+				if existing_row:
+					existing_cols = [desc[0] for desc in cur.description]
+					existing_dict = dict(zip(existing_cols, existing_row))
+					existing_entry = _map_prompt_row(existing_dict)
+					existing_id = existing_dict.get('id_prompt')
+					if existing_entry:
+						existing_has_data = _snapshot_has_substance(
+							existing_entry.get('snapshot_company'),
+							existing_entry.get('snapshot_contratos'),
+							existing_entry.get('snapshot_editais'),
+						)
+				new_has_data = _snapshot_has_substance(snapshot_payload, contratos_payload, editais_payload)
+				if existing_id and existing_entry and existing_has_data and not new_has_data:
+					logger.info('Snapshot vazio ignorado para CNPJ %s; mantendo histórico id %s', cnpj, existing_id)
+					return existing_entry
+				if existing_id:
+					logger.info('Atualizando histórico existente para CNPJ %s (id %s)', cnpj, existing_id)
 					cur.execute(
 						"""
 							UPDATE sommelier.prompt
@@ -1218,7 +1158,7 @@ def insert_cnpj_prompt(
 							Json(snapshot_payload) if Json else json.dumps(snapshot_payload),
 							Json(contratos_payload) if Json else json.dumps(contratos_payload),
 							Json(editais_payload) if Json else json.dumps(editais_payload),
-							existing[0]
+							existing_id
 						)
 					)
 				else:
